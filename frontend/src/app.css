@@ -327,6 +327,20 @@ button.pane-title {
   padding-left: var(--space-2);
 }
 
+#home-btn {
+  position: relative;
+}
+
+#home-btn::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  width: calc(100% + 2 * var(--space-5));
+  height: var(--size-header);
+}
+
 /* Button system: primary (CTA), secondary (utility), tertiary (quiet actions) */
 .btn {
   display: inline-flex;
