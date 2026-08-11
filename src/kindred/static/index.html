@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>kindred</title>
+  <link rel="stylesheet" href="/static/coloris.min.css" />
+  <link rel="stylesheet" href="/static/app.css?v=header-title-3" />
+</head>
+
+<body>
+  <div id="app">
+    <div id="panes">
+      <section id="draft-pane">
+        <header class="pane-header">
+          <div class="draft-header-left">
+            <button type="button" id="home-btn" class="pane-title btn btn-tertiary" title="New draft">kindred</button>
+            <span id="draft-header-sep" class="draft-header-sep" hidden aria-hidden="true"></span>
+            <button type="button" id="draft-header-title" class="draft-header-title" hidden></button>
+            <input id="draft-header-title-input" class="draft-header-title-input" type="text" hidden
+              aria-label="Draft title" />
+          </div>
+          <div class="draft-header-right">
+            <button type="button" id="import-btn" class="btn btn-secondary" hidden disabled>Import</button>
+            <div id="export-controls" class="export-split" hidden>
+              <button type="button" id="export-btn" class="btn btn-secondary" disabled>Export</button>
+              <button type="button" id="export-menu-btn" class="btn btn-secondary export-menu-btn" disabled
+                aria-haspopup="menu" aria-expanded="false" aria-controls="export-menu"
+                title="More export formats" aria-label="More export formats">
+                <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+                  <path 
+                    fill="none" 
+                    transform="translate(0, 1.5)"
+                    stroke="currentColor" 
+                    stroke-width="2" 
+                    stroke-linecap="round" 
+                    stroke-linejoin="round" 
+                    d="M 2.5 4.5 L 6 8 L 9.5 4.5" 
+                  />
+                </svg>
+              </button>
+              <div id="export-menu" class="export-menu" role="menu" hidden></div>
+            </div>
+          </div>
+        </header>
+        <div id="editor-toolbar" class="editor-toolbar" role="toolbar" aria-label="Formatting">
+          <button type="button" data-cmd="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
+          <button type="button" data-cmd="italic" title="Italic" aria-label="Italic"><em>I</em></button>
+          <button type="button" data-cmd="underline" title="Underline" aria-label="Underline"><span
+              class="tb-u">U</span></button>
+          <button type="button" data-cmd="strike" title="Strikethrough" aria-label="Strikethrough"><s>S</s></button>
+          <span class="toolbar-sep" aria-hidden="true"></span>
+          <select class="toolbar-select" data-font-family title="Font family" aria-label="Font family">
+            <option value="">System</option>
+            <option value="Georgia, serif">Georgia</option>
+            <option value="'Times New Roman', Times, serif">Times</option>
+            <option value="Arial, Helvetica, sans-serif">Arial</option>
+            <option value="Helvetica, Arial, sans-serif">Helvetica</option>
+            <option value="Verdana, Geneva, sans-serif">Verdana</option>
+            <option value="'Courier New', Courier, monospace">Courier</option>
+            <option value="monospace">Monospace</option>
+          </select>
+          <span class="toolbar-sep" aria-hidden="true"></span>
+          <input class="toolbar-input toolbar-font-size" type="number" data-font-size min="8" max="96"
+            step="1" value="14" title="Font size (px)" aria-label="Font size" />
+          <span class="toolbar-sep" aria-hidden="true"></span>
+          <label class="toolbar-color" title="Font color">
+            <span class="tb-color-letter" aria-hidden="true">A</span>
+            <span class="tb-color-swatch" aria-hidden="true"></span>
+            <input class="color-field" type="text" data-color-input value="#d4d4d4" aria-label="Font color"
+              autocomplete="off" spellcheck="false" />
+          </label>
+          <button type="button" data-cmd="unsetColor" title="Remove font color"
+            aria-label="Remove font color">×</button>
+          <span class="toolbar-sep" aria-hidden="true"></span>
+          <button type="button" data-cmd="alignLeft" title="Align left" aria-label="Align left">L</button>
+          <button type="button" data-cmd="alignCenter" title="Align center" aria-label="Align center">C</button>
+          <button type="button" data-cmd="alignRight" title="Align right" aria-label="Align right">R</button>
+          <button type="button" data-cmd="alignJustify" title="Justify" aria-label="Justify">J</button>
+        </div>
+        <div id="editor" class="editor" spellcheck="true" data-placeholder="Paste or type your text here. Double-click to import."></div>
+      </section>
+      <div id="divider" role="separator" aria-orientation="vertical" aria-label="Resize draft and feedback panes"
+        tabindex="0"></div>
+      <section id="feedback-pane">
+        <header class="pane-header feedback-header">
+          <div class="feedback-header-left">
+            <button type="button" id="analyze-btn" class="btn btn-primary" hidden disabled>Analyze</button>
+            <span id="drafts-heading" class="pane-title">Drafts</span>
+          </div>
+          <div id="pane-mode-cluster" class="pane-mode-cluster" hidden>
+            <div class="tab-group is-active" data-group="review">
+              <div class="tabs tabs-primary" role="tablist" aria-label="Pane mode">
+                <button type="button" class="tab btn btn-secondary active" data-pane="review" role="tab"
+                  aria-selected="true">Review</button>
+              </div>
+              <div id="feedback-tabs" class="tabs tabs-secondary" role="tablist" aria-label="Feedback scope" hidden>
+                <button type="button" class="tab active" data-mode="global" role="tab"
+                  aria-selected="true">Global</button>
+                <button type="button" class="tab" data-mode="local" role="tab" aria-selected="false">Local</button>
+              </div>
+            </div>
+            <div class="tab-group" data-group="git">
+              <div class="tabs tabs-primary" role="tablist" aria-label="Pane mode">
+                <button type="button" class="tab btn btn-secondary" data-pane="git" role="tab" aria-selected="false">Git</button>
+              </div>
+            </div>
+          </div>
+        </header>
+        <div id="feedback" class="feedback" hidden></div>
+        <form id="chat-composer" class="chat-composer" hidden aria-busy="false">
+          <div class="chat-composer-row">
+            <textarea id="chat-input" rows="1" placeholder="Ask about the text..." aria-label="Ask about the text"
+              autocomplete="off" disabled></textarea>
+            <button type="submit" id="chat-send" class="btn btn-primary" disabled>Send</button>
+          </div>
+        </form>
+        <div id="git-pane" class="git-pane" hidden>
+          <section class="git-section" aria-label="Branches">
+            <div class="git-section-head">
+              <h2 class="git-section-title">Branches</h2>
+              <button type="button" id="git-new-branch" class="btn btn-tertiary">New branch</button>
+            </div>
+            <div id="git-branch-list" class="git-branch-list" role="list"></div>
+          </section>
+          <section class="git-section" aria-label="History">
+            <div class="git-section-head">
+              <h2 class="git-section-title">History</h2>
+            </div>
+            <div id="git-commit-list" class="git-commit-list" role="list"></div>
+          </section>
+        </div>
+        <div id="draft-list" class="draft-list" role="list"></div>
+      </section>
+    </div>
+    <footer id="statusbar">
+      <span id="status" class="status-left"></span>
+      <span id="meta" class="status-right"></span>
+    </footer>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@isomorphic-git/lightning-fs@4.6.0/dist/lightning-fs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/isomorphic-git@1.27.1/index.umd.min.js"></script>
+  <script src="/static/htmldiff.js"></script>
+  <script src="/static/gitStore.js"></script>
+  <script src="/static/coloris.min.js"></script>
+  <script>
+    Coloris({
+      el: "[data-color-input]",
+      wrap: false,
+      theme: "default",
+      themeMode: "dark",
+      alpha: false,
+      format: "hex",
+      focusInput: false,
+      closeButton: true,
+      closeLabel: "Done",
+    });
+  </script>
+  <script type="module" src="/static/app.js"></script>
+</body>
+
+</html>
