@@ -27,4 +27,7 @@ Prod
 - Build/minify
 - Figure out how to make it work even w/o openai api
 
+Status bar
+- the ui here is a bit of a mess, should prob be STATUS | word/char count | git branch/commit hash --------------- model, model cost
+
 AI generated titles - show titles at top of editor/make sure they are not just one letter

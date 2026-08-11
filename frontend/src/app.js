@@ -16,13 +16,16 @@ import {
   isFormatOnlyConflict,
 } from "./tiptapEditor.js";
 import { importFileToHtml, htmlToExportBlob, EXPORT_FORMATS } from "./pandocConvert.js";
+import { KindredGitStore } from "./gitStore.js";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 
 (() => {
   const DIFF_EQUAL = 0;
   const DIFF_INSERT = 1;
   const DIFF_DELETE = -1;
   const SAVE_DEBOUNCE_MS = 250;
-  const store = window.KindredGitStore;
+  const store = KindredGitStore;
 
   const editor = document.getElementById("editor");
   const toolbarEl = document.getElementById("editor-toolbar");

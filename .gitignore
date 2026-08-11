@@ -4,10 +4,14 @@ venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
-dist/
-build/
+/dist/
+/build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 kindred_responses.log
 .DS_Store
+frontend/node_modules/
+frontend/public/pandoc.wasm
+src/kindred/static/dist/pandoc.wasm
+src/kindred/static/dist/**/*.map

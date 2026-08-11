@@ -1,11 +1,7 @@
-(() => {
-  if (typeof LightningFS === "undefined" || typeof git === "undefined") {
-    console.error("kindred: LightningFS or isomorphic-git failed to load");
-    window.KindredGitStore = null;
-    return;
-  }
+import LightningFS from "@isomorphic-git/lightning-fs";
+import git from "isomorphic-git";
 
-  const VOLUME = "kindred";
+const VOLUME = "kindred";
   const ROOT = "/texts";
   const LEGACY_KEY = "kindred-review:drafts";
   const MIGRATED_KEY = "kindred:drafts-migrated";
@@ -2750,30 +2746,32 @@
     await flush();
   }
 
-  window.KindredGitStore = {
-    init,
-    listDrafts,
-    createDraft,
-    deleteDraft,
-    renameDraft,
-    saveWorkingTree,
-    commitAnalyze,
-    commitWorkingTree,
-    listCommits,
-    readAtCommit,
-    readHead,
-    restoreCommitToWorkingTree,
-    resetToHead,
-    listBranches,
-    currentBranch,
-    createBranch,
-    checkoutBranch,
-    deleteBranch,
-    mergeBranch,
-    isDirty,
-    readWorkingFiles,
-    autoMessage,
-    titleFromText,
-    htmlToPlain: tipTapHtmlToPlain,
-  };
-})();
+const KindredGitStore = {
+  init,
+  listDrafts,
+  createDraft,
+  deleteDraft,
+  renameDraft,
+  saveWorkingTree,
+  commitAnalyze,
+  commitWorkingTree,
+  listCommits,
+  readAtCommit,
+  readHead,
+  restoreCommitToWorkingTree,
+  resetToHead,
+  listBranches,
+  currentBranch,
+  createBranch,
+  checkoutBranch,
+  deleteBranch,
+  mergeBranch,
+  isDirty,
+  readWorkingFiles,
+  autoMessage,
+  titleFromText,
+  htmlToPlain: tipTapHtmlToPlain,
+};
+
+export { KindredGitStore };
+export default KindredGitStore;

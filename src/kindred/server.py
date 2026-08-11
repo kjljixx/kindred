@@ -15,7 +15,7 @@ from kindred.chat import chat_unit
 from kindred.review import DEFAULT_MAX_WORKERS, DEFAULT_MODEL, review
 from kindred.tracing import configure_tracing
 
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_DIR = Path(__file__).resolve().parent / "static" / "dist"
 
 app = FastAPI(title="kindred", docs_url=None, redoc_url=None)
 

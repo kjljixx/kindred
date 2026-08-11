@@ -1,0 +1,37 @@
+{
+  "name": "kindred-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:offline": "npm run vendor:pandoc && vite build",
+    "preview": "vite preview",
+    "vendor:pandoc": "node scripts/vendor-pandoc.mjs"
+  },
+  "dependencies": {
+    "@isomorphic-git/lightning-fs": "^4.6.0",
+    "@tiptap/core": "2.27.2",
+    "@tiptap/extension-color": "2.27.2",
+    "@tiptap/extension-font-family": "2.27.2",
+    "@tiptap/extension-paragraph": "2.27.2",
+    "@tiptap/extension-placeholder": "2.27.2",
+    "@tiptap/extension-text-align": "2.27.2",
+    "@tiptap/extension-text-style": "2.27.2",
+    "@tiptap/extension-underline": "2.27.2",
+    "@tiptap/pm": "2.27.2",
+    "@tiptap/starter-kit": "2.27.2",
+    "dompurify": "^3.2.4",
+    "fflate": "^0.8.2",
+    "isomorphic-git": "^1.27.1",
+    "marked": "^15.0.7",
+    "pandoc-wasm": "^1.1.0"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  },
+  "overrides": {
+    "@tiptap/core": "2.27.2",
+    "@tiptap/pm": "2.27.2"
+  }
+}

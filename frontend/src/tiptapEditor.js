@@ -1,15 +1,14 @@
-import { Editor, Extension, Node as TiptapNode } from "https://esm.sh/@tiptap/core@2.11.7";
-import StarterKit from "https://esm.sh/@tiptap/starter-kit@2.11.7";
-import Paragraph from "https://esm.sh/@tiptap/extension-paragraph@2.11.7";
-import Underline from "https://esm.sh/@tiptap/extension-underline@2.11.7";
-import TextAlign from "https://esm.sh/@tiptap/extension-text-align@2.11.7";
-import TextStyle from "https://esm.sh/@tiptap/extension-text-style@2.11.7";
-import Color from "https://esm.sh/@tiptap/extension-color@2.11.7";
-import FontFamily from "https://esm.sh/@tiptap/extension-font-family@2.11.7";
-import Placeholder from "https://esm.sh/@tiptap/extension-placeholder@2.11.7";
-import { Plugin, PluginKey } from "https://esm.sh/@tiptap/pm@2.11.7/state";
-import { Decoration, DecorationSet } from "https://esm.sh/@tiptap/pm@2.11.7/view";
-// prosemirror-view: Decoration + DecorationSet
+import { Editor, Extension, Node as TiptapNode } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
+import Paragraph from "@tiptap/extension-paragraph";
+import Underline from "@tiptap/extension-underline";
+import TextAlign from "@tiptap/extension-text-align";
+import TextStyle from "@tiptap/extension-text-style";
+import Color from "@tiptap/extension-color";
+import FontFamily from "@tiptap/extension-font-family";
+import Placeholder from "@tiptap/extension-placeholder";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 const keptSelectionKey = new PluginKey("keptSelection");
 

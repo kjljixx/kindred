@@ -1,11 +1,9 @@
-// jsDelivr rejects pandoc.wasm (~59MB uncompressed; 50MB limit). Prefer local
-// static copy, then unpkg (CORS + large files), then official pandoc.org host.
+// Prefer vendored wasm under /static; CDN hosts are fallbacks only.
 const WASM_CANDIDATES = [
   "/static/pandoc.wasm",
   "https://unpkg.com/pandoc-wasm@1.1.0/src/pandoc.wasm",
   "https://pandoc.org/app/pandoc.wasm",
 ];
-const CORE_URL = "https://esm.sh/pandoc-wasm@1.1.0/src/core.js";
 
 /** @type {Promise<{ convert: Function }> | null} */
 let pandocPromise = null;
@@ -165,7 +163,7 @@ export function ensurePandoc() {
   if (!pandocPromise) {
     pandocPromise = (async () => {
       const [{ createPandocInstance }, wasmBinary] = await Promise.all([
-        import(/* @vite-ignore */ CORE_URL),
+        import("pandoc-wasm/src/core.js"),
         fetchWasmBinary(),
       ]);
       return createPandocInstance(wasmBinary);
@@ -246,9 +244,7 @@ async function patchDocxParagraphAlignments(docxBlob, alignments) {
   if (!alignments.length || alignments.every((a) => a === "left")) {
     return docxBlob;
   }
-  const { unzipSync, zipSync, strToU8, strFromU8 } = await import(
-    /* @vite-ignore */ "https://esm.sh/fflate@0.8.2"
-  );
+  const { unzipSync, zipSync, strToU8, strFromU8 } = await import("fflate");
   const files = unzipSync(new Uint8Array(await docxBlob.arrayBuffer()));
   const path = "word/document.xml";
   if (!files[path]) return docxBlob;

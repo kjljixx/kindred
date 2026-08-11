@@ -8,7 +8,26 @@ Local writing-review GUI and CLI. Edit drafts in the browser; Analyze/chat call 
 pip install -e .
 ```
 
-Copy `.env.example` to `.env` and set API keys for whichever LiteLLM provider you use (e.g. `OPENAI_API_KEY`) (Or don't if you don't want to, the doc editor still works fine the analysis/review feature just won't work).
+Copy `.env.example` to `.env` and set API keys for whichever LiteLLM provider you use (e.g. `OPENAI_API_KEY`). The editor works without a key; Analyze/chat need one.
+
+### Frontend (required after UI changes)
+
+Sources live in `frontend/`. Production assets are built into `src/kindred/static/dist/`:
+
+```bash
+cd frontend
+npm ci
+npm run build
+```
+
+Optional offline Pandoc import/export (vendors ~59MB wasm into `public/` then rebuild):
+
+```bash
+npm run vendor:pandoc
+npm run build
+```
+
+Without a local `pandoc.wasm`, import/export falls back to CDN hosts when online.
 
 ## GUI
 
@@ -16,7 +35,7 @@ Copy `.env.example` to `.env` and set API keys for whichever LiteLLM provider yo
 kindred --gui
 ```
 
-Opens http://127.0.0.1:8765/ by default. Drafts and history live in the browser (IndexedDB); no API key is required to edit, import, or export. Analyze and chat need a configured provider key.
+Opens http://127.0.0.1:8765/ by default. Drafts and history live in the browser (IndexedDB).
 
 ## CLI
 

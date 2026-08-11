@@ -598,6 +598,11 @@ button.pane-title {
   color: var(--color-text-subtle);
 }
 
+.tabs-primary .tab {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
 .tabs-primary .tab.btn-secondary {
   background: transparent;
   color: var(--color-text-subtle);
