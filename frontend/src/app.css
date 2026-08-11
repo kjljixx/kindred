@@ -646,6 +646,7 @@ button.pane-title {
 
 .tabs-secondary .tab.active {
   color: var(--color-accent-soft);
+  background-color: var(--neutral-750);
   font-weight: var(--btn-font-weight);
 }
 

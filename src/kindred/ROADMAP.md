@@ -5,6 +5,7 @@ Editor
 - Investigate/Fix Sentence feedback being lost when replacing large amounts of a sentence
 - Investigate/Fix adding new paragraphs breaking some stuff
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
+- Lists & Tables
 
 Settings
 - Setting for the Model - Low
@@ -30,4 +31,7 @@ Prod
 Status bar
 - the ui here is a bit of a mess, should prob be STATUS | word/char count | git branch/commit hash --------------- model, model cost
 
-AI generated titles - show titles at top of editor/make sure they are not just one letter
+AI generated titles - show1 titles at top of editor/make sure they are not just one letter
+
+Syncing
+- Sync to central server
