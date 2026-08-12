@@ -387,8 +387,8 @@ import DOMPurify from "dompurify";
   function formatAnalysisProgress(event) {
     return [
       `analyzing...`,
-      `${event.sentences_done}/${event.sentences_total} sentences`,
-      `${event.paragraphs_done}/${event.paragraphs_total} paragraphs`,
+      `sentences ${event.sentences_done}/${event.sentences_total}`,
+      `paragraphs ${event.paragraphs_done}/${event.paragraphs_total}`,
       `text ${event.text_done}/${event.text_total}`,
     ].join(" · ");
   }

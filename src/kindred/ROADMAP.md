@@ -6,6 +6,7 @@ Editor
 - Investigate/Fix adding new paragraphs breaking some stuff
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
 - Lists & Tables
+- easy restore of deleted text when in diff mode (and also revert added text)
 
 Settings
 - Setting for the Model - Low
@@ -17,16 +18,13 @@ Feedback
 Git
 - Look at git-appraisal implementation for comments (or maybe tiptap comments are possible?)
 - custom commit messages
+- Orphan branches
 
 Keyboard Shortcuts
 - VSCode like keybinds for editor - Ctrl + L to copy sentence, Alt Up/Down to move sentence, etc.
 
 Import/Export
 - From Google Drive
-
-Prod
-- Build/minify
-- Figure out how to make it work even w/o openai api
 
 Status bar
 - the ui here is a bit of a mess, should prob be STATUS | word/char count | git branch/commit hash --------------- model, model cost
