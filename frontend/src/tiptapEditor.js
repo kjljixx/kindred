@@ -645,7 +645,8 @@ function createConflictWidget(seg, index, onAction, conflictMode = "merge") {
     oursBtn.addEventListener("mousedown", click("ours"));
     theirsBtn.addEventListener("mousedown", click("theirs"));
 
-    if (formatOnly) {
+    const eitherEmpty = !stripHtml(seg.ours) || !stripHtml(seg.theirs);
+    if (formatOnly || eitherEmpty) {
       wrap.append(oursBtn, theirsBtn);
       return wrap;
     }

@@ -14,6 +14,7 @@ import {
   joinConflictBoth,
   formatConflictMarkers,
   isFormatOnlyConflict,
+  stripHtml,
   mergeCleanEditsIntoMarked,
 } from "./tiptapEditor.js";
 import { importFileToHtml, htmlToExportBlob, EXPORT_FORMATS } from "./pandocConvert.js";
@@ -1155,6 +1156,7 @@ import DOMPurify from "dompurify";
     }
     if (action === "both") {
       if (isFormatOnlyConflict(seg.ours, seg.theirs)) return;
+      if (!stripHtml(seg.ours) || !stripHtml(seg.theirs)) return;
       replaceConflictAt(index, joinConflictBoth(seg.ours, seg.theirs));
     }
   }
