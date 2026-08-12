@@ -9,6 +9,7 @@ const VOLUME = "kindred";
   const TEXT_FILE = "text.html";
   const TRACKED = [TEXT_FILE, "review.json", "chats.json", "meta.json"];
   const TITLE_FILE = "title.txt";
+  const BRANCH_ACCESS_FILE = "branch-access.json";
   const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 
   const fs = new LightningFS(VOLUME);
@@ -457,6 +458,29 @@ const VOLUME = "kindred";
     return (await readText(`${dir}/${TITLE_FILE}`, "")).trim();
   }
 
+  async function readBranchAccess(dir) {
+    const raw = await readJson(`${dir}/${BRANCH_ACCESS_FILE}`, {});
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const out = {};
+    for (const [name, ts] of Object.entries(raw)) {
+      const n = Number(ts);
+      if (name && Number.isFinite(n) && n > 0) out[name] = n;
+    }
+    return out;
+  }
+
+  async function writeBranchAccess(dir, map) {
+    await writeJson(`${dir}/${BRANCH_ACCESS_FILE}`, map || {});
+  }
+
+  async function touchBranchAccess(dir, name, at = Date.now()) {
+    const ref = String(name || "").trim();
+    if (!ref) return;
+    const map = await readBranchAccess(dir);
+    map[ref] = at;
+    await writeBranchAccess(dir, map);
+  }
+
   async function resolveTitle(dir, text, preferred, customTitle = false) {
     // Pinned titles (explicit rename) win; otherwise always derive from body.
     if (customTitle) {
@@ -692,6 +716,7 @@ const VOLUME = "kindred";
       hasConflict: false,
       pendingMerge: null,
     });
+    await touchBranchAccess(dir, "main", now);
     await flush();
     return readWorkingFiles(id);
   }
@@ -1005,14 +1030,23 @@ const VOLUME = "kindred";
 
   async function listBranches(id) {
     const dir = textDir(id);
+    let names = [];
     try {
-      const branches = await git.listBranches({ fs, dir });
-      if (branches.length) return branches.sort();
+      names = await git.listBranches({ fs, dir });
     } catch {
       /* empty */
     }
-    const cur = await git.currentBranch({ fs, dir, test: true });
-    return cur ? [cur] : ["main"];
+    if (!names.length) {
+      const cur = await git.currentBranch({ fs, dir, test: true });
+      names = cur ? [cur] : ["main"];
+    }
+    const access = await readBranchAccess(dir);
+    return names.slice().sort((a, b) => {
+      const ta = access[a] || 0;
+      const tb = access[b] || 0;
+      if (tb !== ta) return tb - ta;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
   }
 
   async function currentBranch(id) {
@@ -1042,6 +1076,7 @@ const VOLUME = "kindred";
     if (preservedTitle) {
       await writeTitleFile(dir, preservedTitle);
     }
+    await touchBranchAccess(dir, ref);
     if (checkout) {
       await saveWorkingTree(id, {
         activeBranch: ref,
@@ -1064,6 +1099,11 @@ const VOLUME = "kindred";
     const cur = await currentBranch(id);
     const checkout = cur === oldref;
     await git.renameBranch({ fs, dir, oldref, ref, checkout });
+    const access = await readBranchAccess(dir);
+    const prevTs = access[oldref];
+    delete access[oldref];
+    access[ref] = checkout ? Date.now() : prevTs || Date.now();
+    await writeBranchAccess(dir, access);
     if (checkout) {
       await saveWorkingTree(id, { activeBranch: ref });
     }
@@ -1131,6 +1171,7 @@ const VOLUME = "kindred";
     if (preservedTitle) {
       await writeTitleFile(dir, preservedTitle);
     }
+    await touchBranchAccess(dir, ref);
     await saveWorkingTree(id, {
       activeBranch: ref,
       hasConflict: false,
@@ -1146,10 +1187,14 @@ const VOLUME = "kindred";
     const dir = textDir(id);
     const ref = String(name || "").trim();
     if (!ref) throw new Error("Branch name required");
-    if (ref === "main") throw new Error("Cannot delete main");
     const cur = await currentBranch(id);
     if (cur === ref) throw new Error("Cannot delete the current branch");
     await git.deleteBranch({ fs, dir, ref });
+    const access = await readBranchAccess(dir);
+    if (access[ref] != null) {
+      delete access[ref];
+      await writeBranchAccess(dir, access);
+    }
     await flush();
   }
 

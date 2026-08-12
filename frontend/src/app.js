@@ -2063,9 +2063,7 @@ import DOMPurify from "dompurify";
           ? ""
           : `<div class="git-row-actions">` +
             `<button type="button" class="btn btn-tertiary" data-git="merge" data-branch="${escapeHtml(name)}">Merge</button>` +
-            (name === "main"
-              ? ""
-              : `<button type="button" class="draft-item-delete" data-git="delete" data-branch="${escapeHtml(name)}" title="Delete branch" aria-label="Delete branch">×</button>`) +
+            `<button type="button" class="draft-item-delete" data-git="delete" data-branch="${escapeHtml(name)}" title="Delete branch" aria-label="Delete branch">×</button>` +
             `</div>`;
         return (
           `<div class="git-row${current ? " active" : ""}" role="listitem" data-git="checkout" data-branch="${escapeHtml(name)}">` +
@@ -2592,7 +2590,6 @@ import DOMPurify from "dompurify";
   }
 
   async function deleteBranchNamed(name) {
-    if (name === "main") return;
     const ok = window.confirm(`Delete branch “${name}”?`);
     if (!ok) return;
     await store.deleteBranch(activeDraftId, name);

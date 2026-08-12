@@ -252,6 +252,48 @@ class KindredPage:
     merge_btn.click()
     self.wait_for_conflicts()
 
+  def branch_names(self) -> list[str]:
+    rows = self.driver.find_elements(By.CSS_SELECTOR, "#git-branch-list .git-row[data-branch]")
+    return [r.get_attribute("data-branch") or "" for r in rows]
+
+  def branch_has_delete_button(self, name: str) -> bool:
+    row = self.wait.until(
+      EC.presence_of_element_located(
+        (By.CSS_SELECTOR, f'#git-branch-list .git-row[data-branch="{name}"]')
+      )
+    )
+    ActionChains(self.driver).move_to_element(row).perform()
+    return bool(
+      self.driver.find_elements(
+        By.CSS_SELECTOR,
+        f'#git-branch-list button[data-git="delete"][data-branch="{name}"]',
+      )
+    )
+
+  def delete_branch(self, name: str) -> None:
+    row = self.wait.until(
+      EC.presence_of_element_located(
+        (By.CSS_SELECTOR, f'#git-branch-list .git-row[data-branch="{name}"]')
+      )
+    )
+    ActionChains(self.driver).move_to_element(row).perform()
+    btn = self.wait.until(
+      EC.element_to_be_clickable(
+        (
+          By.CSS_SELECTOR,
+          f'#git-branch-list button[data-git="delete"][data-branch="{name}"]',
+        )
+      )
+    )
+    btn.click()
+    alert = self.wait.until(EC.alert_is_present())
+    alert.accept()
+    self.wait.until(
+      lambda d: not d.find_elements(
+        By.CSS_SELECTOR, f'#git-branch-list .git-row[data-branch="{name}"]'
+      )
+    )
+
   def wait_for_conflicts(self) -> None:
     self.wait.until(EC.presence_of_element_located(self.MERGE_CONFLICT))
 
