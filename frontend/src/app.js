@@ -276,6 +276,8 @@ import DOMPurify from "dompurify";
     const hasText = !editorIsEmpty();
     const unresolved = unresolvedMergeConflictCount(currentHtml) > 0;
     const finishMerge = !!(pendingMerge && !unresolved);
+    // Dirty review: Commit stays enabled; unresolved hunks auto-keep Dirty on commit.
+    const blockCommitForConflicts = unresolved && !dirtyReviewing;
     analyzeBtn.hidden = !activeDraftId;
     if (paneMode === "git") {
       analyzeBtn.textContent = pendingMerge ? "Merge" : "Commit";
@@ -285,7 +287,7 @@ import DOMPurify from "dompurify";
         gitBusy ||
         !hasText ||
         isViewingHistory() ||
-        unresolved ||
+        blockCommitForConflicts ||
         (!workingDirty && !finishMerge);
     } else {
       analyzeBtn.textContent = "Analyze";
@@ -2035,7 +2037,8 @@ import DOMPurify from "dompurify";
 
   function setPaneMode(next) {
     if (next !== "review" && next !== "git") return;
-    if (hasConflict) next = "git";
+    // Live branch merges stay pinned to git; dirty review may leave freely.
+    if (hasConflict && !dirtyReviewing) next = "git";
     if (paneMode === next) {
       syncPaneModeTabs();
       return;
@@ -2169,6 +2172,8 @@ import DOMPurify from "dompurify";
       setStatus("Restore this commit before committing.");
       return;
     }
+    // Dirty review: keep Dirty for any unresolved hunks, then commit clean HTML.
+    if (dirtyReviewing) await leaveDirtyReview();
     await flushSaveTimer();
     baseline = currentText;
     const verb = hasConflict || pendingMerge ? "Merge" : "Commit";
@@ -2183,6 +2188,7 @@ import DOMPurify from "dompurify";
     const { oid } = await store.commitWorkingTree(activeDraftId, { verb });
     hasConflict = false;
     pendingMerge = null;
+    dirtyReviewing = false;
     viewingOid = null;
     workingDirty = false;
     await refreshCommits();
@@ -2242,6 +2248,8 @@ import DOMPurify from "dompurify";
   function canOpenImportDialog() {
     if (converting || analyzing || gitBusy || applyingHistory) return false;
     if (isViewingHistory()) return false;
+    // Dirty review allows import (replaces the doc); live merges stay blocked.
+    if (dirtyReviewing) return true;
     if (hasConflict || unresolvedMergeConflictCount(currentHtml) > 0) return false;
     return true;
   }
@@ -2260,10 +2268,13 @@ import DOMPurify from "dompurify";
         suppressEditorUpdate = false;
       }
       pullFromEditor();
+      dirtyReviewing = false;
+      hasConflict = unresolvedMergeConflictCount(currentHtml) > 0;
       await ensureDraftForText(currentText);
       persistActiveDraftSoon();
       syncOverlayFromState();
       syncRightPane();
+      if (paneMode === "git") renderGitPane();
       updateAnalyzeBtn();
       refreshStatusLeft();
       setStatus("");
