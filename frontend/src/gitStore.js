@@ -2981,6 +2981,69 @@ const VOLUME = "kindred";
     await flush();
   }
 
+  function looksBinaryText(text) {
+    if (!text) return false;
+    if (text.includes("\u0000")) return true;
+    let weird = 0;
+    const n = Math.min(text.length, 4096);
+    for (let i = 0; i < n; i++) {
+      const c = text.charCodeAt(i);
+      if (c === 0xfffd || (c < 9) || (c > 13 && c < 32)) weird++;
+    }
+    return weird / n > 0.1;
+  }
+
+  /** Readable LightningFS tree for debugging (text files as strings; binaries summarized). */
+  async function dumpFsTree(rootPath = "/") {
+    async function walk(dir) {
+      const entries = {};
+      let names;
+      try {
+        names = await pfs.readdir(dir);
+      } catch (err) {
+        return { __error: String(err && err.message ? err.message : err) };
+      }
+      names = names.slice().sort();
+      for (const name of names) {
+        const path = dir === "/" ? `/${name}` : `${dir}/${name}`;
+        let st;
+        try {
+          st = await pfs.stat(path);
+        } catch (err) {
+          entries[name] = { __error: String(err && err.message ? err.message : err) };
+          continue;
+        }
+        const isDir = typeof st.isDirectory === "function" ? st.isDirectory() : st.type === "dir";
+        if (isDir) {
+          entries[name] = await walk(path);
+          continue;
+        }
+        try {
+          const text = await pfs.readFile(path, "utf8");
+          if (looksBinaryText(text)) {
+            const buf = await pfs.readFile(path);
+            const size = buf && (buf.byteLength ?? buf.length) || 0;
+            entries[name] = { __binary: true, size };
+          } else {
+            entries[name] = text;
+          }
+        } catch {
+          try {
+            const buf = await pfs.readFile(path);
+            const size = buf && (buf.byteLength ?? buf.length) || 0;
+            entries[name] = { __binary: true, size };
+          } catch (err) {
+            entries[name] = { __error: String(err && err.message ? err.message : err) };
+          }
+        }
+      }
+      return entries;
+    }
+
+    await flush();
+    return { root: rootPath, tree: await walk(rootPath) };
+  }
+
 const KindredGitStore = {
   init,
   listDrafts,
@@ -3007,6 +3070,7 @@ const KindredGitStore = {
   titleFromText,
   htmlToPlain: tipTapHtmlToPlain,
   reviewWorkingTree,
+  dumpFsTree,
 };
 
 export { KindredGitStore };

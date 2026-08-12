@@ -9,6 +9,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+tests/artifacts/
 kindred_responses.log
 .DS_Store
 frontend/node_modules/

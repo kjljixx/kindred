@@ -17,8 +17,18 @@ dependencies = [
   "uvicorn[standard]>=0.30.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "selenium>=4.15",
+]
+
 [project.scripts]
 kindred = "kindred.cli:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kindred"]

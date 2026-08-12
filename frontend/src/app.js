@@ -29,6 +29,9 @@ import DOMPurify from "dompurify";
   const DIFF_DELETE = -1;
   const SAVE_DEBOUNCE_MS = 250;
   const store = KindredGitStore;
+  window.__kindredDebug = {
+    dumpFsTree: (root) => store.dumpFsTree(root),
+  };
 
   const editor = document.getElementById("editor");
   const toolbarEl = document.getElementById("editor-toolbar");
