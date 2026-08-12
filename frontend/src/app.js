@@ -112,6 +112,8 @@ import DOMPurify from "dompurify";
   let workingDirty = false;
   let renamingDraftId = null;
   let renameSource = null; // "header" | "list"
+  /** @type {{ kind: "commit"|"branch", key: string } | null} */
+  let renamingGit = null;
 
   let tipTap = null;
   let suppressEditorUpdate = false;
@@ -825,6 +827,7 @@ import DOMPurify from "dompurify";
     pendingMerge = null;
     dirtyReviewing = false;
     workingDirty = false;
+    renamingGit = null;
     if (!keepHistory) clearHistory();
     suppressEditorUpdate = true;
     rendering = true;
@@ -860,6 +863,7 @@ import DOMPurify from "dompurify";
     activeDraftId = id;
     paneMode = "review";
     viewingOid = null;
+    renamingGit = null;
     const wt = await store.readWorkingFiles(id);
     draftCost = Number(wt.totalCost);
     if (!Number.isFinite(draftCost)) draftCost = 0;
@@ -2050,6 +2054,11 @@ import DOMPurify from "dompurify";
     const branchRows = branches
       .map((name) => {
         const current = name === currentBranchName;
+        const renaming =
+          renamingGit?.kind === "branch" && renamingGit.key === name;
+        const titleHtml = renaming
+          ? `<input class="git-row-title-input" data-git="rename-input" value="${escapeHtml(name)}" aria-label="Branch name" />`
+          : `<span class="git-row-title">${escapeHtml(name)}</span>`;
         const actions = current
           ? ""
           : `<div class="git-row-actions">` +
@@ -2061,7 +2070,7 @@ import DOMPurify from "dompurify";
         return (
           `<div class="git-row${current ? " active" : ""}" role="listitem" data-git="checkout" data-branch="${escapeHtml(name)}">` +
           `<div class="git-row-body">` +
-          `<span class="git-row-title">${escapeHtml(name)}</span>` +
+          titleHtml +
           `</div>${actions}</div>`
         );
       })
@@ -2096,6 +2105,11 @@ import DOMPurify from "dompurify";
           const head = c.oid === headOid ? " · head" : "";
           const msg = (c.message || "").split("\n")[0];
           const isHead = c.oid === headOid;
+          const renaming =
+            renamingGit?.kind === "commit" && renamingGit.key === c.oid;
+          const titleHtml = renaming
+            ? `<input class="git-row-title-input" data-git="rename-input" value="${escapeHtml(msg)}" aria-label="Commit message" />`
+            : `<span class="git-row-title">${escapeHtml(msg)}</span>`;
           const actions = isHead
             ? `<div class="git-row-actions">` +
               `<button type="button" class="btn btn-tertiary" data-git="reset"${gitBusy ? " disabled" : ""}>Reset</button>` +
@@ -2106,7 +2120,7 @@ import DOMPurify from "dompurify";
           return (
             `<div class="git-row${active}" role="listitem" data-git="view" data-oid="${escapeHtml(c.oid)}">` +
             `<div class="git-row-body">` +
-            `<span class="git-row-title">${escapeHtml(msg)}</span>` +
+            titleHtml +
             `<span class="git-row-meta">${escapeHtml(shortOid(c.oid))}${head} · ${escapeHtml(formatDraftTime(c.timestamp))}</span>` +
             `</div>${actions}</div>`
           );
@@ -2115,6 +2129,18 @@ import DOMPurify from "dompurify";
       gitCommitList.innerHTML = dirtyRow + commitRows;
     }
     gitNewBranchBtn.disabled = gitBusy || !commits.length;
+
+    if (renamingGit) {
+      const sel =
+        renamingGit.kind === "branch"
+          ? `#git-branch-list .git-row[data-branch="${CSS.escape(renamingGit.key)}"] .git-row-title-input`
+          : `#git-commit-list .git-row[data-oid="${CSS.escape(renamingGit.key)}"] .git-row-title-input`;
+      const input = gitPane.querySelector(sel);
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }
   }
 
   async function runGit(fn) {
@@ -2148,7 +2174,7 @@ import DOMPurify from "dompurify";
       setStatus("Nothing to commit");
       return;
     }
-    await store.commitWorkingTree(activeDraftId, { verb });
+    const { oid } = await store.commitWorkingTree(activeDraftId, { verb });
     hasConflict = false;
     pendingMerge = null;
     viewingOid = null;
@@ -2158,7 +2184,7 @@ import DOMPurify from "dompurify";
     loadSnapshotState(wt, { historical: false });
     setStatus("");
     await refreshDraftList();
-    renderGitPane();
+    renamingGit = { kind: "commit", key: oid };
     updateAnalyzeBtn();
   }
 
@@ -2479,17 +2505,65 @@ import DOMPurify from "dompurify";
     tipTap?.commands.focus();
   }
 
-  async function createBranchPrompt() {
-    const name = window.prompt("New branch name");
-    if (!name || !name.trim()) return;
-    await store.createBranch(activeDraftId, name.trim(), { checkout: true });
+  async function createBranchAuto() {
+    const name = store.nextSequentialName("branch", branches);
+    await store.createBranch(activeDraftId, name, { checkout: true });
     viewingOid = null;
     await refreshCommits();
     const wt = await store.readWorkingFiles(activeDraftId);
     loadSnapshotState(wt, { historical: false });
     await refreshDraftList();
+    renamingGit = { kind: "branch", key: name };
+    await refreshWorkingDirty();
+  }
+
+  function startGitRename(kind, key) {
+    if (!key) return;
+    if (kind === "commit" && key !== headOid) return;
+    renamingGit = { kind, key };
+    renderGitPane();
+  }
+
+  async function finishGitRename(value, { cancel = false } = {}) {
+    const current = renamingGit;
+    if (!current) return;
+    renamingGit = null;
+    const trimmed = String(value ?? "").trim();
+    if (cancel || !trimmed) {
+      renderGitPane();
+      return;
+    }
+    try {
+      if (current.kind === "commit") {
+        if (current.key !== headOid) {
+          renderGitPane();
+          return;
+        }
+        const head = commits.find((c) => c.oid === current.key);
+        const prevMsg = (head?.message || "").split("\n")[0];
+        if (trimmed !== prevMsg) {
+          const { oid, previousOid } = await store.amendCommitMessage(
+            activeDraftId,
+            trimmed
+          );
+          if (viewingOid === previousOid) viewingOid = oid;
+          await refreshCommits();
+        }
+      } else if (current.kind === "branch") {
+        if (trimmed !== current.key) {
+          await store.renameBranch(activeDraftId, current.key, trimmed);
+          await refreshCommits();
+          await refreshDraftList();
+        }
+      }
+    } catch (err) {
+      setStatus(String(err.message || err), "danger");
+      await refreshCommits();
+      await refreshDraftList();
+    }
     renderGitPane();
     await refreshWorkingDirty();
+    refreshStatusLeft();
   }
 
   async function mergeIntoCurrent(name) {
@@ -2617,15 +2691,17 @@ import DOMPurify from "dompurify";
   }
 
   gitNewBranchBtn.addEventListener("click", () => {
-    runGit(createBranchPrompt);
+    runGit(createBranchAuto);
   });
 
   gitPane.addEventListener("click", (e) => {
+    if (e.target.closest(".git-row-title-input")) return;
     const actionEl = e.target.closest("[data-git]");
     if (!actionEl || !gitPane.contains(actionEl)) return;
     const action = actionEl.dataset.git;
     e.preventDefault();
     e.stopPropagation();
+    if (action === "rename-input") return;
     if (action === "checkout") {
       runGit(() => switchBranch(actionEl.dataset.branch));
     } else if (action === "merge") {
@@ -2647,6 +2723,47 @@ import DOMPurify from "dompurify";
     } else if (action === "reset") {
       runGit(resetToHeadCommit);
     }
+  });
+
+  gitPane.addEventListener("contextmenu", (e) => {
+    if (e.target.closest(".git-row-title-input")) return;
+    if (e.target.closest(".git-row-actions")) return;
+    const branchRow = e.target.closest("#git-branch-list .git-row[data-branch]");
+    if (branchRow) {
+      e.preventDefault();
+      startGitRename("branch", branchRow.dataset.branch);
+      return;
+    }
+    const commitRow = e.target.closest('#git-commit-list .git-row[data-git="view"]');
+    if (commitRow && commitRow.dataset.oid === headOid) {
+      e.preventDefault();
+      startGitRename("commit", commitRow.dataset.oid);
+    }
+  });
+
+  gitPane.addEventListener("keydown", (e) => {
+    const input = e.target.closest(".git-row-title-input");
+    if (!input) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      finishGitRename(input.value);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      finishGitRename(input.value, { cancel: true });
+    }
+  });
+
+  gitPane.addEventListener("focusout", (e) => {
+    const input = e.target.closest(".git-row-title-input");
+    if (!input || !renamingGit) return;
+    setTimeout(() => {
+      // Ignore remounts: renderGitPane destroys the focused input and focusout would
+      // clear renamingGit even though a new rename input was just focused.
+      if (!renamingGit || !input.isConnected) return;
+      if (document.activeElement !== input) {
+        finishGitRename(input.value);
+      }
+    }, 0);
   });
 
   feedbackEl.addEventListener("click", (e) => {

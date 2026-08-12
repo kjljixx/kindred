@@ -19,8 +19,8 @@ Feedback
 
 Git
 - Look at git-appraisal implementation for comments (or maybe tiptap comments are possible?)
-- custom commit messages - IMPL: commit button still one-click, but after commit the commit name is selected/highlighted so you can type a new one and hit enter to amend commit name. Also right clicking the head commit should select the commit name and allow you to amend
 - Make Ctrl+Y/Z work in merge conflict resolution
+- Sort branches somehow other than alphabetically
 - Staging
 
 Keyboard Shortcuts

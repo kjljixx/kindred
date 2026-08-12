@@ -429,7 +429,8 @@ button.pane-title {
   cursor: pointer;
 }
 
-.draft-item:hover {
+.draft-item:hover,
+.draft-item:focus-within {
   background: var(--color-bg-raised);
 }
 
@@ -451,9 +452,10 @@ button.pane-title {
   text-overflow: ellipsis;
 }
 
-.draft-item-title-input {
+.draft-item-title-input,
+.git-row-title-input {
   display: block;
-  width: 100%;
+  width: 80%;
   margin: 0;
   padding: 0;
   border: none;
@@ -1419,7 +1421,8 @@ button.pane-title {
   cursor: pointer;
 }
 
-.git-row:hover {
+.git-row:hover,
+.git-row:focus-within {
   background: var(--color-bg-raised);
 }
 

@@ -36,6 +36,16 @@ const VOLUME = "kindred";
     return `${verb} on ${formatStamp(date)}`;
   }
 
+  /** `base`, then `base2`, `base3`, … skipping names already in `existing`. */
+  function nextSequentialName(base, existing) {
+    const names = new Set(existing || []);
+    const root = String(base || "").trim() || "branch";
+    if (!names.has(root)) return root;
+    let n = 2;
+    while (names.has(`${root}${n}`)) n += 1;
+    return `${root}${n}`;
+  }
+
   function asPlain(value) {
     return String(value ?? "").replace(/\u00a0/g, " ");
   }
@@ -827,6 +837,26 @@ const VOLUME = "kindred";
     return { oid, state: await readWorkingFiles(id) };
   }
 
+  /** Replace HEAD commit message only (same tree/parents; ignores dirty WT). */
+  async function amendCommitMessage(id, message) {
+    const dir = textDir(id);
+    const msg = String(message ?? "").trim();
+    if (!msg) throw new Error("Commit message required");
+    if (!(await hasHead(dir))) throw new Error("No commits to amend");
+    const headOid = await git.resolveRef({ fs, dir, ref: "HEAD" });
+    const { commit } = await git.readCommit({ fs, dir, oid: headOid });
+    const oid = await git.commit({
+      fs,
+      dir,
+      message: msg,
+      author: AUTHOR,
+      amend: true,
+      tree: commit.tree,
+    });
+    await flush();
+    return { oid, previousOid: headOid, state: await readWorkingFiles(id) };
+  }
+
   async function listCommits(id, branch) {
     const dir = textDir(id);
     const ref =
@@ -1018,6 +1048,24 @@ const VOLUME = "kindred";
         customTitle: preservedCustom,
         ...(preservedCustom && preservedTitle ? { title: preservedTitle } : {}),
       });
+    }
+    await flush();
+    return ref;
+  }
+
+  async function renameBranch(id, oldName, newName) {
+    const dir = textDir(id);
+    const oldref = String(oldName || "").trim();
+    const ref = String(newName || "").trim();
+    if (!oldref || !ref) throw new Error("Branch name required");
+    if (oldref === ref) return ref;
+    const existing = await listBranches(id);
+    if (existing.includes(ref)) throw new Error(`Branch “${ref}” already exists`);
+    const cur = await currentBranch(id);
+    const checkout = cur === oldref;
+    await git.renameBranch({ fs, dir, oldref, ref, checkout });
+    if (checkout) {
+      await saveWorkingTree(id, { activeBranch: ref });
     }
     await flush();
     return ref;
@@ -3070,12 +3118,15 @@ const KindredGitStore = {
   listBranches,
   currentBranch,
   createBranch,
+  renameBranch,
   checkoutBranch,
   deleteBranch,
   mergeBranch,
+  amendCommitMessage,
   isDirty,
   readWorkingFiles,
   autoMessage,
+  nextSequentialName,
   titleFromText,
   htmlToPlain: tipTapHtmlToPlain,
   reviewWorkingTree,

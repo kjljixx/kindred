@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from selenium.common.exceptions import NoAlertPresentException, TimeoutException
+from selenium.common.exceptions import (
+  NoAlertPresentException,
+  NoSuchElementException,
+  StaleElementReferenceException,
+  TimeoutException,
+)
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -174,13 +179,32 @@ class KindredPage:
       lambda d: len(d.find_elements(By.CSS_SELECTOR, '#git-commit-list .git-row[data-git="view"]'))
       > before
     )
+    # Dismiss post-commit message rename so later actions aren't blocked
+    try:
+      inp = self.driver.find_element(By.CSS_SELECTOR, "#git-commit-list .git-row-title-input")
+      inp.send_keys(Keys.ESCAPE)
+    except NoSuchElementException:
+      pass
 
   def create_branch(self, name: str) -> None:
     btn = self.wait.until(EC.element_to_be_clickable(self.GIT_NEW_BRANCH))
     btn.click()
-    alert = self.wait.until(EC.alert_is_present())
-    alert.send_keys(name)
-    alert.accept()
+    sel = "#git-branch-list .git-row.active .git-row-title-input"
+    self.wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, sel)))
+    # Avoid clear(): it can blur to body and cancel inline rename (empty finish).
+    last_err: Exception | None = None
+    for _ in range(3):
+      try:
+        inp = self.driver.find_element(By.CSS_SELECTOR, sel)
+        inp.send_keys(Keys.CONTROL + "a")
+        inp.send_keys(name)
+        inp.send_keys(Keys.ENTER)
+        last_err = None
+        break
+      except StaleElementReferenceException as err:
+        last_err = err
+    if last_err is not None:
+      raise last_err
     self.wait.until(
       lambda d: d.find_element(
         By.CSS_SELECTOR, "#git-branch-list .git-row.active .git-row-title"

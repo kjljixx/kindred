@@ -1,1 +1,2 @@
 - Right-Clicking a draft in the "Drafts" pane allows you to rename that draft without entering it
+- Similarly, right-clicking a head commit and right-clicking a branch name allows you to rename it
