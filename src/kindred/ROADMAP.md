@@ -15,7 +15,6 @@ Settings
 
 Feedback
 - Streaming feedback - Low
-- Improve the prompt given - it kinda sucks rn
 - Allow it to see merge stuff 
 - Rename pane to "Chat"
 - Allow chats to still be used even if not analyzed yet.
@@ -32,6 +31,7 @@ Keyboard Shortcuts
 Import/Export
 - From Google Drive
 - From HTML of a website
+- Allow raw imports (e.g. import html as raw)
 
 Status bar
 - the ui here is a bit of a mess, should prob be STATUS | word/char count | git branch/commit hash --------------- model, model cost
