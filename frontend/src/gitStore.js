@@ -40,6 +40,15 @@ const VOLUME = "kindred";
     return String(value ?? "").replace(/\u00a0/g, " ");
   }
 
+  /** Decode entities in HTML *source* text chunks (not DOM textContent). */
+  function decodeHtmlEntities(text) {
+    const s = String(text ?? "");
+    if (!s.includes("&")) return s;
+    const el = document.createElement("textarea");
+    el.innerHTML = s;
+    return el.value;
+  }
+
   /** Escape plain text (incl. literal "<em>") into TipTap paragraph HTML. */
   function plainTextToHtml(text) {
     const escaped = String(text ?? "")
@@ -1538,7 +1547,7 @@ const VOLUME = "kindred";
       const chunk = m[0];
       if (chunk.startsWith("<!--")) continue;
       if (chunk[0] !== "<") {
-        plain += asPlain(chunk.replace(/\u00a0/g, " "));
+        plain += asPlain(decodeHtmlEntities(chunk.replace(/\u00a0/g, " ")));
         continue;
       }
       const close = /^<\/\s*([a-zA-Z0-9]+)/i.exec(chunk);
