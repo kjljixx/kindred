@@ -16,6 +16,9 @@ Settings
 Feedback
 - Streaming feedback - Low
 - Improve the prompt given - it kinda sucks rn
+- Allow it to see merge stuff 
+- Rename pane to "Chat"
+- Allow chats to still be used even if not analyzed yet.
 
 Git
 - Look at git-appraisal implementation for comments (or maybe tiptap comments are possible?)
@@ -32,6 +35,7 @@ Import/Export
 
 Status bar
 - the ui here is a bit of a mess, should prob be STATUS | word/char count | git branch/commit hash --------------- model, model cost
+- Show ephemeral error when user tries to trigger an analysis during review/merge mode
 
 AI generated titles - show1 titles at top of editor/make sure they are not just one letter
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from selenium.common.exceptions import (
   NoAlertPresentException,
   NoSuchElementException,
@@ -15,6 +17,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 DEFAULT_TIMEOUT = 15
 
+_STATUS_COUNTS_RE = re.compile(
+  r"^(?P<words>\d+)\s+words?\s+·\s+(?P<chars>\d+)\s+chars?",
+  re.IGNORECASE,
+)
+
 
 class KindredPage:
   """UI helpers for the Kindred GUI. Extend with actions/assertions as tests grow."""
@@ -24,12 +31,18 @@ class KindredPage:
   DRAFTS_HEADING = (By.ID, "drafts-heading")
   HOME_BTN = (By.ID, "home-btn")
   ANALYZE_BTN = (By.ID, "analyze-btn")
+  DRAFT_HEADER_TITLE = (By.ID, "draft-header-title")
+  DRAFT_HEADER_TITLE_INPUT = (By.ID, "draft-header-title-input")
+  STATUS = (By.ID, "status")
   PANE_MODE_CLUSTER = (By.ID, "pane-mode-cluster")
   GIT_TAB = (By.CSS_SELECTOR, '#pane-mode-cluster .tab[data-pane="git"]')
   GIT_PANE = (By.ID, "git-pane")
   GIT_NEW_BRANCH = (By.ID, "git-new-branch")
   GIT_BRANCH_LIST = (By.ID, "git-branch-list")
   GIT_COMMIT_LIST = (By.ID, "git-commit-list")
+  GIT_COMMIT_ROWS = (By.CSS_SELECTOR, '#git-commit-list .git-row[data-git="view"]')
+  DIRTY_TEXT_BTN = (By.CSS_SELECTOR, '#git-dirty-modes [data-git="dirty-text"]')
+  DIRTY_REVIEW_BTN = (By.CSS_SELECTOR, '#git-dirty-modes [data-git="dirty-review"]')
   MERGE_CONFLICT = (By.CSS_SELECTOR, "#editor .merge-conflict")
   CONFLICT_OURS = (By.CSS_SELECTOR, "#editor .merge-conflict-btn.merge-conflict-ours")
   CONFLICT_THEIRS = (By.CSS_SELECTOR, "#editor .merge-conflict-btn.merge-conflict-theirs")
@@ -91,7 +104,61 @@ class KindredPage:
     )
 
   def status_text(self) -> str:
-    return (self.driver.find_element(By.ID, "status").text or "").replace("\xa0", " ")
+    return (self.driver.find_element(*self.STATUS).text or "").replace("\xa0", " ")
+
+  def header_title(self) -> str:
+    el = self.driver.find_element(*self.DRAFT_HEADER_TITLE)
+    if el.get_attribute("hidden") is not None:
+      return ""
+    return (el.text or "").replace("\xa0", " ").strip()
+
+  def rename_header_title(self, name: str) -> None:
+    btn = self.wait.until(EC.element_to_be_clickable(self.DRAFT_HEADER_TITLE))
+    btn.click()
+    inp = self.wait.until(EC.visibility_of_element_located(self.DRAFT_HEADER_TITLE_INPUT))
+    inp.send_keys(Keys.CONTROL + "a")
+    inp.send_keys(name)
+    inp.send_keys(Keys.ENTER)
+    self.wait.until(EC.invisibility_of_element_located(self.DRAFT_HEADER_TITLE_INPUT))
+    self.wait.until(lambda d: self.header_title() == name)
+
+  def word_char_counts(self) -> tuple[int, int]:
+    text = self.status_text()
+    m = _STATUS_COUNTS_RE.match(text)
+    if not m:
+      raise AssertionError(f"could not parse word/char counts from status: {text!r}")
+    return int(m.group("words")), int(m.group("chars"))
+
+  def wait_until_status_contains(self, needle: str) -> None:
+    self.wait.until(lambda d: needle in self.status_text())
+
+  def wait_until_word_char_counts(self, words: int, chars: int) -> None:
+    self.wait.until(lambda d: self.word_char_counts() == (words, chars))
+
+  def wait_until_header_title(self, title: str) -> None:
+    self.wait.until(lambda d: self.header_title() == title)
+
+  def replace_editor_text(self, text: str) -> None:
+    """Select all editor content and paste replacement plain text."""
+    self.press_keys(Keys.CONTROL + "a")
+    self.paste_text(text)
+
+  def view_commit_at(self, index: int) -> None:
+    """Click a commit row. List is newest-first (0 = newest)."""
+    self.wait.until(lambda d: len(d.find_elements(*self.GIT_COMMIT_ROWS)) > index)
+    rows = self.driver.find_elements(*self.GIT_COMMIT_ROWS)
+    rows[index].click()
+    self.wait_until_status_contains("viewing old commit")
+
+  def exit_to_dirty_text(self) -> None:
+    btn = self.wait.until(EC.element_to_be_clickable(self.DIRTY_TEXT_BTN))
+    btn.click()
+    self.wait.until(lambda d: "viewing old commit" not in self.status_text())
+
+  def enter_dirty_review(self) -> None:
+    btn = self.wait.until(EC.element_to_be_clickable(self.DIRTY_REVIEW_BTN))
+    btn.click()
+    self.wait_for_conflicts()
 
   def has_merge_conflict_ui(self) -> bool:
     return bool(self.driver.find_elements(*self.MERGE_CONFLICT))

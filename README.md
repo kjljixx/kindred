@@ -46,6 +46,8 @@ kindred path/to/draft.md -m human   # answer each unit yourself in the terminal
 
 Useful flags: `--model` / `-m`, `--workers` / `-w`, `--out` / `-o`, `--host`, `--port`, `--no-browser`.
 
+See HELP.md for general website usage instructions
+
 ## Notes
 
 - Default model is `openai/gpt-5.6-luna` (override with `-m` or the request body in the GUI).

@@ -29,9 +29,6 @@ import DOMPurify from "dompurify";
   const DIFF_DELETE = -1;
   const SAVE_DEBOUNCE_MS = 250;
   const store = KindredGitStore;
-  window.__kindredDebug = {
-    dumpFsTree: (root) => store.dumpFsTree(root),
-  };
 
   const editor = document.getElementById("editor");
   const toolbarEl = document.getElementById("editor-toolbar");
@@ -257,6 +254,32 @@ import DOMPurify from "dompurify";
     return !(currentText || "").trim();
   }
 
+  /** True when there is exportable WT/base body (conflict views omit sides from plain text). */
+  function hasExportableBody() {
+    if ((dirtyText || "").trim()) return true;
+    if ((dirtyHtml || "").trim() && dirtyHtml !== "<p></p>") return true;
+    if (unresolvedMergeConflictCount(currentHtml) > 0) {
+      const side = dirtyReviewing
+        ? htmlTakingTheirs(currentHtml)
+        : htmlTakingOurs(currentHtml);
+      const plain = store ? store.htmlToPlain(side) : "";
+      return !!(plain || "").trim();
+    }
+    return !editorIsEmpty();
+  }
+
+  /**
+   * Clean HTML for export (never conflict protocol).
+   * Dirty review → working-tree (theirs); live merge → base branch (ours).
+   */
+  function htmlForExport() {
+    const html = currentHtml || "<p></p>";
+    if (unresolvedMergeConflictCount(html) > 0) {
+      return dirtyReviewing ? htmlTakingTheirs(html) : htmlTakingOurs(html);
+    }
+    return dirtyHtml || html;
+  }
+
   function setExportMenuOpen(open) {
     const next = !!open && !exportMenuBtn.disabled && !exportControls.hidden;
     exportMenu.hidden = !next;
@@ -265,9 +288,8 @@ import DOMPurify from "dompurify";
   }
 
   function updateExportBtn() {
-    const hasText = !editorIsEmpty();
     const exportDisabled =
-      converting || analyzing || gitBusy || !hasText || isViewingHistory();
+      converting || analyzing || gitBusy || !hasExportableBody() || isViewingHistory();
     importBtn.hidden = !activeDraftId;
     exportControls.hidden = !activeDraftId;
     importBtn.disabled = !canOpenImportDialog();
@@ -295,8 +317,14 @@ import DOMPurify from "dompurify";
         (!workingDirty && !finishMerge);
     } else {
       analyzeBtn.textContent = "Analyze";
+      // Live merges: view feedback only — no new analysis.
       analyzeBtn.disabled =
-        analyzing || converting || gitBusy || !hasText || isViewingHistory();
+        analyzing ||
+        converting ||
+        gitBusy ||
+        !hasText ||
+        isViewingHistory() ||
+        !!pendingMerge;
     }
     updateExportBtn();
   }
@@ -373,21 +401,26 @@ import DOMPurify from "dompurify";
     });
   }
 
-  function htmlTakingTheirs(sourceHtml) {
+  /** Resolve conflict HTML to one side (ours = base branch, theirs = incoming/dirty). */
+  function htmlTakingSide(sourceHtml, side) {
+    const takeTheirs = side === "theirs";
     const segments = parseConflictSegments(sourceHtml);
     let html = sourceHtml;
     if (segments) {
       const parts = [];
       for (const seg of segments) {
         if (seg.type === "text") parts.push(seg.text);
-        else parts.push(seg.theirs);
+        else parts.push(takeTheirs ? seg.theirs : seg.ours);
       }
       html = parts.join("");
     }
+    const alignAttr = takeTheirs
+      ? "data-kindred-align-theirs"
+      : "data-kindred-align-ours";
     html = String(html || "").replace(/<p\b([^>]*)>/gi, (full, attrs) => {
-      if (!/\bdata-kindred-align-theirs\s*=/i.test(attrs)) return full;
+      if (!/\bdata-kindred-align-(?:ours|theirs)\s*=/i.test(attrs)) return full;
       const m = attrs.match(
-        /\bdata-kindred-align-theirs\s*=\s*(["'])([\s\S]*?)\1/i
+        new RegExp(`\\b${alignAttr}\\s*=\\s*(["'])([\\s\\S]*?)\\1`, "i")
       );
       const align = (m && m[2]) || "left";
       let next = attrs.replace(
@@ -411,12 +444,21 @@ import DOMPurify from "dompurify";
     return html || "<p></p>";
   }
 
+  function htmlTakingOurs(sourceHtml) {
+    return htmlTakingSide(sourceHtml, "ours");
+  }
+
+  function htmlTakingTheirs(sourceHtml) {
+    return htmlTakingSide(sourceHtml, "theirs");
+  }
+
   /** Keep auto-title/counts on WT body; skip while viewing history. */
   function syncDirtyBodyFromCurrent() {
     if (isViewingHistory()) return;
     let html = currentHtml || "<p></p>";
-    if (dirtyReviewing && unresolvedMergeConflictCount(html) > 0) {
-      html = htmlTakingTheirs(html);
+    if (unresolvedMergeConflictCount(html) > 0) {
+      // Dirty review → working tree (theirs). Live merge → base branch (ours).
+      html = dirtyReviewing ? htmlTakingTheirs(html) : htmlTakingOurs(html);
       dirtyHtml = html;
       dirtyText = store.htmlToPlain(html);
       return;
@@ -1106,9 +1148,6 @@ import DOMPurify from "dompurify";
 
   async function setDirtyEditView(mode) {
     if (mode !== "Text" && mode !== "Diff") return;
-    // #region agent log
-    fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'D',location:'app.js:setDirtyEditView',message:'setDirtyEditView entry',data:{mode,viewingOid:!!viewingOid,dirtyReviewing,dirtyViewMode},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (viewingOid) await exitToDirty();
     if (dirtyReviewing) await leaveDirtyReview();
     dirtyViewMode = mode;
@@ -1117,9 +1156,6 @@ import DOMPurify from "dompurify";
   }
 
   async function enterDirtyReview() {
-    // #region agent log
-    fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'A',location:'app.js:enterDirtyReview:entry',message:'enterDirtyReview entry',data:{hasDraft:!!activeDraftId,hasStore:!!store,viewingHistory:isViewingHistory(),viewingOid:viewingOid||null,pendingMerge:!!pendingMerge,dirtyReviewing,hasConflict,headOid:!!headOid,unresolved:unresolvedMergeConflictCount(currentHtml)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (!activeDraftId || !store) return;
     if (isViewingHistory()) await exitToDirty();
     if (pendingMerge) return;
@@ -1129,9 +1165,6 @@ import DOMPurify from "dompurify";
     await flushSaveTimer();
     pullFromEditor();
     const dirty = await store.isDirty(activeDraftId);
-    // #region agent log
-    fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'C',location:'app.js:enterDirtyReview:dirtyCheck',message:'isDirty result',data:{dirty},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (!dirty) return;
     const head = await store.readHead(activeDraftId);
     if (!head) return;
@@ -1141,9 +1174,6 @@ import DOMPurify from "dompurify";
       currentHtml,
       currentBranchName || "HEAD"
     );
-    // #region agent log
-    fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'C',location:'app.js:enterDirtyReview:mergeResult',message:'reviewWorkingTree result',data:{cleanMerge:!!result.cleanMerge,hasMerged:!!result.mergedText},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (result.cleanMerge) return;
     currentHtml = result.mergedText || "<p></p>";
     hasConflict = true;
@@ -1587,6 +1617,8 @@ import DOMPurify from "dompurify";
 
   function canChatScope(scope) {
     if (!result || chatBusy || analyzing) return false;
+    // Live merges: browse existing feedback, but don't create new chats.
+    if (pendingMerge) return false;
     if (scope === "text") return true;
     if (scope === "sentence") return !!activeSentence;
     if (scope === "paragraph") return !!activeParagraph;
@@ -1637,7 +1669,12 @@ import DOMPurify from "dompurify";
   }
 
   function syncChatComposer() {
-    const showGlobal = !!(result && mode === "global" && paneMode !== "git");
+    const showGlobal = !!(
+      result &&
+      mode === "global" &&
+      paneMode !== "git" &&
+      !pendingMerge
+    );
     chatComposer.hidden = !showGlobal;
     if (showGlobal) {
       syncComposerControls(chatComposer, chatInput, chatSend, "text");
@@ -1710,6 +1747,7 @@ import DOMPurify from "dompurify";
   }
 
   function renderUnitComposer(scope, index) {
+    if (pendingMerge) return "";
     const enabled = canChatScope(scope);
     const placeholder = chatPlaceholder(scope);
     const draft = escapeHtml(chatDrafts[scope] || "");
@@ -2072,8 +2110,6 @@ import DOMPurify from "dompurify";
 
   function setPaneMode(next) {
     if (next !== "review" && next !== "git") return;
-    // Live branch merges stay pinned to git; dirty review may leave freely.
-    if (hasConflict && !dirtyReviewing) next = "git";
     if (paneMode === next) {
       syncPaneModeTabs();
       return;
@@ -2283,9 +2319,7 @@ import DOMPurify from "dompurify";
   function canOpenImportDialog() {
     if (converting || analyzing || gitBusy || applyingHistory) return false;
     if (isViewingHistory()) return false;
-    // Dirty review allows import (replaces the doc); live merges stay blocked.
-    if (dirtyReviewing) return true;
-    if (hasConflict || unresolvedMergeConflictCount(currentHtml) > 0) return false;
+    // Import replaces the doc (allowed during dirty review and live merges).
     return true;
   }
 
@@ -2295,6 +2329,15 @@ import DOMPurify from "dompurify";
     updateAnalyzeBtn();
     setStatus("importing...");
     try {
+      if (pendingMerge && activeDraftId && store) {
+        await flushSaveTimer();
+        await store.resetToHead(activeDraftId);
+        viewingOid = null;
+        hasConflict = false;
+        pendingMerge = null;
+        dirtyReviewing = false;
+        await refreshCommits();
+      }
       const html = stripKindredProtocol(await importFileToHtml(file));
       suppressEditorUpdate = true;
       try {
@@ -2302,18 +2345,22 @@ import DOMPurify from "dompurify";
       } finally {
         suppressEditorUpdate = false;
       }
-      pullFromEditor();
+      // Replace buffer outright — pullFromEditor would merge into stale conflict markers.
+      currentHtml = html || "<p></p>";
+      currentText = getPlain(tipTap);
       dirtyReviewing = false;
       hasConflict = unresolvedMergeConflictCount(currentHtml) > 0;
+      pendingMerge = null;
       syncDirtyBodyFromCurrent();
       await ensureDraftForText(currentText);
-      persistActiveDraftSoon();
+      await persistActiveDraftNow();
       syncOverlayFromState();
       syncRightPane();
       if (paneMode === "git") renderGitPane();
       updateAnalyzeBtn();
       refreshStatusLeft();
       syncHeaderTitle();
+      await refreshWorkingDirty();
       setStatus("");
     } catch (err) {
       console.error(err);
@@ -2331,7 +2378,7 @@ import DOMPurify from "dompurify";
   }
 
   editor.addEventListener("dblclick", (e) => {
-    if (!editorIsEmpty() || !canOpenImportDialog()) return;
+    if (hasExportableBody() || !canOpenImportDialog()) return;
     e.preventDefault();
     openImportDialog();
   });
@@ -2348,7 +2395,7 @@ import DOMPurify from "dompurify";
   });
 
   async function exportDraft(formatId = "docx") {
-    if (exportBtn.disabled || editorIsEmpty()) return;
+    if (exportBtn.disabled) return;
     setExportMenuOpen(false);
     converting = true;
     updateAnalyzeBtn();
@@ -2356,11 +2403,18 @@ import DOMPurify from "dompurify";
     try {
       pullFromEditor();
       syncDirtyBodyFromCurrent();
+      const exportHtml = htmlForExport();
+      const exportPlain = store.htmlToPlain(exportHtml);
+      if (!(exportPlain || "").trim() && exportHtml === "<p></p>") {
+        setStatus("Nothing to export.", "warn");
+        return;
+      }
       const base = sanitizeDownloadBase(
-        activeDraftDisplayTitle() || store.titleFromText(dirtyHtml || dirtyText || ""),
+        activeDraftDisplayTitle() ||
+          store.titleFromText(exportHtml || dirtyHtml || dirtyText || ""),
       );
       const { blob, format } = await htmlToExportBlob(
-        currentHtml || "<p></p>",
+        exportHtml,
         formatId || "docx",
       );
       downloadBlob(blob, `${base}.${format.ext}`);
@@ -2449,6 +2503,10 @@ import DOMPurify from "dompurify";
   }
 
   async function analyze() {
+    if (pendingMerge) {
+      setStatus("Finish the merge before analyzing.", "warn");
+      return;
+    }
     if (isViewingHistory()) {
       setStatus("Return to the latest commit before analyzing.");
       return;
@@ -2765,19 +2823,10 @@ import DOMPurify from "dompurify";
     } else if (action === "dirty") {
       runGit(exitToDirty);
     } else if (action === "dirty-text") {
-      // #region agent log
-      fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'B',location:'app.js:gitClick',message:'dirty mode click',data:{action,viewingOid:viewingOid||null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       runGit(() => setDirtyEditView("Text"));
     } else if (action === "dirty-diff") {
-      // #region agent log
-      fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'B',location:'app.js:gitClick',message:'dirty mode click',data:{action,viewingOid:viewingOid||null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       runGit(() => setDirtyEditView("Diff"));
     } else if (action === "dirty-review") {
-      // #region agent log
-      fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'B',location:'app.js:gitClick',message:'dirty mode click',data:{action,viewingOid:viewingOid||null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       runGit(enterDirtyReview);
     } else if (action === "view") {
       runGit(() => viewCommitOid(actionEl.dataset.oid));
