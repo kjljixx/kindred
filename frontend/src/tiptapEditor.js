@@ -562,7 +562,7 @@ function createDeleteWidget(text) {
   };
 }
 
-function createConflictWidget(seg, index, onAction) {
+function createConflictWidget(seg, index, onAction, conflictMode = "merge") {
   return () => {
     const wrap = document.createElement("span");
     wrap.className = "merge-conflict";
@@ -572,6 +572,7 @@ function createConflictWidget(seg, index, onAction) {
     wrap.dataset.theirsLabel = seg.theirsLabel;
 
     const formatOnly = isFormatOnlyConflict(seg.ours, seg.theirs);
+    const review = conflictMode === "review";
 
     const oursBtn = document.createElement("button");
     oursBtn.type = "button";
@@ -584,7 +585,7 @@ function createConflictWidget(seg, index, onAction) {
     const theirsBtn = document.createElement("button");
     theirsBtn.type = "button";
     theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
-    theirsBtn.title = "Keep Theirs";
+    theirsBtn.title = review ? "Keep Dirty" : "Keep Theirs";
     fillConflictBtn(theirsBtn, seg.theirs);
     theirsBtn.dataset.conflictAction = "theirs";
     theirsBtn.dataset.conflictIndex = String(index);
@@ -616,7 +617,7 @@ function createConflictWidget(seg, index, onAction) {
   };
 }
 
-function createAlignConflictWidget(attrs, paraPos, onAction) {
+function createAlignConflictWidget(attrs, paraPos, onAction, conflictMode = "merge") {
   return (view) => {
     const wrap = document.createElement("span");
     wrap.className = "merge-conflict merge-align-conflict";
@@ -624,6 +625,7 @@ function createAlignConflictWidget(attrs, paraPos, onAction) {
 
     const oursAlign = attrs.alignOurs || "left";
     const theirsAlign = attrs.alignTheirs || "left";
+    const review = conflictMode === "review";
 
     const oursBtn = document.createElement("button");
     oursBtn.type = "button";
@@ -634,7 +636,7 @@ function createAlignConflictWidget(attrs, paraPos, onAction) {
     const theirsBtn = document.createElement("button");
     theirsBtn.type = "button";
     theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
-    theirsBtn.title = "Keep Incoming alignment";
+    theirsBtn.title = review ? "Keep Dirty alignment" : "Keep Incoming alignment";
     theirsBtn.innerHTML = alignPillContent(theirsAlign);
 
     const setPreview = (align, side) => {
@@ -673,17 +675,28 @@ function createAlignConflictWidget(attrs, paraPos, onAction) {
   };
 }
 
-function appendAlignConflictDecorations(doc, decorations, onAlignConflictAction, alignPreview) {
+function appendAlignConflictDecorations(
+  doc,
+  decorations,
+  onAlignConflictAction,
+  alignPreview,
+  conflictMode = "merge"
+) {
   doc.descendants((node, pos) => {
     if (node.type.name !== "paragraph") return;
     if (!node.attrs.alignOurs || !node.attrs.alignTheirs) return;
     decorations.push(
       Decoration.widget(
         pos,
-        createAlignConflictWidget(node.attrs, pos, onAlignConflictAction),
+        createAlignConflictWidget(
+          node.attrs,
+          pos,
+          onAlignConflictAction,
+          conflictMode
+        ),
         {
           side: -1,
-          key: `align-${pos}:${node.attrs.alignOurs}|${node.attrs.alignTheirs}`,
+          key: `align-${pos}:${conflictMode}:${node.attrs.alignOurs}|${node.attrs.alignTheirs}`,
         }
       )
     );
@@ -709,6 +722,7 @@ function appendAlignConflictDecorations(doc, decorations, onAlignConflictAction,
 function buildOverlayDecorations(doc, meta, diffsFn) {
   const decorations = [];
   if (!meta) return DecorationSet.empty;
+  const conflictMode = meta.conflictMode === "review" ? "review" : "merge";
 
   if (meta.conflicts && meta.conflicts.length) {
     let ci = 0;
@@ -719,10 +733,10 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
         decorations.push(
           Decoration.widget(
             pos,
-            createConflictWidget(seg, ci, meta.onConflictAction),
+            createConflictWidget(seg, ci, meta.onConflictAction, conflictMode),
             {
               side: 0,
-              key: `conflict-${ci}:${String(seg.ours || "").slice(0, 40)}|${String(seg.theirs || "").slice(0, 40)}`,
+              key: `conflict-${ci}:${conflictMode}:${String(seg.ours || "").slice(0, 40)}|${String(seg.theirs || "").slice(0, 40)}`,
             }
           )
         );
@@ -733,7 +747,8 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
       doc,
       decorations,
       meta.onAlignConflictAction,
-      meta.alignPreview
+      meta.alignPreview,
+      conflictMode
     );
     return DecorationSet.create(doc, decorations);
   }
@@ -742,7 +757,8 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     doc,
     decorations,
     meta.onAlignConflictAction,
-    meta.alignPreview
+    meta.alignPreview,
+    conflictMode
   );
 
   const baseline = meta.baseline || "";
@@ -881,6 +897,7 @@ const KindredOverlay = Extension.create({
               highlight: null,
               conflicts: null,
               markedHtml: "",
+              conflictMode: "merge",
               alignPreview: null,
               decorations: DecorationSet.empty,
             };
@@ -896,6 +913,7 @@ const KindredOverlay = Extension.create({
                 highlight: next.highlight,
                 conflicts: next.conflicts,
                 markedHtml: next.markedHtml,
+                conflictMode: next.conflictMode,
               });
             }
             if (meta?.type === "alignPreview") {
@@ -909,6 +927,7 @@ const KindredOverlay = Extension.create({
                   currentPlain: next.currentPlain,
                   highlight: next.highlight,
                   conflicts: next.conflicts,
+                  conflictMode: next.conflictMode,
                   alignPreview: next.alignPreview,
                   onConflictAction: extension.options.onConflictAction,
                   onAlignConflictAction: extension.options.onAlignConflictAction,
@@ -1256,6 +1275,7 @@ export function refreshOverlay(editor, {
   currentPlain = "",
   highlight = null,
   markedHtml = "",
+  conflictMode = "merge",
 } = {}) {
   if (!editor) return;
   const conflicts = parseConflictSegments(markedHtml);
@@ -1265,6 +1285,7 @@ export function refreshOverlay(editor, {
     highlight: conflicts ? null : highlight,
     conflicts,
     markedHtml: conflicts ? markedHtml : "",
+    conflictMode: conflictMode === "review" ? "review" : "merge",
   });
 }
 

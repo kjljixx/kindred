@@ -17,8 +17,9 @@ Feedback
 Git
 - Look at git-appraisal implementation for comments (or maybe tiptap comments are possible?)
 - custom commit messages
-- Dirty should have 2 modes: 1) Edit mode 2) review mode; edit mode has 2 submodes; text view and diff view; review mode brings up the merge resolution UI for the current dirty changes
+- Dirty should have 2 modes: 1) Edit mode 2) review mode; edit mode has 2 submodes; text view and diff view; review mode brings up the merge resolution UI for the current dirty changes _(Review button + merge UI done; full Edit|Review chrome later)_
 - Make Ctrl+Y/Z work in merge conflict resolution
+- Staging
 
 Keyboard Shortcuts
 - VSCode like keybinds for editor - Ctrl + L to copy sentence, Alt Up/Down to move sentence, etc.

@@ -1709,7 +1709,14 @@ const VOLUME = "kindred";
     return plains.map((p, i) => ({ plain: p, align: aligns[i] || "left" }));
   }
 
-  function threeWayAlignDecision(baseAlign, oursBlock, theirsBlock, labelOurs, labelTheirs) {
+  function threeWayAlignDecision(
+    baseAlign,
+    oursBlock,
+    theirsBlock,
+    labelOurs,
+    labelTheirs,
+    review = false
+  ) {
     const b = baseAlign || "left";
     const o = (oursBlock && oursBlock.align) || "left";
     const t = (theirsBlock && theirsBlock.align) || "left";
@@ -1723,20 +1730,20 @@ const VOLUME = "kindred";
       decision.align = o;
       return decision;
     }
+    if (review || (o !== b && t !== b)) {
+      decision.conflict = true;
+      decision.align = o;
+      decision.oursAlign = o;
+      decision.theirsAlign = t;
+      decision.labelOurs = labelOurs;
+      decision.labelTheirs = labelTheirs;
+      return decision;
+    }
     if (o === b) {
       decision.align = t;
       return decision;
     }
-    if (t === b) {
-      decision.align = o;
-      return decision;
-    }
-    decision.conflict = true;
     decision.align = o;
-    decision.oursAlign = o;
-    decision.theirsAlign = t;
-    decision.labelOurs = labelOurs;
-    decision.labelTheirs = labelTheirs;
     return decision;
   }
 
@@ -1750,7 +1757,14 @@ const VOLUME = "kindred";
   }
 
   /** Pair ours/theirs paragraphs via sequence diff; 3-way resolve text-align. */
-  function matchParagraphAlignDecisions(baseDoc, oursDoc, theirsDoc, labelOurs, labelTheirs) {
+  function matchParagraphAlignDecisions(
+    baseDoc,
+    oursDoc,
+    theirsDoc,
+    labelOurs,
+    labelTheirs,
+    review = false
+  ) {
     const base = blocksFromDoc(baseDoc);
     const ours = blocksFromDoc(oursDoc);
     const theirs = blocksFromDoc(theirsDoc);
@@ -1763,7 +1777,8 @@ const VOLUME = "kindred";
           o,
           theirs[i],
           labelOurs,
-          labelTheirs
+          labelTheirs,
+          review
         )
       );
     }
@@ -1775,7 +1790,8 @@ const VOLUME = "kindred";
           o,
           theirs[i],
           labelOurs,
-          labelTheirs
+          labelTheirs,
+          review
         )
       );
     }
@@ -1800,7 +1816,8 @@ const VOLUME = "kindred";
               o,
               t,
               labelOurs,
-              labelTheirs
+              labelTheirs,
+              review
             )
           );
         }
@@ -1818,7 +1835,8 @@ const VOLUME = "kindred";
               o,
               t,
               labelOurs,
-              labelTheirs
+              labelTheirs,
+              review
             )
           );
         }
@@ -1886,14 +1904,16 @@ const VOLUME = "kindred";
     segments,
     cleanMerge,
     labelOurs,
-    labelTheirs
+    labelTheirs,
+    review = false
   ) {
     const decisions = matchParagraphAlignDecisions(
       baseDoc,
       oursDoc,
       theirsDoc,
       labelOurs,
-      labelTheirs
+      labelTheirs,
+      review
     );
     const alignMeta = alignMetaForSegments(segments, decisions);
     const anyAlignConflict = alignMeta.some((m) => m && m.conflict);
@@ -2062,12 +2082,22 @@ const VOLUME = "kindred";
   }
 
   /** Plain-text 3-way merge: orthogonal union + exclusive format-only conflicts. */
-  function mergeText(baseText, oursText, theirsText, labelOurs, labelTheirs) {
+  function mergeText(
+    baseText,
+    oursText,
+    theirsText,
+    labelOurs,
+    labelTheirs,
+    options = {}
+  ) {
+    const review = !!options.review;
     const baseHtml = baseText ?? "";
     const oursHtml = oursText ?? "";
     const theirsHtml = theirsText ?? "";
     if (oursHtml === theirsHtml) return { cleanMerge: true, mergedText: oursHtml };
-    if (oursHtml === baseHtml) return { cleanMerge: true, mergedText: theirsHtml };
+    if (!review && oursHtml === baseHtml) {
+      return { cleanMerge: true, mergedText: theirsHtml };
+    }
     if (theirsHtml === baseHtml) return { cleanMerge: true, mergedText: oursHtml };
 
     const baseDoc = htmlToPlainAndMarks(baseHtml);
@@ -2092,7 +2122,8 @@ const VOLUME = "kindred";
         result.segments,
         result.cleanMerge,
         labelOurs,
-        labelTheirs
+        labelTheirs,
+        review
       );
     }
 
@@ -2152,6 +2183,40 @@ const VOLUME = "kindred";
       }
     }
 
+    function oursSliceForBaseRange(baseLo, baseHi) {
+      const [c0, c1] = tokenCharRange(baseTok, baseLo, baseHi);
+      const basePlain = baseDoc.plain.slice(c0, c1);
+      const o0 = oMap[baseLo];
+      const o1 = oMap[baseHi];
+      if (oursDoc.plain.slice(o0, o1) === basePlain) {
+        return {
+          plain: oursDoc.plain.slice(o0, o1),
+          marks: clipMarks(oursDoc.marks, o0, o1),
+        };
+      }
+      return {
+        plain: basePlain,
+        marks: clipMarks(baseDoc.marks, c0, c1),
+      };
+    }
+
+    function pushReviewConflict(oursSlice, theirsSlice) {
+      if (
+        !(oursSlice.plain || (oursSlice.marks && oursSlice.marks.length)) &&
+        !(theirsSlice.plain || (theirsSlice.marks && theirsSlice.marks.length))
+      ) {
+        return;
+      }
+      cleanMerge = false;
+      segments.push({
+        type: "conflict",
+        labelOurs,
+        labelTheirs,
+        ours: oursSlice,
+        theirs: theirsSlice,
+      });
+    }
+
     while (ai < aReps.length || bi < bReps.length) {
       const a = aReps[ai];
       const b = bReps[bi];
@@ -2189,8 +2254,12 @@ const VOLUME = "kindred";
         continue;
       }
       if (onlyB) {
-        const slice = sliceDoc(theirsDoc, theirsTok, b.sideLo, b.sideHi);
-        pushText(slice.plain, slice.marks);
+        const theirsSlice = sliceDoc(theirsDoc, theirsTok, b.sideLo, b.sideHi);
+        if (review) {
+          pushReviewConflict(oursSliceForBaseRange(b.baseLo, b.baseHi), theirsSlice);
+        } else {
+          pushText(theirsSlice.plain, theirsSlice.marks);
+        }
         pos = b.baseHi;
         bi++;
         continue;
@@ -2326,7 +2395,7 @@ const VOLUME = "kindred";
           );
         }
       } else if (!sawA) {
-        const slice = sliceForOut(
+        const theirsSlice = sliceForOut(
           theirsDoc,
           theirsTok,
           tMap,
@@ -2336,7 +2405,11 @@ const VOLUME = "kindred";
           bSideHi,
           bOut
         );
-        pushText(slice.plain, slice.marks);
+        if (review) {
+          pushReviewConflict(oursSliceForBaseRange(clusterLo, clusterHi), theirsSlice);
+        } else {
+          pushText(theirsSlice.plain, theirsSlice.marks);
+        }
       } else if (!sawB) {
         const slice = sliceForOut(
           oursDoc,
@@ -2407,7 +2480,20 @@ const VOLUME = "kindred";
       segments,
       cleanMerge,
       labelOurs,
-      labelTheirs
+      labelTheirs,
+      review
+    );
+  }
+
+  /** Force every HEAD↔dirty delta into merge-conflict markers (no pendingMerge). */
+  function reviewWorkingTree(headHtml, dirtyHtml, labelOurs = "HEAD") {
+    return mergeText(
+      headHtml || "",
+      headHtml || "",
+      dirtyHtml || "",
+      labelOurs || "HEAD",
+      "dirty",
+      { review: true }
     );
   }
 
@@ -2791,6 +2877,7 @@ const KindredGitStore = {
   autoMessage,
   titleFromText,
   htmlToPlain: tipTapHtmlToPlain,
+  reviewWorkingTree,
 };
 
 export { KindredGitStore };

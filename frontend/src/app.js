@@ -96,7 +96,8 @@ import DOMPurify from "dompurify";
   let viewingOid = null;
   let headOid = null;
   let headPlain = "";
-  let dirtyViewMode = "Text"; // "diff" | "text"
+  let dirtyViewMode = "Text"; // "Diff" | "Text"
+  let dirtyReviewing = false;
   let currentBranchName = "main";
   let branches = [];
   let hasConflict = false;
@@ -111,8 +112,10 @@ import DOMPurify from "dompurify";
 
   function syncOverlayFromState() {
     if (!tipTap) return;
-    const marked = hasConflict || conflictMarkerCount(currentHtml) > 0 ? currentHtml : "";
+    const marked =
+      unresolvedMergeConflictCount(currentHtml) > 0 ? currentHtml : "";
     const viewing = isViewingHistory();
+    const conflictMode = dirtyReviewing ? "review" : "merge";
     const wasSuppressed = suppressEditorUpdate;
     suppressEditorUpdate = true;
     try {
@@ -122,6 +125,7 @@ import DOMPurify from "dompurify";
           currentPlain: "",
           highlight: null,
           markedHtml: marked,
+          conflictMode,
         });
       } else if (viewing) {
         // History view diffs vs previous commit; analysis spans use a different baseline.
@@ -130,6 +134,7 @@ import DOMPurify from "dompurify";
           currentPlain: currentText,
           highlight: null,
           markedHtml: "",
+          conflictMode,
         });
       } else if (dirtyViewMode === "Diff") {
         refreshOverlay(tipTap, {
@@ -137,6 +142,7 @@ import DOMPurify from "dompurify";
           currentPlain: currentText,
           highlight: null,
           markedHtml: "",
+          conflictMode,
         });
       } else {
         // text: empty both so whole-doc is not painted as insert
@@ -145,6 +151,7 @@ import DOMPurify from "dompurify";
           currentPlain: "",
           highlight: null,
           markedHtml: "",
+          conflictMode,
         });
       }
     } finally {
@@ -259,7 +266,7 @@ import DOMPurify from "dompurify";
     const finishMerge = !!(pendingMerge && !unresolved);
     analyzeBtn.hidden = !activeDraftId;
     if (paneMode === "git") {
-      analyzeBtn.textContent = pendingMerge || unresolved ? "Merge" : "Commit";
+      analyzeBtn.textContent = pendingMerge ? "Merge" : "Commit";
       analyzeBtn.disabled =
         analyzing ||
         converting ||
@@ -555,6 +562,7 @@ import DOMPurify from "dompurify";
     branches = ["main"];
     hasConflict = false;
     pendingMerge = null;
+    dirtyReviewing = false;
     workingDirty = !!(text || "").trim();
     paneMode = "review";
     await refreshDraftList();
@@ -707,7 +715,7 @@ import DOMPurify from "dompurify";
     try {
       const hasMarkers = conflictMarkerCount(currentHtml) > 0;
       const unresolved =
-        hasConflict || hasMarkers || htmlHasAlignConflict(currentHtml);
+        hasMarkers || htmlHasAlignConflict(currentHtml);
       // Drop stale conflict widgets before setContent so index-0 is not rebound to old sides.
       if (tipTap) {
         refreshOverlay(tipTap, {
@@ -760,10 +768,12 @@ import DOMPurify from "dompurify";
       // Merge bookkeeping is working-tree only; never adopt it from old commits.
       hasConflict = false;
       pendingMerge = null;
+      dirtyReviewing = false;
     } else {
       hasConflict =
         !!snap.hasConflict || unresolvedMergeConflictCount(currentHtml) > 0;
       pendingMerge = snap.pendingMerge || null;
+      dirtyReviewing = hasConflict && !pendingMerge;
     }
     activeSentence = null;
     activeParagraph = null;
@@ -805,6 +815,7 @@ import DOMPurify from "dompurify";
     branches = [];
     hasConflict = false;
     pendingMerge = null;
+    dirtyReviewing = false;
     workingDirty = false;
     if (!keepHistory) clearHistory();
     suppressEditorUpdate = true;
@@ -976,6 +987,19 @@ import DOMPurify from "dompurify";
   function syncMergeStatus() {
     const unresolved = unresolvedMergeConflictCount(currentHtml) > 0;
     hasConflict = unresolved;
+    if (dirtyReviewing && !pendingMerge) {
+      if (
+        statusLevel === "warn" &&
+        /merge conflict|conflicts resolved/i.test(statusMessage)
+      ) {
+        setStatus("");
+      }
+      if (!unresolved) {
+        dirtyReviewing = false;
+        if (paneMode === "git") renderGitPane();
+      }
+      return;
+    }
     if (unresolved) {
       setStatus("merge conflict; choose a resolution for each change", "warn");
     } else if (pendingMerge) {
@@ -985,11 +1009,125 @@ import DOMPurify from "dompurify";
     }
   }
 
-  /** True for a live merge (markers, unresolved flag, or pending finish-merge). */
-  function isActiveMerge({ pendingMerge: pending, hasConflict: conflict, text }) {
-    if (unresolvedMergeConflictCount(text || "") > 0) return true;
-    if (conflict) return true;
+  /** True for a live branch merge (pendingMerge), not dirty review. */
+  function isActiveMerge({ pendingMerge: pending }) {
     return !!pending;
+  }
+
+  function takeAllTheirsConflicts() {
+    const segments = parseConflictSegments(currentHtml);
+    let html = currentHtml;
+    if (segments) {
+      const parts = [];
+      for (const seg of segments) {
+        if (seg.type === "text") parts.push(seg.text);
+        else parts.push(seg.theirs);
+      }
+      html = parts.join("");
+    }
+    html = String(html || "").replace(/<p\b([^>]*)>/gi, (full, attrs) => {
+      if (!/\bdata-kindred-align-theirs\s*=/i.test(attrs)) return full;
+      const m = attrs.match(
+        /\bdata-kindred-align-theirs\s*=\s*(["'])([\s\S]*?)\1/i
+      );
+      const align = (m && m[2]) || "left";
+      let next = attrs.replace(
+        /\s*data-kindred-align-(?:ours|theirs|label-ours|label-theirs)\s*=\s*(["'])[\s\S]*?\1/gi,
+        ""
+      );
+      if (/\bstyle\s*=/i.test(next)) {
+        next = next.replace(/\bstyle\s*=\s*(["'])([\s\S]*?)\1/i, (_, q, style) => {
+          let s = String(style)
+            .replace(/(?:^|;)\s*text-align\s*:\s*[^;]*/i, "")
+            .replace(/^;\s*|\s*;$/g, "")
+            .trim();
+          s = s ? `${s}; text-align: ${align}` : `text-align: ${align}`;
+          return `style=${q}${s}${q}`;
+        });
+      } else {
+        next = ` style="text-align: ${align}"${next}`;
+      }
+      return `<p${next}>`;
+    });
+    currentHtml = html || "<p></p>";
+  }
+
+  async function leaveDirtyReview() {
+    if (!dirtyReviewing) return;
+    if (unresolvedMergeConflictCount(currentHtml) > 0) {
+      takeAllTheirsConflicts();
+      workingDirty = true;
+      applyRevisionToEditor();
+    }
+    dirtyReviewing = false;
+    hasConflict = unresolvedMergeConflictCount(currentHtml) > 0;
+    persistActiveDraftSoon();
+    await refreshWorkingDirty();
+  }
+
+  async function setDirtyEditView(mode) {
+    if (mode !== "Text" && mode !== "Diff") return;
+    if (dirtyReviewing) await leaveDirtyReview();
+    dirtyViewMode = mode;
+    renderGitPane();
+    if (viewingOid) {
+      await exitToDirty();
+    } else {
+      syncOverlayFromState();
+    }
+  }
+
+  async function enterDirtyReview() {
+    if (!activeDraftId || !store) return;
+    if (isViewingHistory()) {
+      setStatus("Restore or exit history before reviewing");
+      return;
+    }
+    if (pendingMerge) {
+      setStatus("Finish or abort the merge before reviewing dirty changes");
+      return;
+    }
+    if (dirtyReviewing) return;
+    if (unresolvedMergeConflictCount(currentHtml) > 0) {
+      setStatus("Resolve existing conflicts before reviewing dirty changes");
+      return;
+    }
+    if (!headOid) {
+      setStatus("Commit once before reviewing dirty changes");
+      return;
+    }
+    await flushSaveTimer();
+    pullFromEditor();
+    const dirty = await store.isDirty(activeDraftId);
+    if (!dirty) {
+      setStatus("Nothing to review");
+      return;
+    }
+    const head = await store.readHead(activeDraftId);
+    if (!head) {
+      setStatus("Nothing to review");
+      return;
+    }
+    const headHtml = head.html || head.text || "";
+    const result = store.reviewWorkingTree(
+      headHtml,
+      currentHtml,
+      currentBranchName || "HEAD"
+    );
+    if (result.cleanMerge) {
+      setStatus("Nothing to review");
+      return;
+    }
+    currentHtml = result.mergedText || "<p></p>";
+    hasConflict = true;
+    dirtyReviewing = true;
+    workingDirty = true;
+    applyRevisionToEditor();
+    syncMergeStatus();
+    refreshStatusLeft();
+    updateAnalyzeBtn();
+    persistActiveDraftSoon();
+    renderGitPane();
   }
 
   function replaceConflictAt(index, replacement) {
@@ -1952,13 +2090,20 @@ import DOMPurify from "dompurify";
       gitCommitList.innerHTML = `<p class="git-empty">No commits yet. Analyze or Commit to create one.</p>`;
     } else {
       const atDirty = !viewingOid;
+      const dirtyTextActive = atDirty && !dirtyReviewing && dirtyViewMode === "Text";
+      const dirtyDiffActive = atDirty && !dirtyReviewing && dirtyViewMode === "Diff";
+      const dirtyReviewActive = atDirty && dirtyReviewing;
+      const dirtyBtn = (label, action, active) =>
+        `<button type="button" class="btn btn-tertiary${active ? " is-active" : ""}" data-git="${action}" aria-pressed="${active ? "true" : "false"}"${gitBusy ? " disabled" : ""}>${label}</button>`;
       const dirtyRow =
         `<div class="git-row git-row-dirty${atDirty ? " active" : ""}" role="listitem" data-git="dirty">` +
         `<div class="git-row-body">` +
         `<span class="git-row-title">dirty</span>` +
         `</div>` +
         `<div class="git-row-actions">` +
-        `<button type="button" class="btn btn-tertiary" data-git="dirty-mode"${gitBusy ? " disabled" : ""}>View ${dirtyViewMode === "Text" ? "diff" : "text"}</button>` +
+        dirtyBtn("Text", "dirty-text", dirtyTextActive) +
+        dirtyBtn("Diff", "dirty-diff", dirtyDiffActive) +
+        dirtyBtn("Review", "dirty-review", dirtyReviewActive) +
         `</div></div>`;
       const commitRows = commits
         .slice()
@@ -2505,14 +2650,12 @@ import DOMPurify from "dompurify";
       runGit(() => deleteBranchNamed(actionEl.dataset.branch));
     } else if (action === "dirty") {
       runGit(exitToDirty);
-    } else if (action === "dirty-mode") {
-      dirtyViewMode = dirtyViewMode === "Diff" ? "Text" : "Diff";
-      renderGitPane();
-      if (viewingOid) {
-        runGit(exitToDirty);
-      } else {
-        syncOverlayFromState();
-      }
+    } else if (action === "dirty-text") {
+      runGit(() => setDirtyEditView("Text"));
+    } else if (action === "dirty-diff") {
+      runGit(() => setDirtyEditView("Diff"));
+    } else if (action === "dirty-review") {
+      runGit(enterDirtyReview);
     } else if (action === "view") {
       runGit(() => viewCommitOid(actionEl.dataset.oid));
     } else if (action === "restore") {

@@ -1467,6 +1467,10 @@ button.pane-title {
   pointer-events: auto;
 }
 
+.git-row-actions .btn-tertiary.is-active {
+  color: var(--btn-tertiary-fg-hover);
+}
+
 .git-empty {
   color: var(--color-text-muted);
   margin: var(--space-2) var(--space-5);
