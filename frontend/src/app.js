@@ -76,6 +76,9 @@ import DOMPurify from "dompurify";
   let baseline = "";
   let currentText = "";
   let currentHtml = "";
+  /** Working-tree body for auto-title + counts (not history / review markup). */
+  let dirtyHtml = "";
+  let dirtyText = "";
   let result = null;
   let mode = "global";
   let paneMode = "review";
@@ -221,6 +224,7 @@ import DOMPurify from "dompurify";
         return;
       }
       pullFromEditor();
+      syncDirtyBodyFromCurrent();
       if (pendingMerge || hasConflict || htmlHasAlignConflict(currentHtml)) syncMergeStatus();
       refreshStatusLeft();
       workingDirty = true;
@@ -369,8 +373,60 @@ import DOMPurify from "dompurify";
     });
   }
 
+  function htmlTakingTheirs(sourceHtml) {
+    const segments = parseConflictSegments(sourceHtml);
+    let html = sourceHtml;
+    if (segments) {
+      const parts = [];
+      for (const seg of segments) {
+        if (seg.type === "text") parts.push(seg.text);
+        else parts.push(seg.theirs);
+      }
+      html = parts.join("");
+    }
+    html = String(html || "").replace(/<p\b([^>]*)>/gi, (full, attrs) => {
+      if (!/\bdata-kindred-align-theirs\s*=/i.test(attrs)) return full;
+      const m = attrs.match(
+        /\bdata-kindred-align-theirs\s*=\s*(["'])([\s\S]*?)\1/i
+      );
+      const align = (m && m[2]) || "left";
+      let next = attrs.replace(
+        /\s*data-kindred-align-(?:ours|theirs|label-ours|label-theirs)\s*=\s*(["'])[\s\S]*?\1/gi,
+        ""
+      );
+      if (/\bstyle\s*=/i.test(next)) {
+        next = next.replace(/\bstyle\s*=\s*(["'])([\s\S]*?)\1/i, (_, q, style) => {
+          let s = String(style)
+            .replace(/(?:^|;)\s*text-align\s*:\s*[^;]*/i, "")
+            .replace(/^;\s*|\s*;$/g, "")
+            .trim();
+          s = s ? `${s}; text-align: ${align}` : `text-align: ${align}`;
+          return `style=${q}${s}${q}`;
+        });
+      } else {
+        next = ` style="text-align: ${align}"${next}`;
+      }
+      return `<p${next}>`;
+    });
+    return html || "<p></p>";
+  }
+
+  /** Keep auto-title/counts on WT body; skip while viewing history. */
+  function syncDirtyBodyFromCurrent() {
+    if (isViewingHistory()) return;
+    let html = currentHtml || "<p></p>";
+    if (dirtyReviewing && unresolvedMergeConflictCount(html) > 0) {
+      html = htmlTakingTheirs(html);
+      dirtyHtml = html;
+      dirtyText = store.htmlToPlain(html);
+      return;
+    }
+    dirtyHtml = html;
+    dirtyText = currentText || store.htmlToPlain(html);
+  }
+
   function refreshStatusLeft() {
-    const { words, chars, sentences, paragraphs } = countStats(currentText);
+    const { words, chars, sentences, paragraphs } = countStats(dirtyText);
     const counts = [
       pluralize(words, "word"),
       pluralize(chars, "char"),
@@ -459,7 +515,7 @@ import DOMPurify from "dompurify";
     const draft = findDraft(activeDraftId);
     if (draft?.customTitle) return draftTitle(draft);
     return (
-      store.titleFromText(currentHtml || currentText || "") ||
+      store.titleFromText(dirtyHtml || dirtyText || "") ||
       (draft ? draftTitle(draft) : "")
     );
   }
@@ -797,10 +853,12 @@ import DOMPurify from "dompurify";
     syncScopeTabSelection();
     clearHistory();
     applyRevisionToEditor();
+    if (!historical) syncDirtyBodyFromCurrent();
     setEditorEditable(!historical);
     updateMeta();
     syncMergeStatus();
     refreshStatusLeft();
+    syncHeaderTitle();
     updateAnalyzeBtn();
     syncRightPane();
   }
@@ -843,6 +901,7 @@ import DOMPurify from "dompurify";
       rendering = false;
       suppressEditorUpdate = false;
     }
+    syncDirtyBodyFromCurrent();
     setEditorEditable(true);
     updateMeta();
     setStatus("");
@@ -1026,41 +1085,7 @@ import DOMPurify from "dompurify";
   }
 
   function takeAllTheirsConflicts() {
-    const segments = parseConflictSegments(currentHtml);
-    let html = currentHtml;
-    if (segments) {
-      const parts = [];
-      for (const seg of segments) {
-        if (seg.type === "text") parts.push(seg.text);
-        else parts.push(seg.theirs);
-      }
-      html = parts.join("");
-    }
-    html = String(html || "").replace(/<p\b([^>]*)>/gi, (full, attrs) => {
-      if (!/\bdata-kindred-align-theirs\s*=/i.test(attrs)) return full;
-      const m = attrs.match(
-        /\bdata-kindred-align-theirs\s*=\s*(["'])([\s\S]*?)\1/i
-      );
-      const align = (m && m[2]) || "left";
-      let next = attrs.replace(
-        /\s*data-kindred-align-(?:ours|theirs|label-ours|label-theirs)\s*=\s*(["'])[\s\S]*?\1/gi,
-        ""
-      );
-      if (/\bstyle\s*=/i.test(next)) {
-        next = next.replace(/\bstyle\s*=\s*(["'])([\s\S]*?)\1/i, (_, q, style) => {
-          let s = String(style)
-            .replace(/(?:^|;)\s*text-align\s*:\s*[^;]*/i, "")
-            .replace(/^;\s*|\s*;$/g, "")
-            .trim();
-          s = s ? `${s}; text-align: ${align}` : `text-align: ${align}`;
-          return `style=${q}${s}${q}`;
-        });
-      } else {
-        next = ` style="text-align: ${align}"${next}`;
-      }
-      return `<p${next}>`;
-    });
-    currentHtml = html || "<p></p>";
+    currentHtml = htmlTakingTheirs(currentHtml);
   }
 
   async function leaveDirtyReview() {
@@ -1072,6 +1097,9 @@ import DOMPurify from "dompurify";
     }
     dirtyReviewing = false;
     hasConflict = unresolvedMergeConflictCount(currentHtml) > 0;
+    syncDirtyBodyFromCurrent();
+    refreshStatusLeft();
+    syncHeaderTitle();
     persistActiveDraftSoon();
     await refreshWorkingDirty();
   }
@@ -1122,8 +1150,10 @@ import DOMPurify from "dompurify";
     dirtyReviewing = true;
     workingDirty = true;
     applyRevisionToEditor();
+    syncDirtyBodyFromCurrent();
     syncMergeStatus();
     refreshStatusLeft();
+    syncHeaderTitle();
     updateAnalyzeBtn();
     persistActiveDraftSoon();
     renderGitPane();
@@ -1155,8 +1185,10 @@ import DOMPurify from "dompurify";
     currentHtml = parts.join("");
     workingDirty = true;
     applyRevisionToEditor();
+    syncDirtyBodyFromCurrent();
     syncMergeStatus();
     refreshStatusLeft();
+    syncHeaderTitle();
     updateAnalyzeBtn();
     persistActiveDraftSoon();
   }
@@ -1248,10 +1280,13 @@ import DOMPurify from "dompurify";
     } else {
       currentHtml = tipTap.getHTML();
     }
+    currentText = getPlain(tipTap);
     workingDirty = true;
+    syncDirtyBodyFromCurrent();
     syncOverlayFromState();
     syncMergeStatus();
     refreshStatusLeft();
+    syncHeaderTitle();
     updateAnalyzeBtn();
     persistActiveDraftSoon();
   }
@@ -2270,6 +2305,7 @@ import DOMPurify from "dompurify";
       pullFromEditor();
       dirtyReviewing = false;
       hasConflict = unresolvedMergeConflictCount(currentHtml) > 0;
+      syncDirtyBodyFromCurrent();
       await ensureDraftForText(currentText);
       persistActiveDraftSoon();
       syncOverlayFromState();
@@ -2277,6 +2313,7 @@ import DOMPurify from "dompurify";
       if (paneMode === "git") renderGitPane();
       updateAnalyzeBtn();
       refreshStatusLeft();
+      syncHeaderTitle();
       setStatus("");
     } catch (err) {
       console.error(err);
@@ -2318,9 +2355,9 @@ import DOMPurify from "dompurify";
     setStatus("exporting...");
     try {
       pullFromEditor();
-      const draft = activeDraftId ? findDraft(activeDraftId) : null;
+      syncDirtyBodyFromCurrent();
       const base = sanitizeDownloadBase(
-        draft ? draftTitle(draft) : store.titleFromText(currentText || ""),
+        activeDraftDisplayTitle() || store.titleFromText(dirtyHtml || dirtyText || ""),
       );
       const { blob, format } = await htmlToExportBlob(
         currentHtml || "<p></p>",
@@ -2446,6 +2483,7 @@ import DOMPurify from "dompurify";
       result = data;
       baseline = text;
       currentText = text;
+      syncDirtyBodyFromCurrent();
       currentModel = data.model || DEFAULT_MODEL;
       revisionCost = Number(data.total_cost) || 0;
       draftCost += revisionCost;
