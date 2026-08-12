@@ -16,6 +16,7 @@ import {
   isFormatOnlyConflict,
   stripHtml,
   mergeCleanEditsIntoMarked,
+  stripKindredProtocol,
 } from "./tiptapEditor.js";
 import { importFileToHtml, htmlToExportBlob, EXPORT_FORMATS } from "./pandocConvert.js";
 import { KindredGitStore } from "./gitStore.js";
@@ -2216,7 +2217,7 @@ import DOMPurify from "dompurify";
     updateAnalyzeBtn();
     setStatus("importing...");
     try {
-      const html = await importFileToHtml(file);
+      const html = stripKindredProtocol(await importFileToHtml(file));
       suppressEditorUpdate = true;
       try {
         setHtml(tipTap, html, { emitUpdate: false });

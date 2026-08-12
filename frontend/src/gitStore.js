@@ -57,12 +57,20 @@ const VOLUME = "kindred";
    * TipTap getHTML() → plain (same idea as editor getText).
    * Only call on known editor HTML — never on already-plain baselines
    * (plain may contain literal "<em>test</em>" etc.).
+   * Structured conflict nodes are empty spans (sides in attrs) → skipped.
    */
   function tipTapHtmlToPlain(html) {
-    const raw = String(html ?? "");
+    let raw = String(html ?? "");
     if (!raw) return "";
+    if (raw.includes("<<<<<<< ")) raw = migrateLegacyConflictHtml(raw);
     const doc = new DOMParser().parseFromString(raw, "text/html");
     const root = doc.body;
+    root.querySelectorAll("[data-kindred-text-conflict]").forEach((el) => {
+      el.remove();
+    });
+    root.querySelectorAll("[data-kindred-conflict]").forEach((el) => {
+      el.remove();
+    });
     root.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
     const blocks = [...root.children];
     if (!blocks.length) {
@@ -154,7 +162,121 @@ const VOLUME = "kindred";
 
   function htmlHasConflictMarkers(html) {
     const s = String(html || "");
-    return s.includes("<<<<<<<") || /\bdata-kindred-align-ours\s*=/i.test(s);
+    if (!s) return false;
+    // Legacy textual hunks still need verbatim storage until migrated.
+    if (s.includes("<<<<<<< ")) return true;
+    if (
+      !s.includes("data-kindred-text-conflict") &&
+      !s.includes("data-kindred-align-ours")
+    ) {
+      return false;
+    }
+    const doc = new DOMParser().parseFromString(s, "text/html");
+    return !!(
+      doc.body.querySelector("[data-kindred-text-conflict]") ||
+      doc.body.querySelector("[data-kindred-align-ours]")
+    );
+  }
+
+  function parseLegacyConflictSegments(str) {
+    const re =
+      /<<<<<<< ([^\n]*)\n([\s\S]*?)\n=======\n([\s\S]*?)\n>>>>>>> ([^\n]*)(?:\n|$)/g;
+    const segments = [];
+    let last = 0;
+    let m;
+    while ((m = re.exec(str)) !== null) {
+      if (m.index > last) {
+        segments.push({ type: "text", text: str.slice(last, m.index) });
+      }
+      segments.push({
+        type: "conflict",
+        oursLabel: m[1],
+        ours: m[2],
+        theirs: m[3],
+        theirsLabel: m[4],
+      });
+      last = m.index + m[0].length;
+    }
+    if (!segments.length) return null;
+    if (last < str.length) {
+      segments.push({ type: "text", text: str.slice(last) });
+    }
+    return segments;
+  }
+
+  function formatConflict(labelOurs, oursStr, labelTheirs, theirsStr) {
+    return (
+      `<span data-kindred-text-conflict` +
+      ` data-kindred-label-ours="${escapeHtmlAttr(labelOurs)}"` +
+      ` data-kindred-label-theirs="${escapeHtmlAttr(labelTheirs)}"` +
+      ` data-kindred-ours="${escapeHtmlAttr(oursStr)}"` +
+      ` data-kindred-theirs="${escapeHtmlAttr(theirsStr)}"` +
+      `></span>`
+    );
+  }
+
+  /** Convert legacy <<<<<<< hunks to structured conflict nodes. */
+  function migrateLegacyConflictHtml(html) {
+    const s = String(html || "");
+    if (!s.includes("<<<<<<< ")) return s;
+    const segs = parseLegacyConflictSegments(s);
+    if (!segs) return s;
+    return segs
+      .map((seg) =>
+        seg.type === "text"
+          ? seg.text
+          : formatConflict(
+              seg.oursLabel,
+              seg.ours,
+              seg.theirsLabel,
+              seg.theirs
+            )
+      )
+      .join("");
+  }
+
+  /** Drop protocol nodes/attrs from non-merge HTML (import / stray attrs). */
+  function stripKindredProtocol(html) {
+    const raw = String(html || "");
+    if (!raw) return "";
+    if (!raw.includes("data-kindred-") && !raw.includes("<<<<<<< ")) return raw;
+    let s = raw;
+    if (s.includes("<<<<<<< ")) {
+      const segs = parseLegacyConflictSegments(s);
+      if (segs) {
+        s = segs
+          .map((seg) => (seg.type === "text" ? seg.text : seg.ours || ""))
+          .join("");
+      }
+    }
+    const doc = new DOMParser().parseFromString(
+      `<div id="__kindred_root">${s}</div>`,
+      "text/html"
+    );
+    const root = doc.getElementById("__kindred_root");
+    if (!root) return raw;
+    root.querySelectorAll("[data-kindred-text-conflict]").forEach((el) => {
+      const ours = el.getAttribute("data-kindred-ours") || "";
+      if (!ours) {
+        el.remove();
+        return;
+      }
+      const wrap = doc.createElement("div");
+      wrap.innerHTML = ours;
+      const frag = doc.createDocumentFragment();
+      while (wrap.firstChild) frag.appendChild(wrap.firstChild);
+      el.replaceWith(frag);
+    });
+    root.querySelectorAll("[data-kindred-conflict]").forEach((el) => {
+      el.remove();
+    });
+    root.querySelectorAll("[data-kindred-align-ours]").forEach((el) => {
+      el.removeAttribute("data-kindred-align-ours");
+      el.removeAttribute("data-kindred-align-theirs");
+      el.removeAttribute("data-kindred-align-label-ours");
+      el.removeAttribute("data-kindred-align-label-theirs");
+    });
+    return root.innerHTML;
   }
 
   function parseTextAlignFromOpenTag(chunk) {
@@ -176,11 +298,15 @@ const VOLUME = "kindred";
 
   /**
    * DOM round-trip escapes raw <<<<<<< markers; keep conflict HTML verbatim.
+   * Non-conflict docs: strip leaked protocol, then canonicalize.
    */
   function storeTextHtml(html, { hasConflict = false } = {}) {
     const raw = html == null ? "" : String(html);
-    if (hasConflict || htmlHasConflictMarkers(raw)) return raw;
-    return canonicalizeTextHtml(raw);
+    if (hasConflict || htmlHasConflictMarkers(raw)) {
+      if (raw.includes("<<<<<<< ")) return migrateLegacyConflictHtml(raw);
+      return raw;
+    }
+    return canonicalizeTextHtml(stripKindredProtocol(raw));
   }
 
   /** Baseline field is always plain text — never HTML-parse it. */
@@ -398,10 +524,15 @@ const VOLUME = "kindred";
 
   async function readWorkingFiles(id) {
     const dir = textDir(id);
-    const html = await readText(`${dir}/${TEXT_FILE}`, "");
+    let html = await readText(`${dir}/${TEXT_FILE}`, "");
     const review = normalizeReview(await readJson(`${dir}/review.json`, null));
     const chats = normalizeChats(await readJson(`${dir}/chats.json`, {}));
     const meta = normalizeMeta(await readJson(`${dir}/meta.json`, null), id);
+    if ((meta.hasConflict || meta.pendingMerge) && html.includes("<<<<<<< ")) {
+      html = migrateLegacyConflictHtml(html);
+      await writeText(`${dir}/${TEXT_FILE}`, html);
+      await flush();
+    }
     const title = await resolveTitle(dir, html, null, meta.customTitle);
     return {
       id,
@@ -593,7 +724,7 @@ const VOLUME = "kindred";
     };
     if (partial.html != null || (partial.text != null && partial.html == null)) {
       // App persists TipTap getHTML(); do not re-interpret as HTML source.
-      // Conflict marker HTML must not DOM-canonicalize (escapes <<<<<<<).
+      // Conflict protocol HTML must not be stripped/canonicalized away.
       const raw = partial.html != null ? partial.html : partial.text;
       const hasConflict =
         !!(next.hasConflict ?? prev.hasConflict) ||
@@ -1694,12 +1825,6 @@ const VOLUME = "kindred";
     return reps;
   }
 
-  function formatConflict(labelOurs, oursStr, labelTheirs, theirsStr) {
-    const a = oursStr.endsWith("\n") ? oursStr : `${oursStr}\n`;
-    const b = theirsStr.endsWith("\n") ? theirsStr : `${theirsStr}\n`;
-    return `<<<<<<< ${labelOurs}\n${a}=======\n${b}>>>>>>> ${labelTheirs}\n`;
-  }
-
   function blocksFromDoc(doc) {
     const plain = String(doc?.plain ?? "");
     const aligns = (doc?.blockAligns || []).slice();
@@ -2539,8 +2664,10 @@ const VOLUME = "kindred";
 
   async function writeConflictMerge(id, dir, ours, theirsBranch, text) {
     const state = await readWorkingFiles(id);
-    state.html = text;
-    state.text = text;
+    let body = String(text ?? "");
+    if (body.includes("<<<<<<< ")) body = migrateLegacyConflictHtml(body);
+    state.html = body;
+    state.text = body;
     state.hasConflict = true;
     state.pendingMerge = { ours, theirs: theirsBranch };
     state.updatedAt = Date.now();
@@ -2713,7 +2840,9 @@ const VOLUME = "kindred";
       if (!isConflict) throw err;
 
       let text = await readText(`${dir}/${TEXT_FILE}`, "");
-      if (!text.includes("<<<<<<<")) {
+      if (text.includes("<<<<<<< ")) {
+        text = migrateLegacyConflictHtml(text);
+      } else if (!text.includes("data-kindred-text-conflict")) {
         try {
           const oursSnap = await readFilesAtOid(dir, oursOid);
           const theirsSnap = await readFilesAtOid(dir, theirsOid);

@@ -408,16 +408,23 @@ export function ensureHtml(content) {
   return content;
 }
 
+/** Structured text-conflict node (not git textual markers). */
 function formatConflictMarkers(labelOurs, oursStr, labelTheirs, theirsStr) {
-  const a = oursStr.endsWith("\n") ? oursStr : `${oursStr}\n`;
-  const b = theirsStr.endsWith("\n") ? theirsStr : `${theirsStr}\n`;
-  return `<<<<<<< ${labelOurs}\n${a}=======\n${b}>>>>>>> ${labelTheirs}\n`;
+  return (
+    `<span data-kindred-text-conflict` +
+    ` data-kindred-label-ours="${escapeHtml(labelOurs)}"` +
+    ` data-kindred-label-theirs="${escapeHtml(labelTheirs)}"` +
+    ` data-kindred-ours="${escapeHtml(oursStr)}"` +
+    ` data-kindred-theirs="${escapeHtml(theirsStr)}"` +
+    `></span>`
+  );
 }
 
-export function parseConflictSegments(text) {
-  const str = text || "";
-  const re =
-    /<<<<<<< ([^\n]*)\n([\s\S]*?)\n=======\n([\s\S]*?)\n>>>>>>> ([^\n]*)(?:\n|$)/g;
+const LEGACY_CONFLICT_RE =
+  /<<<<<<< ([^\n]*)\n([\s\S]*?)\n=======\n([\s\S]*?)\n>>>>>>> ([^\n]*)(?:\n|$)/g;
+
+function parseLegacyConflictSegments(str) {
+  const re = new RegExp(LEGACY_CONFLICT_RE.source, "g");
   const segments = [];
   let last = 0;
   let m;
@@ -441,6 +448,67 @@ export function parseConflictSegments(text) {
   return segments;
 }
 
+/** Convert legacy <<<<<<< hunks to structured nodes. No-op if none. */
+export function migrateLegacyConflictHtml(html) {
+  const s = String(html || "");
+  if (!s.includes("<<<<<<< ")) return s;
+  const segs = parseLegacyConflictSegments(s);
+  if (!segs) return s;
+  return segs
+    .map((seg) =>
+      seg.type === "text"
+        ? seg.text
+        : formatConflictMarkers(
+            seg.oursLabel,
+            seg.ours,
+            seg.theirsLabel,
+            seg.theirs
+          )
+    )
+    .join("");
+}
+
+function parseStructuredConflictSegments(html) {
+  const raw = String(html || "");
+  if (!raw || !raw.includes("data-kindred-text-conflict")) return null;
+  const doc = new DOMParser().parseFromString(
+    `<div id="__kindred_root">${raw}</div>`,
+    "text/html"
+  );
+  const root = doc.getElementById("__kindred_root");
+  if (!root) return null;
+  const nodes = [...root.querySelectorAll("[data-kindred-text-conflict]")];
+  if (!nodes.length) return null;
+
+  const conflicts = nodes.map((el) => ({
+    type: "conflict",
+    oursLabel: el.getAttribute("data-kindred-label-ours") || "",
+    theirsLabel: el.getAttribute("data-kindred-label-theirs") || "",
+    ours: el.getAttribute("data-kindred-ours") || "",
+    theirs: el.getAttribute("data-kindred-theirs") || "",
+  }));
+
+  const ph = (i) => `\uE000KINDRED_TC_${i}\uE000`;
+  nodes.forEach((el, i) => el.replaceWith(doc.createTextNode(ph(i))));
+  let rest = root.innerHTML;
+  const segments = [];
+  for (let i = 0; i < conflicts.length; i++) {
+    const token = ph(i);
+    const idx = rest.indexOf(token);
+    if (idx < 0) return null;
+    if (idx > 0) segments.push({ type: "text", text: rest.slice(0, idx) });
+    segments.push(conflicts[i]);
+    rest = rest.slice(idx + token.length);
+  }
+  if (rest) segments.push({ type: "text", text: rest });
+  return segments;
+}
+
+/** Parse structured text conflicts only (legacy markers are not protocol). */
+export function parseConflictSegments(text) {
+  return parseStructuredConflictSegments(text);
+}
+
 export function conflictMarkerCount(text) {
   const segs = parseConflictSegments(text);
   if (!segs) return 0;
@@ -449,20 +517,72 @@ export function conflictMarkerCount(text) {
   return n;
 }
 
+/** True when an element actually has the align-conflict attribute (not body text). */
 export function htmlHasAlignConflict(html) {
-  return /\bdata-kindred-align-ours\s*=/i.test(String(html || ""));
+  return alignConflictCount(html) > 0;
 }
 
 export function alignConflictCount(html) {
-  const s = String(html || "");
-  const re = /\bdata-kindred-align-ours\s*=/gi;
-  let n = 0;
-  while (re.exec(s)) n++;
-  return n;
+  const raw = String(html || "");
+  if (!raw || !raw.includes("data-kindred-align-ours")) return 0;
+  const doc = new DOMParser().parseFromString(raw, "text/html");
+  return doc.body.querySelectorAll("[data-kindred-align-ours]").length;
 }
 
 export function unresolvedMergeConflictCount(html) {
   return conflictMarkerCount(html) + alignConflictCount(html);
+}
+
+/**
+ * Strip Kindred merge protocol from HTML (import / non-merge loads).
+ * Replaces text-conflict nodes with theirs-free ours HTML; drops align protocol attrs.
+ */
+export function stripKindredProtocol(html) {
+  const raw = String(html || "");
+  if (!raw) return "";
+  if (
+    !raw.includes("data-kindred-") &&
+    !raw.includes("<<<<<<< ")
+  ) {
+    return raw;
+  }
+  let s = raw;
+  if (s.includes("<<<<<<< ")) {
+    const segs = parseLegacyConflictSegments(s);
+    if (segs) {
+      s = segs
+        .map((seg) => (seg.type === "text" ? seg.text : seg.ours || ""))
+        .join("");
+    }
+  }
+  const doc = new DOMParser().parseFromString(
+    `<div id="__kindred_root">${s}</div>`,
+    "text/html"
+  );
+  const root = doc.getElementById("__kindred_root");
+  if (!root) return raw;
+  root.querySelectorAll("[data-kindred-text-conflict]").forEach((el) => {
+    const ours = el.getAttribute("data-kindred-ours") || "";
+    if (!ours) {
+      el.remove();
+      return;
+    }
+    const wrap = doc.createElement("div");
+    wrap.innerHTML = ours;
+    const frag = doc.createDocumentFragment();
+    while (wrap.firstChild) frag.appendChild(wrap.firstChild);
+    el.replaceWith(frag);
+  });
+  root.querySelectorAll("[data-kindred-conflict]").forEach((el) => {
+    el.remove();
+  });
+  root.querySelectorAll("[data-kindred-align-ours]").forEach((el) => {
+    el.removeAttribute("data-kindred-align-ours");
+    el.removeAttribute("data-kindred-align-theirs");
+    el.removeAttribute("data-kindred-align-label-ours");
+    el.removeAttribute("data-kindred-align-label-theirs");
+  });
+  return root.innerHTML;
 }
 
 export function joinConflictBoth(ours, theirs) {
