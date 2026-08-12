@@ -2312,12 +2312,34 @@ import DOMPurify from "dompurify";
   async function switchBranch(name) {
     if (!activeDraftId || name === currentBranchName) return;
     await flushSaveTimer();
-    const dirty = await store.isDirty(activeDraftId);
-    if (dirty) {
-      const ok = window.confirm("Discard uncommitted edits and switch?");
+    const wtFlags = await store.readWorkingFiles(activeDraftId);
+    const abortingMerge = isActiveMerge({
+      pendingMerge: wtFlags.pendingMerge,
+      hasConflict: wtFlags.hasConflict,
+      text: wtFlags.text,
+    });
+    let wt;
+    if (abortingMerge) {
+      const ok = window.confirm(
+        "Abort the merge and discard uncommitted edits to switch branches?"
+      );
       if (!ok) return;
+      wt = await store.checkoutBranch(activeDraftId, name, { force: true });
+    } else {
+      try {
+        wt = await store.checkoutBranch(activeDraftId, name, { force: false });
+      } catch (err) {
+        if (err && err.code === "CHECKOUT_CONFLICT") {
+          const ok = window.confirm(
+            "Local changes would be overwritten. Discard uncommitted edits and switch?"
+          );
+          if (!ok) return;
+          wt = await store.checkoutBranch(activeDraftId, name, { force: true });
+        } else {
+          throw err;
+        }
+      }
     }
-    const wt = await store.checkoutBranch(activeDraftId, name, { force: dirty });
     viewingOid = null;
     hasConflict = false;
     pendingMerge = null;

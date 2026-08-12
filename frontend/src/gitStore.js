@@ -899,16 +899,24 @@ const VOLUME = "kindred";
     }
   }
 
+  function isCheckoutConflictError(err) {
+    if (!err) return false;
+    if (err.code === "CheckoutConflictError" || err.code === "CHECKOUT_CONFLICT") {
+      return true;
+    }
+    const name = String(err.name || "");
+    const msg = String(err.message || "");
+    return (
+      name === "CheckoutConflictError" ||
+      /would be overwritten by checkout/i.test(msg)
+    );
+  }
+
   async function checkoutBranch(id, name, { force = false } = {}) {
     const dir = textDir(id);
     const ref = String(name || "").trim();
     if (!ref) throw new Error("Branch name required");
     const contentDirty = await isDirty(id);
-    if (!force && contentDirty) {
-      const err = new Error("DIRTY");
-      err.code = "DIRTY";
-      throw err;
-    }
     // Keep title.txt (untracked) across checkout; reset meta noise so git
     // checkout does not refuse when only updatedAt/activeBranch differ.
     const preservedTitle = await readTitleFile(dir);
@@ -919,7 +927,19 @@ const VOLUME = "kindred";
     if (!contentDirty) {
       await restoreMetaFromHead(dir);
     }
-    await git.checkout({ fs, dir, ref, force: !!force });
+    try {
+      await git.checkout({ fs, dir, ref, force: !!force });
+    } catch (err) {
+      if (!force && isCheckoutConflictError(err)) {
+        const conflict = new Error(
+          err.message || "Local changes would be overwritten by checkout"
+        );
+        conflict.code = "CHECKOUT_CONFLICT";
+        conflict.cause = err;
+        throw conflict;
+      }
+      throw err;
+    }
     if (preservedTitle) {
       await writeTitleFile(dir, preservedTitle);
     }
