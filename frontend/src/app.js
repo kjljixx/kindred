@@ -2470,6 +2470,7 @@ import DOMPurify from "dompurify";
     await refreshDraftList();
     renderGitPane();
     await refreshWorkingDirty();
+    tipTap?.commands.focus();
   }
 
   async function createBranchPrompt() {
