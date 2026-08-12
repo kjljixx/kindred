@@ -65,6 +65,32 @@ class KindredPage:
       text,
     )
 
+  def paste_html(self, html: str) -> None:
+    """Paste HTML into the TipTap editor (text/html clipboard only)."""
+    self.wait.until(EC.presence_of_element_located(self.EDITOR))
+    self.driver.execute_script(
+      """
+      const html = arguments[0];
+      const el = document.querySelector('#editor .ProseMirror');
+      if (!el) throw new Error('editor not found');
+      el.focus();
+      const dt = new DataTransfer();
+      dt.setData('text/html', html);
+      el.dispatchEvent(new ClipboardEvent('paste', {
+        clipboardData: dt,
+        bubbles: true,
+        cancelable: true,
+      }));
+      """,
+      html,
+    )
+
+  def status_text(self) -> str:
+    return (self.driver.find_element(By.ID, "status").text or "").replace("\xa0", " ")
+
+  def has_merge_conflict_ui(self) -> bool:
+    return bool(self.driver.find_elements(*self.MERGE_CONFLICT))
+
   def type_text(self, text: str) -> None:
     editor = self.wait.until(EC.presence_of_element_located(self.EDITOR))
     editor.click()

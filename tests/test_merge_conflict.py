@@ -4,6 +4,12 @@ from selenium.webdriver.common.keys import Keys
 
 from pages.kindred import KindredPage
 
+ALIGN_ATTR_HTML = (
+  '<p data-kindred-align-ours="left" data-kindred-align-theirs="center" '
+  'data-kindred-align-label-ours="main" data-kindred-align-label-theirs="feature">'
+  "Hello</p>"
+)
+
 
 def test_merge_conflict_buttons_show_real_less_than(kindred: KindredPage) -> None:
   kindred.paste_text("<<")
@@ -26,3 +32,11 @@ def test_merge_conflict_buttons_show_real_less_than(kindred: KindredPage) -> Non
   assert labels == {"<", "<<<"}
   assert "&lt;" not in ours
   assert "&lt;" not in theirs
+
+
+def test_pasted_align_attrs_are_not_a_merge_conflict(kindred: KindredPage) -> None:
+  kindred.paste_html(ALIGN_ATTR_HTML)
+  kindred.wait_until_draft_active()
+
+  assert not kindred.has_merge_conflict_ui()
+  assert "merge conflict" not in kindred.status_text().lower()
