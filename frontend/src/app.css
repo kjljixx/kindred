@@ -503,7 +503,7 @@ button.pane-title {
 
 .tabs {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-4);
 }
 
 .tabs[hidden],
@@ -1401,6 +1401,23 @@ button.pane-title {
   flex-direction: column;
   gap: var(--space-1);
   padding: 0 var(--space-2);
+}
+
+.git-dirty-modes {
+  background-color: var(--color-bg-inset);
+  border-radius: var(--radius-2);
+  margin: 0 var(--space-5);
+  margin-top: var(--space-3);
+  width: fit-content;
+  padding: var(--space-4) var(--space-4);
+}
+
+.git-dirty-modes.tabs-primary .tab.btn-secondary:not(.active) {
+  color: var(--color-text-muted);
+}
+
+.git-dirty-modes.tabs-primary .tab.btn-secondary.active {
+  box-shadow: none;
 }
 
 .git-row {

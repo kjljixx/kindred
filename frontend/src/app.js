@@ -41,6 +41,8 @@ import DOMPurify from "dompurify";
   const feedbackTabs = document.getElementById("feedback-tabs");
   const paneModeCluster = document.getElementById("pane-mode-cluster");
   const gitPane = document.getElementById("git-pane");
+  const gitDirtySection = document.getElementById("git-dirty-section");
+  const gitDirtyModes = document.getElementById("git-dirty-modes");
   const gitBranchList = document.getElementById("git-branch-list");
   const gitCommitList = document.getElementById("git-commit-list");
   const gitNewBranchBtn = document.getElementById("git-new-branch");
@@ -1074,19 +1076,22 @@ import DOMPurify from "dompurify";
 
   async function setDirtyEditView(mode) {
     if (mode !== "Text" && mode !== "Diff") return;
+    // #region agent log
+    fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'D',location:'app.js:setDirtyEditView',message:'setDirtyEditView entry',data:{mode,viewingOid:!!viewingOid,dirtyReviewing,dirtyViewMode},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    if (viewingOid) await exitToDirty();
     if (dirtyReviewing) await leaveDirtyReview();
     dirtyViewMode = mode;
     renderGitPane();
-    if (viewingOid) {
-      await exitToDirty();
-    } else {
-      syncOverlayFromState();
-    }
+    syncOverlayFromState();
   }
 
   async function enterDirtyReview() {
+    // #region agent log
+    fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'A',location:'app.js:enterDirtyReview:entry',message:'enterDirtyReview entry',data:{hasDraft:!!activeDraftId,hasStore:!!store,viewingHistory:isViewingHistory(),viewingOid:viewingOid||null,pendingMerge:!!pendingMerge,dirtyReviewing,hasConflict,headOid:!!headOid,unresolved:unresolvedMergeConflictCount(currentHtml)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     if (!activeDraftId || !store) return;
-    if (isViewingHistory()) return;
+    if (isViewingHistory()) await exitToDirty();
     if (pendingMerge) return;
     if (dirtyReviewing) return;
     if (unresolvedMergeConflictCount(currentHtml) > 0) return;
@@ -1094,6 +1099,9 @@ import DOMPurify from "dompurify";
     await flushSaveTimer();
     pullFromEditor();
     const dirty = await store.isDirty(activeDraftId);
+    // #region agent log
+    fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'C',location:'app.js:enterDirtyReview:dirtyCheck',message:'isDirty result',data:{dirty},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     if (!dirty) return;
     const head = await store.readHead(activeDraftId);
     if (!head) return;
@@ -1103,6 +1111,9 @@ import DOMPurify from "dompurify";
       currentHtml,
       currentBranchName || "HEAD"
     );
+    // #region agent log
+    fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'C',location:'app.js:enterDirtyReview:mergeResult',message:'reviewWorkingTree result',data:{cleanMerge:!!result.cleanMerge,hasMerged:!!result.mergedText},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     if (result.cleanMerge) return;
     currentHtml = result.mergedText || "<p></p>";
     hasConflict = true;
@@ -2077,6 +2088,8 @@ import DOMPurify from "dompurify";
       branchRows || `<p class="git-empty">No branches yet.</p>`;
 
     if (!commits.length) {
+      gitDirtySection.hidden = true;
+      gitDirtyModes.innerHTML = "";
       gitCommitList.innerHTML = `<p class="git-empty">No commits yet. Analyze or Commit to create one.</p>`;
     } else {
       const atDirty = !viewingOid;
@@ -2084,17 +2097,12 @@ import DOMPurify from "dompurify";
       const dirtyDiffActive = atDirty && !dirtyReviewing && dirtyViewMode === "Diff";
       const dirtyReviewActive = atDirty && dirtyReviewing;
       const dirtyBtn = (label, action, active) =>
-        `<button type="button" class="btn btn-tertiary${active ? " is-active" : ""}" data-git="${action}" aria-pressed="${active ? "true" : "false"}"${gitBusy ? " disabled" : ""}>${label}</button>`;
-      const dirtyRow =
-        `<div class="git-row git-row-dirty${atDirty ? " active" : ""}" role="listitem" data-git="dirty">` +
-        `<div class="git-row-body">` +
-        `<span class="git-row-title">dirty</span>` +
-        `</div>` +
-        `<div class="git-row-actions">` +
+        `<button type="button" class="tab btn btn-secondary${active ? " active" : ""}" data-git="${action}" role="tab" aria-selected="${active ? "true" : "false"}"${gitBusy ? " disabled" : ""}>${label}</button>`;
+      gitDirtySection.hidden = false;
+      gitDirtyModes.innerHTML =
         dirtyBtn("Text", "dirty-text", dirtyTextActive) +
         dirtyBtn("Diff", "dirty-diff", dirtyDiffActive) +
-        dirtyBtn("Review", "dirty-review", dirtyReviewActive) +
-        `</div></div>`;
+        dirtyBtn("Review", "dirty-review", dirtyReviewActive);
       const commitRows = commits
         .slice()
         .reverse()
@@ -2124,7 +2132,7 @@ import DOMPurify from "dompurify";
           );
         })
         .join("");
-      gitCommitList.innerHTML = dirtyRow + commitRows;
+      gitCommitList.innerHTML = commitRows;
     }
     gitNewBranchBtn.disabled = gitBusy || !commits.length;
 
@@ -2708,10 +2716,19 @@ import DOMPurify from "dompurify";
     } else if (action === "dirty") {
       runGit(exitToDirty);
     } else if (action === "dirty-text") {
+      // #region agent log
+      fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'B',location:'app.js:gitClick',message:'dirty mode click',data:{action,viewingOid:viewingOid||null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       runGit(() => setDirtyEditView("Text"));
     } else if (action === "dirty-diff") {
+      // #region agent log
+      fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'B',location:'app.js:gitClick',message:'dirty mode click',data:{action,viewingOid:viewingOid||null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       runGit(() => setDirtyEditView("Diff"));
     } else if (action === "dirty-review") {
+      // #region agent log
+      fetch('http://127.0.0.1:7821/ingest/e5445a7d-21c7-41c7-812a-e2661f259c86',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8ac892'},body:JSON.stringify({sessionId:'8ac892',runId:'pre-fix',hypothesisId:'B',location:'app.js:gitClick',message:'dirty mode click',data:{action,viewingOid:viewingOid||null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       runGit(enterDirtyReview);
     } else if (action === "view") {
       runGit(() => viewCommitOid(actionEl.dataset.oid));
