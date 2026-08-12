@@ -37,3 +37,7 @@ AI generated titles - show1 titles at top of editor/make sure they are not just 
 
 Syncing
 - Sync to central server
+
+Debugging
+- Selenium Unit Tests
+- Easier ways to see the current diff, current raw html, etc.

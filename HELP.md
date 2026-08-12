@@ -1,0 +1,1 @@
+- Right-Clicking a draft in the "Drafts" pane allows you to rename that draft without entering it

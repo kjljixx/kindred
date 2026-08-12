@@ -489,6 +489,53 @@ export function conflictDisplayHtml(markedHtml) {
   return html || "<p></p>";
 }
 
+/**
+ * Reassemble marked HTML: TipTap clean edits + original unresolved conflict sides.
+ * Returns null if anchor count/order does not match (keeps prior marked HTML).
+ *
+ * Replaces each conflict anchor in-place so mid-paragraph typing stays in the same
+ * <p> as the markers.
+ */
+export function mergeCleanEditsIntoMarked(markedHtml, tipTapHtml) {
+  const segments = parseConflictSegments(markedHtml);
+  if (!segments) return tipTapHtml || "";
+  const conflicts = segments.filter((s) => s.type === "conflict");
+  if (!conflicts.length) return tipTapHtml || "";
+
+  const doc = new DOMParser().parseFromString(
+    `<div id="__kindred_root">${tipTapHtml || ""}</div>`,
+    "text/html"
+  );
+  const root = doc.getElementById("__kindred_root");
+  if (!root) return null;
+
+  const anchors = [...root.querySelectorAll("[data-kindred-conflict]")];
+  if (anchors.length !== conflicts.length) return null;
+  for (let i = 0; i < anchors.length; i++) {
+    if (Number(anchors[i].getAttribute("data-kindred-conflict")) !== i) return null;
+  }
+
+  const ph = (i) => `\uE000KINDRED_CONFLICT_${i}\uE000`;
+  for (let i = 0; i < anchors.length; i++) {
+    anchors[i].replaceWith(doc.createTextNode(ph(i)));
+  }
+
+  let out = root.innerHTML;
+  for (let i = 0; i < conflicts.length; i++) {
+    const seg = conflicts[i];
+    const markers = formatConflictMarkers(
+      seg.oursLabel,
+      seg.ours,
+      seg.theirsLabel,
+      seg.theirs
+    );
+    if (!out.includes(ph(i))) return null;
+    out = out.split(ph(i)).join(markers);
+  }
+
+  return prettyPrintHtml(out);
+}
+
 function conflictNodePos(doc, index) {
   let found = null;
   doc.descendants((node, pos) => {

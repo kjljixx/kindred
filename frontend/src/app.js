@@ -14,6 +14,7 @@ import {
   joinConflictBoth,
   formatConflictMarkers,
   isFormatOnlyConflict,
+  mergeCleanEditsIntoMarked,
 } from "./tiptapEditor.js";
 import { importFileToHtml, htmlToExportBlob, EXPORT_FORMATS } from "./pandocConvert.js";
 import { KindredGitStore } from "./gitStore.js";
@@ -182,7 +183,9 @@ import DOMPurify from "dompurify";
   function pullFromEditor() {
     if (!tipTap || suppressEditorUpdate) return;
     if (conflictMarkerCount(currentHtml) > 0) {
-      // Text conflict markers use display anchors — don't pull TipTap HTML.
+      const tipHtml = getHtml(tipTap);
+      const merged = mergeCleanEditsIntoMarked(currentHtml, tipHtml);
+      if (merged != null) currentHtml = merged;
       currentText = getPlain(tipTap);
       return;
     }
