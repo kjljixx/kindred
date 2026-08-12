@@ -988,12 +988,7 @@ import DOMPurify from "dompurify";
     const unresolved = unresolvedMergeConflictCount(currentHtml) > 0;
     hasConflict = unresolved;
     if (dirtyReviewing && !pendingMerge) {
-      if (
-        statusLevel === "warn" &&
-        /merge conflict|conflicts resolved/i.test(statusMessage)
-      ) {
-        setStatus("");
-      }
+      // Dirty review must not touch the status bar.
       if (!unresolved) {
         dirtyReviewing = false;
         if (paneMode === "git") renderGitPane();
@@ -1079,45 +1074,24 @@ import DOMPurify from "dompurify";
 
   async function enterDirtyReview() {
     if (!activeDraftId || !store) return;
-    if (isViewingHistory()) {
-      setStatus("Restore or exit history before reviewing");
-      return;
-    }
-    if (pendingMerge) {
-      setStatus("Finish or abort the merge before reviewing dirty changes");
-      return;
-    }
+    if (isViewingHistory()) return;
+    if (pendingMerge) return;
     if (dirtyReviewing) return;
-    if (unresolvedMergeConflictCount(currentHtml) > 0) {
-      setStatus("Resolve existing conflicts before reviewing dirty changes");
-      return;
-    }
-    if (!headOid) {
-      setStatus("Commit once before reviewing dirty changes");
-      return;
-    }
+    if (unresolvedMergeConflictCount(currentHtml) > 0) return;
+    if (!headOid) return;
     await flushSaveTimer();
     pullFromEditor();
     const dirty = await store.isDirty(activeDraftId);
-    if (!dirty) {
-      setStatus("Nothing to review");
-      return;
-    }
+    if (!dirty) return;
     const head = await store.readHead(activeDraftId);
-    if (!head) {
-      setStatus("Nothing to review");
-      return;
-    }
+    if (!head) return;
     const headHtml = head.html || head.text || "";
     const result = store.reviewWorkingTree(
       headHtml,
       currentHtml,
       currentBranchName || "HEAD"
     );
-    if (result.cleanMerge) {
-      setStatus("Nothing to review");
-      return;
-    }
+    if (result.cleanMerge) return;
     currentHtml = result.mergedText || "<p></p>";
     hasConflict = true;
     dirtyReviewing = true;
