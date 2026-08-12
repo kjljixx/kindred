@@ -1600,7 +1600,7 @@ import DOMPurify from "dompurify";
   }
 
   function syncChatComposer() {
-    const showGlobal = !!(result && mode === "global");
+    const showGlobal = !!(result && mode === "global" && paneMode !== "git");
     chatComposer.hidden = !showGlobal;
     if (showGlobal) {
       syncComposerControls(chatComposer, chatInput, chatSend, "text");
