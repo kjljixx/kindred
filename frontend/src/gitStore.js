@@ -110,7 +110,7 @@ const VOLUME = "kindred";
     if (!compact) return "";
     return compact
       .replace(
-        /><(p|h[1-6]|ul|ol|li|blockquote|pre|hr|div)(\s[^>]*)?>/gi,
+        /><(p|h[1-6]|ul|ol|li|blockquote|pre|hr|div|table|thead|tbody|tr|th|td)(\s[^>]*)?>/gi,
         ">\n<$1$2>"
       )
       .trim();
@@ -168,7 +168,7 @@ const VOLUME = "kindred";
     const doc = new DOMParser().parseFromString(raw, "text/html");
     const root = doc.body;
     for (const el of root.querySelectorAll(
-      "p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, div"
+      "p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, div, th, td"
     )) {
       trimTrailingInsignificant(el);
     }

@@ -872,6 +872,80 @@ button.pane-title {
   margin-bottom: 0;
 }
 
+.editor .ProseMirror ul,
+.editor .ProseMirror ol {
+  margin: 0 0 0.75em;
+  padding-left: 1.5em;
+}
+
+.editor .ProseMirror ul {
+  list-style-type: disc;
+}
+
+.editor .ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.editor .ProseMirror li {
+  margin: 0.25em 0;
+}
+
+.editor .ProseMirror li p {
+  margin: 0;
+}
+
+.editor .ProseMirror ul ul,
+.editor .ProseMirror ol ol,
+.editor .ProseMirror ul ol,
+.editor .ProseMirror ol ul {
+  margin-bottom: 0;
+}
+
+.editor .ProseMirror table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 0.75em;
+  table-layout: fixed;
+}
+
+.editor .ProseMirror td,
+.editor .ProseMirror th {
+  border: 1px solid var(--color-border);
+  padding: 0.4em 0.55em;
+  vertical-align: top;
+  min-width: 1em;
+  position: relative;
+}
+
+.editor .ProseMirror th {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+  font-weight: 600;
+  text-align: left;
+}
+
+.editor .ProseMirror td p,
+.editor .ProseMirror th p {
+  margin: 0;
+}
+
+.editor .ProseMirror .selectedCell:after {
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+  content: "";
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+
+.editor-toolbar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
 .tiptap p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;

@@ -7,6 +7,10 @@ import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import FontFamily from "@tiptap/extension-font-family";
 import Placeholder from "@tiptap/extension-placeholder";
+import Table from "@tiptap/extension-table";
+import TableRow from "@tiptap/extension-table-row";
+import TableCell from "@tiptap/extension-table-cell";
+import TableHeader from "@tiptap/extension-table-header";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
@@ -318,7 +322,7 @@ export function prettyPrintHtml(html) {
   if (!compact) return "";
   return compact
     .replace(
-      /><(p|h[1-6]|ul|ol|li|blockquote|pre|hr|div)(\s[^>]*)?>/gi,
+      /><(p|h[1-6]|ul|ol|li|blockquote|pre|hr|div|table|thead|tbody|tr|th|td)(\s[^>]*)?>/gi,
       ">\n<$1$2>"
     )
     .trim();
@@ -376,7 +380,7 @@ export function canonicalizeTextHtml(html) {
   const doc = new DOMParser().parseFromString(raw, "text/html");
   const root = doc.body;
   for (const el of root.querySelectorAll(
-    "p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, div"
+    "p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, div, th, td"
   )) {
     trimTrailingInsignificant(el);
   }
@@ -1193,8 +1197,17 @@ function syncSelectValue(select, current, normalize, fallback = "") {
   select.value = match;
 }
 
+const TABLE_EDIT_CMDS = new Set([
+  "addRowAfter",
+  "deleteRow",
+  "addColumnAfter",
+  "deleteColumn",
+  "deleteTable",
+]);
+
 function syncToolbar(editor, toolbarEl) {
   if (!toolbarEl) return;
+  const inTable = editor.isActive("table");
   toolbarEl.querySelectorAll("[data-cmd]").forEach((btn) => {
     const cmd = btn.dataset.cmd;
     let active = false;
@@ -1206,7 +1219,10 @@ function syncToolbar(editor, toolbarEl) {
     else if (cmd === "alignCenter") active = editor.isActive({ textAlign: "center" });
     else if (cmd === "alignRight") active = editor.isActive({ textAlign: "right" });
     else if (cmd === "alignJustify") active = editor.isActive({ textAlign: "justify" });
+    else if (cmd === "bulletList") active = editor.isActive("bulletList");
+    else if (cmd === "orderedList") active = editor.isActive("orderedList");
     btn.classList.toggle("is-active", active);
+    if (TABLE_EDIT_CMDS.has(cmd)) btn.disabled = !inTable;
   });
   const attrs = editor.getAttributes("textStyle");
   const colorInput = toolbarEl.querySelector("[data-color-input]");
@@ -1259,6 +1275,15 @@ export function bindToolbar(editor, toolbarEl) {
     else if (cmd === "alignRight") chain.setTextAlign("right").run();
     else if (cmd === "alignJustify") chain.setTextAlign("justify").run();
     else if (cmd === "unsetColor") chain.unsetColor().run();
+    else if (cmd === "bulletList") chain.toggleBulletList().run();
+    else if (cmd === "orderedList") chain.toggleOrderedList().run();
+    else if (cmd === "insertTable") {
+      chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+    } else if (cmd === "addRowAfter") chain.addRowAfter().run();
+    else if (cmd === "deleteRow") chain.deleteRow().run();
+    else if (cmd === "addColumnAfter") chain.addColumnAfter().run();
+    else if (cmd === "deleteColumn") chain.deleteColumn().run();
+    else if (cmd === "deleteTable") chain.deleteTable().run();
   };
   const colorInput = toolbarEl.querySelector("[data-color-input]");
   const onColor = (e) => {
@@ -1374,9 +1399,6 @@ export function createKindredEditor({
     extensions: [
       StarterKit.configure({
         heading: false,
-        bulletList: false,
-        orderedList: false,
-        listItem: false,
         blockquote: false,
         codeBlock: false,
         code: false,
@@ -1392,6 +1414,10 @@ export function createKindredEditor({
       FontFamily,
       KeptSelection,
       TextAlign.configure({ types: ["paragraph"] }),
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
       Placeholder.configure({ placeholder }),
       KindredOverlay.configure({ diffsFn, onConflictAction, onAlignConflictAction }),
     ],

@@ -6,8 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>kindred</title>
   <link rel="stylesheet" href="/static/coloris.min.css" />
-  <script type="module" crossorigin src="/static/assets/index-DIrUSU6A.js"></script>
-  <link rel="stylesheet" crossorigin href="/static/assets/index-CebN6PcB.css">
+  <script type="module" crossorigin src="/static/assets/index-DDJWff2o.js"></script>
+  <link rel="stylesheet" crossorigin href="/static/assets/index-BNmeUw6p.css">
 </head>
 
 <body>
@@ -79,6 +79,16 @@
           <button type="button" data-cmd="alignCenter" title="Align center" aria-label="Align center">C</button>
           <button type="button" data-cmd="alignRight" title="Align right" aria-label="Align right">R</button>
           <button type="button" data-cmd="alignJustify" title="Justify" aria-label="Justify">J</button>
+          <span class="toolbar-sep" aria-hidden="true"></span>
+          <button type="button" data-cmd="bulletList" title="Bullet list" aria-label="Bullet list">&bull;</button>
+          <button type="button" data-cmd="orderedList" title="Numbered list" aria-label="Numbered list">1.</button>
+          <span class="toolbar-sep" aria-hidden="true"></span>
+          <button type="button" data-cmd="insertTable" title="Insert table" aria-label="Insert table">&boxplus;</button>
+          <button type="button" data-cmd="addRowAfter" title="Add row" aria-label="Add row">+R</button>
+          <button type="button" data-cmd="deleteRow" title="Delete row" aria-label="Delete row">&minus;R</button>
+          <button type="button" data-cmd="addColumnAfter" title="Add column" aria-label="Add column">+C</button>
+          <button type="button" data-cmd="deleteColumn" title="Delete column" aria-label="Delete column">&minus;C</button>
+          <button type="button" data-cmd="deleteTable" title="Delete table" aria-label="Delete table">&times;T</button>
         </div>
         <div id="editor" class="editor" spellcheck="true" data-placeholder="Paste or type your text here. Double-click to import."></div>
       </section>
@@ -160,7 +170,7 @@
       closeButton: true,
       closeLabel: "Done",
     });
-  </script>
+  </script>
 </body>
 
 </html>
