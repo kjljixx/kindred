@@ -21,6 +21,7 @@ TODO
 - Streaming chat replies - Low
 - Allow chat to see merge conflict context
 - Allow chat model to "mention" some text and to suggest edits
+- Editing/Retry
 
 Git
 TODO

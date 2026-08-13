@@ -125,7 +125,8 @@
   --size-composer-max: var(--space-12);
 
   /* Font stacks */
-  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-ui: Geist, ui-sans-serif, system-ui, sans-serif;
+  --font-content: "Noto Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -139,7 +140,7 @@ body {
   height: 100%;
   background: var(--color-bg);
   color: var(--color-text);
-  font-family: var(--font-sans);
+  font-family: var(--font-ui);
   font-size: var(--font-size-2);
   font-weight: var(--font-weight-1);
   line-height: var(--line-height-3);
@@ -1150,6 +1151,7 @@ button.pane-title {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  font-family: var(--font-content);
 }
 
 .chat-msg {
