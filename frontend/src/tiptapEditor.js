@@ -12,7 +12,15 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 const keptSelectionKey = new PluginKey("keptSelection");
 
-/** Fake selection highlight while toolbar controls hold focus. */
+function createKeptCaretWidget() {
+  const el = document.createElement("span");
+  el.className = "toolbar-kept-caret";
+  el.contentEditable = "false";
+  el.setAttribute("aria-hidden", "true");
+  return el;
+}
+
+/** Fake selection/caret while toolbar or chat holds focus. */
 const KeptSelection = Extension.create({
   name: "keptSelection",
   addCommands() {
@@ -49,22 +57,26 @@ const KeptSelection = Extension.create({
             const meta = tr.getMeta(keptSelectionKey);
             if (meta !== undefined) return meta;
             if (!prev) return null;
-            const from = tr.mapping.map(prev.from);
-            const to = tr.mapping.map(prev.to);
-            if (from === to) return null;
             const max = tr.doc.content.size;
-            return {
-              from: Math.max(0, Math.min(from, max)),
-              to: Math.max(0, Math.min(to, max)),
-            };
+            const from = Math.max(0, Math.min(tr.mapping.map(prev.from), max));
+            const to = Math.max(0, Math.min(tr.mapping.map(prev.to), max));
+            return { from, to };
           },
         },
         props: {
           decorations(state) {
             const range = keptSelectionKey.getState(state);
-            if (!range || range.from >= range.to) return DecorationSet.empty;
+            if (!range) return DecorationSet.empty;
+            if (range.from < range.to) {
+              return DecorationSet.create(state.doc, [
+                Decoration.inline(range.from, range.to, { class: "toolbar-kept-selection" }),
+              ]);
+            }
             return DecorationSet.create(state.doc, [
-              Decoration.inline(range.from, range.to, { class: "toolbar-kept-selection" }),
+              Decoration.widget(range.from, createKeptCaretWidget, {
+                key: "toolbar-kept-caret",
+                side: 0,
+              }),
             ]);
           },
         },
@@ -1231,19 +1243,43 @@ function syncToolbar(editor, toolbarEl) {
 
 export function bindToolbar(editor, toolbarEl) {
   if (!toolbarEl) return () => { };
-  let stashedFontSizeSelection = null;
-  const stashFontSizeSelection = () => {
+  const colorInput = toolbarEl.querySelector("[data-color-input]");
+  const fontSizeInput = toolbarEl.querySelector("[data-font-size]");
+  const fontFamilySelect = toolbarEl.querySelector("[data-font-family]");
+  let stashedSelection = null;
+
+  const isColorPickerOpen = () => Boolean(document.querySelector(".clr-picker.clr-open"));
+  const isChatComposerActive = () => {
+    const composer = document.getElementById("chat-composer");
+    if (!composer || composer.hidden) return false;
+    if (composer.dataset.keepSelection === "1") return true;
+    return Boolean(document.activeElement && composer.contains(document.activeElement));
+  };
+  const isKeepTargetActive = () => {
+    const el = document.activeElement;
+    if (el && (el === fontSizeInput || el === fontFamilySelect || el === colorInput)) return true;
+    if (isColorPickerOpen()) return true;
+    if (isChatComposerActive()) return true;
+    return false;
+  };
+  const stashSelection = () => {
     const { from, to } = editor.state.selection;
-    if (from === to) return;
-    stashedFontSizeSelection = { from, to };
+    stashedSelection = { from, to };
     editor.commands.setKeptSelection({ from, to });
   };
-  const clearStashedFontSizeSelection = () => {
-    stashedFontSizeSelection = null;
+  const clearStashedSelection = () => {
+    stashedSelection = null;
     if (keptSelectionKey.getState(editor.state)) {
       editor.commands.clearKeptSelection();
     }
   };
+  const scheduleClearIfNoKeepTarget = () => {
+    requestAnimationFrame(() => {
+      if (isKeepTargetActive()) return;
+      clearStashedSelection();
+    });
+  };
+
   const onClick = (e) => {
     const btn = e.target.closest("[data-cmd]");
     if (!btn || !toolbarEl.contains(btn)) return;
@@ -1260,30 +1296,33 @@ export function bindToolbar(editor, toolbarEl) {
     else if (cmd === "alignJustify") chain.setTextAlign("justify").run();
     else if (cmd === "unsetColor") chain.unsetColor().run();
   };
-  const colorInput = toolbarEl.querySelector("[data-color-input]");
   const onColor = (e) => {
     const value = e.target.value;
     if (!value) return;
-    const pickerOpen = Boolean(document.querySelector(".clr-picker.clr-open"));
+    const pickerOpen = isColorPickerOpen();
     const chain = editor.chain();
     if (!pickerOpen) chain.focus();
+    if (stashedSelection) chain.setTextSelection(stashedSelection);
     chain.setColor(value).run();
+    if (pickerOpen && stashedSelection) {
+      editor.commands.setKeptSelection(stashedSelection);
+    } else if (!pickerOpen) {
+      clearStashedSelection();
+    }
   };
-  const fontSizeInput = toolbarEl.querySelector("[data-font-size]");
-  const fontFamilySelect = toolbarEl.querySelector("[data-font-family]");
   const applyFontSize = ({ returnFocus = false } = {}) => {
     if (!fontSizeInput) return;
     const n = Number(fontSizeInput.value);
     const chain = returnFocus ? editor.chain().focus() : editor.chain();
-    if (stashedFontSizeSelection) {
-      chain.setTextSelection(stashedFontSizeSelection);
+    if (stashedSelection) {
+      chain.setTextSelection(stashedSelection);
     }
     if (!Number.isFinite(n) || n <= 0) {
       fontSizeInput.value = "14";
       chain.unsetFontSize().run();
-      if (returnFocus) clearStashedFontSizeSelection();
-      else if (stashedFontSizeSelection) {
-        editor.commands.setKeptSelection(stashedFontSizeSelection);
+      if (returnFocus) clearStashedSelection();
+      else if (stashedSelection) {
+        editor.commands.setKeptSelection(stashedSelection);
       }
       return;
     }
@@ -1291,9 +1330,9 @@ export function bindToolbar(editor, toolbarEl) {
     if (String(clamped) !== fontSizeInput.value) fontSizeInput.value = String(clamped);
     if (clamped === 14) chain.unsetFontSize().run();
     else chain.setFontSize(`${clamped}px`).run();
-    if (returnFocus) clearStashedFontSizeSelection();
-    else if (stashedFontSizeSelection) {
-      editor.commands.setKeptSelection(stashedFontSizeSelection);
+    if (returnFocus) clearStashedSelection();
+    else if (stashedSelection) {
+      editor.commands.setKeptSelection(stashedSelection);
     }
   };
   const onFontSizeKeydown = (e) => {
@@ -1303,47 +1342,73 @@ export function bindToolbar(editor, toolbarEl) {
     }
   };
   const onFontSizeChange = () => applyFontSize({ returnFocus: false });
-  const onFontSizeBlur = () => {
-    requestAnimationFrame(() => {
-      if (document.activeElement === fontSizeInput) return;
-      clearStashedFontSizeSelection();
-    });
-  };
   const onFontFamily = () => {
     const value = fontFamilySelect?.value || "";
     const chain = editor.chain().focus();
     if (!value) chain.unsetFontFamily().run();
     else chain.setFontFamily(value).run();
+    clearStashedSelection();
   };
   const onEditorPointerDown = (e) => {
     if (toolbarEl.contains(e.target)) return;
-    clearStashedFontSizeSelection();
+    clearStashedSelection();
   };
+  const onEditorFocus = () => clearStashedSelection();
+  const onDocPointerDown = (e) => {
+    if (!stashedSelection && !keptSelectionKey.getState(editor.state)) return;
+    if (toolbarEl.contains(e.target)) return;
+    if (e.target.closest?.("#chat-composer")) return;
+    if (e.target.closest?.(".clr-picker")) {
+      // Coloris may close on this click (Done / outside); clear after dismiss.
+      requestAnimationFrame(() => {
+        scheduleClearIfNoKeepTarget();
+      });
+      return;
+    }
+    scheduleClearIfNoKeepTarget();
+  };
+
   toolbarEl.addEventListener("click", onClick);
+  colorInput?.addEventListener("mousedown", stashSelection);
+  colorInput?.addEventListener("focus", stashSelection);
+  colorInput?.addEventListener("blur", scheduleClearIfNoKeepTarget);
   colorInput?.addEventListener("input", onColor);
   colorInput?.addEventListener("change", onColor);
-  fontSizeInput?.addEventListener("mousedown", stashFontSizeSelection);
-  fontSizeInput?.addEventListener("focus", stashFontSizeSelection);
+  fontSizeInput?.addEventListener("mousedown", stashSelection);
+  fontSizeInput?.addEventListener("focus", stashSelection);
   fontSizeInput?.addEventListener("change", onFontSizeChange);
   fontSizeInput?.addEventListener("keydown", onFontSizeKeydown);
-  fontSizeInput?.addEventListener("blur", onFontSizeBlur);
+  fontSizeInput?.addEventListener("blur", scheduleClearIfNoKeepTarget);
+  fontFamilySelect?.addEventListener("mousedown", stashSelection);
+  fontFamilySelect?.addEventListener("focus", stashSelection);
+  fontFamilySelect?.addEventListener("blur", scheduleClearIfNoKeepTarget);
   fontFamilySelect?.addEventListener("change", onFontFamily);
   editor.view.dom.addEventListener("pointerdown", onEditorPointerDown);
+  editor.on("focus", onEditorFocus);
+  document.addEventListener("pointerdown", onDocPointerDown);
   const onSel = () => syncToolbar(editor, toolbarEl);
   editor.on("selectionUpdate", onSel);
   editor.on("transaction", onSel);
   syncToolbar(editor, toolbarEl);
   return () => {
     toolbarEl.removeEventListener("click", onClick);
+    colorInput?.removeEventListener("mousedown", stashSelection);
+    colorInput?.removeEventListener("focus", stashSelection);
+    colorInput?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
     colorInput?.removeEventListener("input", onColor);
     colorInput?.removeEventListener("change", onColor);
-    fontSizeInput?.removeEventListener("mousedown", stashFontSizeSelection);
-    fontSizeInput?.removeEventListener("focus", stashFontSizeSelection);
+    fontSizeInput?.removeEventListener("mousedown", stashSelection);
+    fontSizeInput?.removeEventListener("focus", stashSelection);
     fontSizeInput?.removeEventListener("change", onFontSizeChange);
     fontSizeInput?.removeEventListener("keydown", onFontSizeKeydown);
-    fontSizeInput?.removeEventListener("blur", onFontSizeBlur);
+    fontSizeInput?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
+    fontFamilySelect?.removeEventListener("mousedown", stashSelection);
+    fontFamilySelect?.removeEventListener("focus", stashSelection);
+    fontFamilySelect?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
     fontFamilySelect?.removeEventListener("change", onFontFamily);
     editor.view.dom.removeEventListener("pointerdown", onEditorPointerDown);
+    editor.off("focus", onEditorFocus);
+    document.removeEventListener("pointerdown", onDocPointerDown);
     editor.off("selectionUpdate", onSel);
     editor.off("transaction", onSel);
   };

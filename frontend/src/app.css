@@ -1544,3 +1544,13 @@ button.pane-title {
 .editor .toolbar-kept-selection {
   background: rgba(59, 130, 246, 0.5);
 }
+
+.editor .toolbar-kept-caret {
+  display: inline-block;
+  width: 1px;
+  height: 1.2em;
+  margin-inline: -0.5px;
+  background: rgb(59, 130, 246);
+  vertical-align: text-bottom;
+  pointer-events: none;
+}

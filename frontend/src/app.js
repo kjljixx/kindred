@@ -228,6 +228,46 @@ import DOMPurify from "dompurify";
   });
   bindToolbar(tipTap, toolbarEl);
 
+  const stashChatKeptSelection = () => {
+    if (!tipTap) return;
+    const { from, to } = tipTap.state.selection;
+    tipTap.commands.setKeptSelection({ from, to });
+  };
+  const markChatComposerKeep = () => {
+    chatComposer.dataset.keepSelection = "1";
+    stashChatKeptSelection();
+  };
+
+  // Whole composer (input, Send, padding) is a keep-target — not focus-only.
+  chatComposer.addEventListener("pointerdown", markChatComposerKeep);
+  chatComposer.addEventListener("focusin", markChatComposerKeep);
+  chatComposer.addEventListener("focusout", () => {
+    requestAnimationFrame(() => {
+      if (chatComposer.contains(document.activeElement)) return;
+      if (chatComposer.dataset.keepSelection === "1") return;
+      const active = document.activeElement;
+      if (
+        active &&
+        toolbarEl &&
+        (active === toolbarEl.querySelector("[data-font-size]") ||
+          active === toolbarEl.querySelector("[data-font-family]") ||
+          active === toolbarEl.querySelector("[data-color-input]"))
+      ) {
+        return;
+      }
+      if (document.querySelector(".clr-picker.clr-open")) return;
+      tipTap?.commands.clearKeptSelection();
+    });
+  });
+  document.addEventListener("pointerdown", (e) => {
+    if (e.target.closest?.("#chat-composer")) return;
+    if (chatComposer.dataset.keepSelection !== "1") return;
+    delete chatComposer.dataset.keepSelection;
+  });
+  tipTap.on("focus", () => {
+    delete chatComposer.dataset.keepSelection;
+  });
+
   function clearHistory() {
     tipTap?.commands.clearHistory?.();
   }
