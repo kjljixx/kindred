@@ -1234,11 +1234,14 @@ function syncToolbar(editor, toolbarEl) {
     const next = String(fontSizeToToolbarNumber(attrs.fontSize, 14));
     if (fontSizeInput.value !== next) fontSizeInput.value = next;
   }
-  syncSelectValue(
-    toolbarEl.querySelector("[data-font-family]"),
-    attrs.fontFamily,
-    normalizeToolbarFontFamily
-  );
+  const fontFamilySelect = toolbarEl.querySelector("[data-font-family]");
+  if (fontFamilySelect && document.activeElement !== fontFamilySelect) {
+    syncSelectValue(
+      fontFamilySelect,
+      attrs.fontFamily,
+      normalizeToolbarFontFamily
+    );
+  }
 }
 
 export function bindToolbar(editor, toolbarEl) {
@@ -1345,6 +1348,7 @@ export function bindToolbar(editor, toolbarEl) {
   const onFontFamily = () => {
     const value = fontFamilySelect?.value || "";
     const chain = editor.chain().focus();
+    if (stashedSelection) chain.setTextSelection(stashedSelection);
     if (!value) chain.unsetFontFamily().run();
     else chain.setFontFamily(value).run();
     clearStashedSelection();
