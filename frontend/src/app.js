@@ -137,18 +137,10 @@ import DOMPurify from "dompurify";
           markedHtml: marked,
           conflictMode,
         });
-      } else if (viewing) {
-        // History view diffs vs previous commit; analysis spans use a different baseline.
-        refreshOverlay(tipTap, {
-          baseline,
-          currentPlain: currentText,
-          highlight: null,
-          markedHtml: "",
-          conflictMode,
-        });
       } else if (dirtyViewMode === "Diff") {
+        // Dirty: vs HEAD. History: vs previous commit (baseline set by loadSnapshotState).
         refreshOverlay(tipTap, {
-          baseline: headPlain,
+          baseline: viewing ? baseline : headPlain,
           currentPlain: currentText,
           highlight: null,
           markedHtml: "",
@@ -1149,7 +1141,7 @@ import DOMPurify from "dompurify";
 
   async function setDirtyEditView(mode) {
     if (mode !== "Text" && mode !== "Diff") return;
-    if (viewingOid) await exitToDirty();
+    if (pendingMerge) return;
     if (dirtyReviewing) await leaveDirtyReview();
     dirtyViewMode = mode;
     renderGitPane();
@@ -1158,11 +1150,12 @@ import DOMPurify from "dompurify";
 
   async function enterDirtyReview() {
     if (!activeDraftId || !store) return;
-    if (isViewingHistory()) await exitToDirty();
+    if (isViewingHistory()) return;
     if (pendingMerge) return;
     if (dirtyReviewing) return;
     if (unresolvedMergeConflictCount(currentHtml) > 0) return;
     if (!headOid) return;
+    if (!workingDirty) return;
     await flushSaveTimer();
     pullFromEditor();
     const dirty = await store.isDirty(activeDraftId);
@@ -2170,16 +2163,24 @@ import DOMPurify from "dompurify";
       gitCommitList.innerHTML = `<p class="git-empty">No commits yet. Analyze or Commit to create one.</p>`;
     } else {
       const atDirty = !viewingOid;
-      const dirtyTextActive = atDirty && !dirtyReviewing && dirtyViewMode === "Text";
-      const dirtyDiffActive = atDirty && !dirtyReviewing && dirtyViewMode === "Diff";
-      const dirtyReviewActive = atDirty && dirtyReviewing;
-      const dirtyBtn = (label, action, active) =>
-        `<button type="button" class="tab btn btn-secondary${active ? " active" : ""}" data-git="${action}" role="tab" aria-selected="${active ? "true" : "false"}"${gitBusy ? " disabled" : ""}>${label}</button>`;
+      const modesLocked = gitBusy || !!pendingMerge;
+      const textActive = !dirtyReviewing && dirtyViewMode === "Text";
+      const diffActive = !dirtyReviewing && dirtyViewMode === "Diff";
+      const reviewActive = atDirty && dirtyReviewing;
+      const reviewDisabled =
+        modesLocked || !!viewingOid || (!workingDirty && !dirtyReviewing);
+      const dirtyBtn = (label, action, active, disabled) =>
+        `<button type="button" class="tab btn btn-secondary${active ? " active" : ""}" data-git="${action}" role="tab" aria-selected="${active ? "true" : "false"}"${disabled ? " disabled" : ""}>${label}</button>`;
       gitDirtySection.hidden = false;
       gitDirtyModes.innerHTML =
-        dirtyBtn("Text", "dirty-text", dirtyTextActive) +
-        dirtyBtn("Diff", "dirty-diff", dirtyDiffActive) +
-        dirtyBtn("Review", "dirty-review", dirtyReviewActive);
+        dirtyBtn("Text", "dirty-text", textActive, modesLocked) +
+        dirtyBtn("Diff", "dirty-diff", diffActive, modesLocked) +
+        dirtyBtn("Review", "dirty-review", reviewActive, reviewDisabled);
+      const dirtyRow =
+        `<div class="git-row git-row-dirty${atDirty ? " active" : ""}" role="listitem" data-git="dirty">` +
+        `<div class="git-row-body">` +
+        `<span class="git-row-title">dirty</span>` +
+        `</div></div>`;
       const commitRows = commits
         .slice()
         .reverse()
@@ -2209,7 +2210,7 @@ import DOMPurify from "dompurify";
           );
         })
         .join("");
-      gitCommitList.innerHTML = commitRows;
+      gitCommitList.innerHTML = dirtyRow + commitRows;
     }
     gitNewBranchBtn.disabled = gitBusy || !commits.length;
 

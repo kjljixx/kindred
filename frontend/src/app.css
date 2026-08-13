@@ -1374,6 +1374,15 @@ button.pane-title {
   padding: var(--space-4) 0 var(--space-6);
 }
 
+#git-dirty-section {
+  margin-top: var(--space-4);
+}
+
+#git-dirty-section + .git-section {
+  margin-top: var(--space-4);
+  padding-top: 0;
+}
+
 .git-section+.git-section {
   margin-top: var(--space-6);
   /*border-top: 1px solid var(--color-border);*/
@@ -1406,10 +1415,14 @@ button.pane-title {
 .git-dirty-modes {
   background-color: var(--color-bg-inset);
   border-radius: var(--radius-2);
-  margin: 0 var(--space-5);
-  margin-top: var(--space-3);
+  margin: 0 var(--space-4);
   width: fit-content;
   padding: var(--space-4) var(--space-4);
+}
+
+.git-dirty-modes .tab:disabled {
+  opacity: var(--opacity-2);
+  cursor: default;
 }
 
 .git-dirty-modes.tabs-primary .tab.btn-secondary:not(.active) {

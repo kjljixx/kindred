@@ -41,6 +41,7 @@ class KindredPage:
   GIT_BRANCH_LIST = (By.ID, "git-branch-list")
   GIT_COMMIT_LIST = (By.ID, "git-commit-list")
   GIT_COMMIT_ROWS = (By.CSS_SELECTOR, '#git-commit-list .git-row[data-git="view"]')
+  DIRTY_ROW = (By.CSS_SELECTOR, '#git-commit-list .git-row[data-git="dirty"]')
   DIRTY_TEXT_BTN = (By.CSS_SELECTOR, '#git-dirty-modes [data-git="dirty-text"]')
   DIRTY_REVIEW_BTN = (By.CSS_SELECTOR, '#git-dirty-modes [data-git="dirty-review"]')
   MERGE_CONFLICT = (By.CSS_SELECTOR, "#editor .merge-conflict")
@@ -151,8 +152,8 @@ class KindredPage:
     self.wait_until_status_contains("viewing old commit")
 
   def exit_to_dirty_text(self) -> None:
-    btn = self.wait.until(EC.element_to_be_clickable(self.DIRTY_TEXT_BTN))
-    btn.click()
+    row = self.wait.until(EC.element_to_be_clickable(self.DIRTY_ROW))
+    row.click()
     self.wait.until(lambda d: "viewing old commit" not in self.status_text())
 
   def enter_dirty_review(self) -> None:
