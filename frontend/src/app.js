@@ -155,11 +155,12 @@ import DOMPurify from "dompurify";
           conflictMode,
         });
       } else {
-        // text: empty both so whole-doc is not painted as insert
+        // Text: map analysis spans for sent-hl without painting git-style diffs.
         refreshOverlay(tipTap, {
-          baseline: "",
-          currentPlain: "",
-          highlight: null,
+          baseline,
+          currentPlain: currentText,
+          highlight: activeHighlight(),
+          showDiffs: false,
           markedHtml: "",
           conflictMode,
         });
@@ -1551,6 +1552,7 @@ import DOMPurify from "dompurify";
   }
 
   function activeHighlight() {
+    if (paneMode !== "review") return null;
     if (mode !== "local") return null;
     if (
       chatFocus.scope === "paragraph" &&
@@ -2118,6 +2120,7 @@ import DOMPurify from "dompurify";
     syncPaneModeTabs();
     updateAnalyzeBtn();
     syncRightPane();
+    syncEditorHighlight(true);
     if (paneMode === "git") {
       renderGitPane();
       void refreshWorkingDirty();

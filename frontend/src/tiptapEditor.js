@@ -932,7 +932,14 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
   const baseline = meta.baseline || "";
   const currentPlain = meta.currentPlain || "";
   const hl = meta.highlight;
+  const showDiffs = meta.showDiffs !== false;
   if (!diffsFn) {
+    return decorations.length
+      ? DecorationSet.create(doc, decorations)
+      : DecorationSet.empty;
+  }
+  // Text mode: map highlight without painting insert/delete chrome.
+  if (!showDiffs && !hl) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
       : DecorationSet.empty;
@@ -985,25 +992,25 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     if (op === DIFF_INSERT) {
       const fromPlain = curPos;
       const toPlain = curPos + data.length;
-      let cls = "diff-ins";
-      if (hl && basePos >= hl.start && basePos < hl.end) {
-        cls = "diff-ins sent-hl";
+      if (showDiffs) {
+        let cls = "diff-ins";
+        if (hl && basePos >= hl.start && basePos < hl.end) {
+          cls = "diff-ins sent-hl";
+        }
+        addInline(fromPlain, toPlain, cls);
+      } else if (hl && basePos >= hl.start && basePos < hl.end) {
+        addInline(fromPlain, toPlain, "sent-hl");
       }
-      addInline(fromPlain, toPlain, cls);
       curPos += data.length;
     } else if (op === DIFF_DELETE) {
-      const pm = pmPosForPlain(map, curPos);
-      decorations.push(
-        Decoration.widget(pm, createDeleteWidget(data), {
-          side: -1,
-          key: `del-${basePos}-${data.length}`,
-        })
-      );
-      if (hl) {
-        const absEnd = basePos + data.length;
-        if (!(absEnd <= hl.start || basePos >= hl.end)) {
-          // Ghost is a widget; sent-hl on deletes is visual via widget class if needed.
-        }
+      if (showDiffs) {
+        const pm = pmPosForPlain(map, curPos);
+        decorations.push(
+          Decoration.widget(pm, createDeleteWidget(data), {
+            side: -1,
+            key: `del-${basePos}-${data.length}`,
+          })
+        );
       }
       basePos += data.length;
     } else {
@@ -1032,6 +1039,7 @@ const KindredOverlay = Extension.create({
       baseline: "",
       currentPlain: "",
       highlight: null,
+      showDiffs: true,
       conflicts: null,
       markedHtml: "",
     };
@@ -1063,6 +1071,7 @@ const KindredOverlay = Extension.create({
               baseline: "",
               currentPlain: "",
               highlight: null,
+              showDiffs: true,
               conflicts: null,
               markedHtml: "",
               conflictMode: "merge",
@@ -1079,6 +1088,7 @@ const KindredOverlay = Extension.create({
                 baseline: next.baseline,
                 currentPlain: next.currentPlain,
                 highlight: next.highlight,
+                showDiffs: next.showDiffs,
                 conflicts: next.conflicts,
                 markedHtml: next.markedHtml,
                 conflictMode: next.conflictMode,
@@ -1094,6 +1104,7 @@ const KindredOverlay = Extension.create({
                   baseline: next.baseline,
                   currentPlain: next.currentPlain,
                   highlight: next.highlight,
+                  showDiffs: next.showDiffs,
                   conflicts: next.conflicts,
                   conflictMode: next.conflictMode,
                   alignPreview: next.alignPreview,
@@ -1442,6 +1453,7 @@ export function refreshOverlay(editor, {
   baseline = "",
   currentPlain = "",
   highlight = null,
+  showDiffs = true,
   markedHtml = "",
   conflictMode = "merge",
 } = {}) {
@@ -1451,6 +1463,7 @@ export function refreshOverlay(editor, {
     baseline: conflicts ? "" : baseline,
     currentPlain: conflicts ? "" : currentPlain,
     highlight: conflicts ? null : highlight,
+    showDiffs: conflicts ? true : showDiffs,
     conflicts,
     markedHtml: conflicts ? markedHtml : "",
     conflictMode: conflictMode === "review" ? "review" : "merge",

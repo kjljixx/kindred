@@ -5,7 +5,6 @@ Editor
 - Google Fonts for a larger variety of fonts
 - Investigate/Fix Sentence feedback being lost when replacing large amounts of a sentence
 - Investigate/Fix adding new paragraphs breaking some stuff
-- Fix sentences/paragraphs not highlighting
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
 - Lists & Tables
 
