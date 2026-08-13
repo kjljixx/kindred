@@ -1,10 +1,10 @@
 import LightningFS from "@isomorphic-git/lightning-fs";
 import git from "isomorphic-git";
+import { mergeHtmlViaAst } from "./docMerge.js";
+import { canonicalizeTextHtml } from "./kindredSchema.js";
 
 const VOLUME = "kindred";
   const ROOT = "/texts";
-  const LEGACY_KEY = "kindred-review:drafts";
-  const MIGRATED_KEY = "kindred:drafts-migrated";
   const AUTHOR = { name: "kindred", email: "kindred@local" };
   const TEXT_FILE = "text.html";
   const TRACKED = [TEXT_FILE, "meta.json"];
@@ -82,9 +82,8 @@ const VOLUME = "kindred";
    * Structured conflict nodes are empty spans (sides in attrs) → skipped.
    */
   function tipTapHtmlToPlain(html) {
-    let raw = String(html ?? "");
+    const raw = String(html ?? "");
     if (!raw) return "";
-    if (raw.includes("<<<<<<< ")) raw = migrateLegacyConflictHtml(raw);
     const doc = new DOMParser().parseFromString(raw, "text/html");
     const root = doc.body;
     root.querySelectorAll("[data-kindred-text-conflict]").forEach((el) => {
@@ -101,92 +100,9 @@ const VOLUME = "kindred";
     return blocks.map((b) => asPlain(b.textContent || "")).join("\n\n");
   }
 
-  /**
-   * Pretty-print with newlines only between sibling blocks.
-   * Never injects \\n before closing tags (that would sit inside paragraph text).
-   */
-  function prettyPrintHtml(html) {
-    const compact = String(html || "")
-      .replace(/>\s+</g, "><")
-      .trim();
-    if (!compact) return "";
-    return compact
-      .replace(
-        /><(p|h[1-6]|ul|ol|li|blockquote|pre|hr|div)(\s[^>]*)?>/gi,
-        ">\n<$1$2>"
-      )
-      .trim();
-  }
-
-  /** Drop trailing empty hard breaks / whitespace at the end of a block. */
-  function trimTrailingInsignificant(el) {
-    while (el.lastChild) {
-      const last = el.lastChild;
-      if (last.nodeType === Node.TEXT_NODE) {
-        const trimmed = (last.nodeValue || "").replace(/[\s\u00a0]+$/g, "");
-        if (!trimmed) {
-          el.removeChild(last);
-          continue;
-        }
-        if (trimmed !== last.nodeValue) last.nodeValue = trimmed;
-        break;
-      }
-      if (last.nodeType === Node.ELEMENT_NODE && last.tagName === "BR") {
-        el.removeChild(last);
-        continue;
-      }
-      if (last.nodeType === Node.ELEMENT_NODE) {
-        trimTrailingInsignificant(last);
-        break;
-      }
-      break;
-    }
-  }
-
-  /** Stable style attrs for dirty compare (trailing ; / prop order / spacing). */
-  function canonicalizeStyleAttr(style) {
-    return String(style || "")
-      .split(";")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((decl) => {
-        const i = decl.indexOf(":");
-        if (i < 0) return decl.replace(/\s+/g, " ");
-        const prop = decl.slice(0, i).trim().toLowerCase();
-        const val = decl.slice(i + 1).trim().replace(/\s+/g, " ");
-        return `${prop}: ${val}`;
-      })
-      .sort()
-      .join("; ");
-  }
-
-  /**
-   * Mark-preserving HTML normalize for save + dirty compare.
-   * Mirrors tiptapEditor.canonicalizeTextHtml (gitStore cannot import ESM).
-   */
-  function canonicalizeTextHtml(html) {
-    const raw = String(html || "").trim();
-    if (!raw) return "";
-    const doc = new DOMParser().parseFromString(raw, "text/html");
-    const root = doc.body;
-    for (const el of root.querySelectorAll(
-      "p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, div"
-    )) {
-      trimTrailingInsignificant(el);
-    }
-    for (const el of root.querySelectorAll("[style]")) {
-      const next = canonicalizeStyleAttr(el.getAttribute("style"));
-      if (next) el.setAttribute("style", next);
-      else el.removeAttribute("style");
-    }
-    return prettyPrintHtml(root.innerHTML);
-  }
-
   function htmlHasConflictMarkers(html) {
     const s = String(html || "");
     if (!s) return false;
-    // Legacy textual hunks still need verbatim storage until migrated.
-    if (s.includes("<<<<<<< ")) return true;
     if (
       !s.includes("data-kindred-text-conflict") &&
       !s.includes("data-kindred-align-ours")
@@ -200,32 +116,6 @@ const VOLUME = "kindred";
     );
   }
 
-  function parseLegacyConflictSegments(str) {
-    const re =
-      /<<<<<<< ([^\n]*)\n([\s\S]*?)\n=======\n([\s\S]*?)\n>>>>>>> ([^\n]*)(?:\n|$)/g;
-    const segments = [];
-    let last = 0;
-    let m;
-    while ((m = re.exec(str)) !== null) {
-      if (m.index > last) {
-        segments.push({ type: "text", text: str.slice(last, m.index) });
-      }
-      segments.push({
-        type: "conflict",
-        oursLabel: m[1],
-        ours: m[2],
-        theirs: m[3],
-        theirsLabel: m[4],
-      });
-      last = m.index + m[0].length;
-    }
-    if (!segments.length) return null;
-    if (last < str.length) {
-      segments.push({ type: "text", text: str.slice(last) });
-    }
-    return segments;
-  }
-
   function formatConflict(labelOurs, oursStr, labelTheirs, theirsStr) {
     return (
       `<span data-kindred-text-conflict` +
@@ -237,42 +127,13 @@ const VOLUME = "kindred";
     );
   }
 
-  /** Convert legacy <<<<<<< hunks to structured conflict nodes. */
-  function migrateLegacyConflictHtml(html) {
-    const s = String(html || "");
-    if (!s.includes("<<<<<<< ")) return s;
-    const segs = parseLegacyConflictSegments(s);
-    if (!segs) return s;
-    return segs
-      .map((seg) =>
-        seg.type === "text"
-          ? seg.text
-          : formatConflict(
-              seg.oursLabel,
-              seg.ours,
-              seg.theirsLabel,
-              seg.theirs
-            )
-      )
-      .join("");
-  }
-
   /** Drop protocol nodes/attrs from non-merge HTML (import / stray attrs). */
   function stripKindredProtocol(html) {
     const raw = String(html || "");
     if (!raw) return "";
-    if (!raw.includes("data-kindred-") && !raw.includes("<<<<<<< ")) return raw;
-    let s = raw;
-    if (s.includes("<<<<<<< ")) {
-      const segs = parseLegacyConflictSegments(s);
-      if (segs) {
-        s = segs
-          .map((seg) => (seg.type === "text" ? seg.text : seg.ours || ""))
-          .join("");
-      }
-    }
+    if (!raw.includes("data-kindred-")) return raw;
     const doc = new DOMParser().parseFromString(
-      `<div id="__kindred_root">${s}</div>`,
+      `<div id="__kindred_root">${raw}</div>`,
       "text/html"
     );
     const root = doc.getElementById("__kindred_root");
@@ -318,31 +179,16 @@ const VOLUME = "kindred";
       .replace(/</g, "&lt;");
   }
 
-  /**
-   * DOM round-trip escapes raw <<<<<<< markers; keep conflict HTML verbatim.
-   * Non-conflict docs: strip leaked protocol, then canonicalize.
-   */
+  /** Conflict HTML is stored verbatim; otherwise strip protocol and canonicalize. */
   function storeTextHtml(html, { hasConflict = false } = {}) {
     const raw = html == null ? "" : String(html);
-    if (hasConflict || htmlHasConflictMarkers(raw)) {
-      if (raw.includes("<<<<<<< ")) return migrateLegacyConflictHtml(raw);
-      return raw;
-    }
+    if (hasConflict || htmlHasConflictMarkers(raw)) return raw;
     return canonicalizeTextHtml(stripKindredProtocol(raw));
   }
 
   /** text body from the app is TipTap getHTML(); canonicalize for stable dirty. */
   function textHtmlFromEditor(value) {
     return storeTextHtml(value);
-  }
-
-  /** One-shot localStorage migration — not used for live type/paste/save. */
-  function migrateLegacyTextBody(html, text) {
-    const raw =
-      html != null && String(html) !== "" ? String(html) : String(text ?? "");
-    if (!raw) return "";
-    if (/^\s*<p[\s>]/i.test(raw)) return textHtmlFromEditor(raw);
-    return plainTextToHtml(raw);
   }
 
   function titleFromText(text) {
@@ -552,13 +398,6 @@ const VOLUME = "kindred";
       }
       const fromFile = await readTitleFile(dir);
       if (fromFile) return fromFile;
-      // Migrate legacy meta.title → title.txt
-      const rawMeta = await readJson(`${dir}/meta.json`, null);
-      if (rawMeta && typeof rawMeta.title === "string" && rawMeta.title.trim()) {
-        const legacy = rawMeta.title.trim();
-        await writeTitleFile(dir, legacy);
-        return legacy;
-      }
     }
     return titleFromText(text || "");
   }
@@ -618,13 +457,8 @@ const VOLUME = "kindred";
 
   async function readWorkingFiles(id) {
     const dir = textDir(id);
-    let html = await readText(`${dir}/${TEXT_FILE}`, "");
+    const html = await readText(`${dir}/${TEXT_FILE}`, "");
     const meta = normalizeMeta(await readJson(`${dir}/meta.json`, null), id);
-    if ((meta.hasConflict || meta.pendingMerge) && html.includes("<<<<<<< ")) {
-      html = migrateLegacyConflictHtml(html);
-      await writeText(`${dir}/${TEXT_FILE}`, html);
-      await flush();
-    }
     const title = await resolveTitle(dir, html, null, meta.customTitle);
     return {
       id,
@@ -1317,7 +1151,7 @@ const VOLUME = "kindred";
     return Object.prototype.hasOwnProperty.call(EXCLUSIVE_MARKS, type);
   }
 
-  /** Pull exclusive mark values from a open tag (style + legacy attrs). */
+  /** Pull exclusive mark values from an open tag (style + presentational attrs). */
   function exclusiveAttrsFromOpenTag(chunk) {
     const found = [];
     const style = /\bstyle\s*=\s*(["'])(.*?)\1/i.exec(chunk);
@@ -2311,8 +2145,52 @@ const VOLUME = "kindred";
     return out || "<p></p>";
   }
 
-  /** Plain-text 3-way merge: orthogonal union + exclusive format-only conflicts. */
+  /**
+   * 3-way merge: AST block aligner + leaf mark/token merge inside paragraphs.
+   * Pass `{ leaf: true }` to skip the aligner (used when merging one block).
+   */
   function mergeText(
+    baseText,
+    oursText,
+    theirsText,
+    labelOurs,
+    labelTheirs,
+    options = {}
+  ) {
+    const review = !!options.review;
+    const baseHtml = baseText ?? "";
+    const oursHtml = oursText ?? "";
+    const theirsHtml = theirsText ?? "";
+    if (oursHtml === theirsHtml) return { cleanMerge: true, mergedText: oursHtml, ops: [] };
+    if (!review && oursHtml === baseHtml) {
+      return { cleanMerge: true, mergedText: theirsHtml, ops: [] };
+    }
+    if (theirsHtml === baseHtml) {
+      return { cleanMerge: true, mergedText: oursHtml, ops: [] };
+    }
+    if (!options.leaf) {
+      return mergeHtmlViaAst(
+        baseHtml,
+        oursHtml,
+        theirsHtml,
+        labelOurs,
+        labelTheirs,
+        options,
+        mergeFlatHtml
+      );
+    }
+    return mergeFlatHtml(
+      baseHtml,
+      oursHtml,
+      theirsHtml,
+      labelOurs,
+      labelTheirs,
+      options
+    );
+  }
+
+  /** Leaf merge: plain+marks 3-way (orthogonal union + exclusive format conflicts). */
+  function mergeFlatHtml(
     baseText,
     oursText,
     theirsText,
@@ -2817,106 +2695,8 @@ const VOLUME = "kindred";
     return manualThreeWayMerge(id, ours, branch, oursOid, theirsOid, bases);
   }
 
-  async function migrateFromLocalStorage() {
-    if (localStorage.getItem(MIGRATED_KEY) === "1") return { migrated: 0 };
-    let raw;
-    try {
-      raw = localStorage.getItem(LEGACY_KEY);
-    } catch {
-      return { migrated: 0 };
-    }
-    if (!raw) {
-      localStorage.setItem(MIGRATED_KEY, "1");
-      return { migrated: 0 };
-    }
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      localStorage.setItem(MIGRATED_KEY, "1");
-      return { migrated: 0 };
-    }
-    if (!Array.isArray(parsed) || !parsed.length) {
-      localStorage.setItem(MIGRATED_KEY, "1");
-      return { migrated: 0 };
-    }
-
-    await ensureDir(ROOT);
-    let migrated = 0;
-    for (const draft of parsed) {
-      if (!draft || typeof draft.id !== "string") continue;
-      const dir = textDir(draft.id);
-      if (await pathExists(`${dir}/.git`)) continue;
-
-      await ensureDir(dir);
-      await git.init({ fs, dir, defaultBranch: "main" });
-
-      let revisions = Array.isArray(draft.revisions) ? draft.revisions : null;
-      if (!revisions && (draft.html || draft.text)) {
-        revisions = [
-          {
-            text: draft.text || "",
-            html: draft.html,
-            model: draft.model || DEFAULT_MODEL,
-            createdAt: draft.updatedAt || draft.createdAt || Date.now(),
-          },
-        ];
-      }
-      if (!revisions) revisions = [];
-
-      const createdAt = Number(draft.createdAt) || Date.now();
-      const chatsInit = {
-        activeChatId: null,
-        chats: [],
-        totalCost: Number(draft.totalCost) || 0,
-      };
-
-      if (!revisions.length) {
-        const body = migrateLegacyTextBody(draft.html, draft.text);
-        await writeWorkingFiles(dir, {
-          id: draft.id,
-          html: body,
-          text: body,
-          model: draft.model || DEFAULT_MODEL,
-          title: titleFromText(body),
-          createdAt,
-          updatedAt: Number(draft.updatedAt) || createdAt,
-          activeBranch: "main",
-        });
-        await writeJson(`${dir}/${CHATS_FILE}`, chatsInit);
-      } else {
-        for (const rev of revisions) {
-          const ts = Number(rev.createdAt) || Date.now();
-          const body = migrateLegacyTextBody(
-            rev.html,
-            rev.text ?? draft.text
-          );
-          await writeWorkingFiles(dir, {
-            id: draft.id,
-            html: body,
-            text: body,
-            model: rev.model || DEFAULT_MODEL,
-            title: titleFromText(body),
-            createdAt,
-            updatedAt: ts,
-            activeBranch: "main",
-          });
-          await commitFiles(dir, autoMessage("Commit", new Date(ts)));
-        }
-        await writeJson(`${dir}/${CHATS_FILE}`, chatsInit);
-      }
-      migrated += 1;
-    }
-
-    localStorage.setItem(MIGRATED_KEY, "1");
-    await flush();
-    console.info(`kindred: migrated ${migrated} drafts to isomorphic-git`);
-    return { migrated };
-  }
-
   async function init() {
     await ensureDir(ROOT);
-    await migrateFromLocalStorage();
     await flush();
   }
 

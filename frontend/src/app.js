@@ -20,6 +20,8 @@ import {
 } from "./tiptapEditor.js";
 import { importFileToHtml, htmlToExportBlob, EXPORT_FORMATS } from "./pandocConvert.js";
 import { KindredGitStore } from "./gitStore.js";
+import { alignTwoWay } from "./docAlign.js";
+import { htmlToDoc, nodePlainText, normalizeDoc } from "./kindredSchema.js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
@@ -102,6 +104,7 @@ import DOMPurify from "dompurify";
   let viewingOid = null;
   let headOid = null;
   let headPlain = "";
+  let headHtml = "";
   let dirtyViewMode = "Text"; // "Diff" | "Text"
   let dirtyReviewing = false;
   let currentBranchName = "main";
@@ -159,6 +162,12 @@ import DOMPurify from "dompurify";
     }
   }
 
+  async function htmlAtCommitOid(oid) {
+    if (!oid || !activeDraftId || !store) return "";
+    const snap = await store.readAtCommit(activeDraftId, oid);
+    return snap.html || snap.text || "";
+  }
+
   async function plainAtCommitOid(oid) {
     if (!oid || !activeDraftId || !store) return "";
     const snap = await store.readAtCommit(activeDraftId, oid);
@@ -168,9 +177,11 @@ import DOMPurify from "dompurify";
   async function refreshHeadPlain() {
     if (!headOid) {
       headPlain = "";
+      headHtml = "";
       return;
     }
-    headPlain = await plainAtCommitOid(headOid);
+    headHtml = await htmlAtCommitOid(headOid);
+    headPlain = store.htmlToPlain(headHtml);
   }
 
   /** Plain text of the commit before `index` (oldest→newest), or "" if none. */
@@ -722,6 +733,7 @@ import DOMPurify from "dompurify";
     viewingOid = null;
     headOid = null;
     headPlain = "";
+    headHtml = "";
     currentBranchName = "main";
     branches = ["main"];
     hasConflict = false;
@@ -752,6 +764,7 @@ import DOMPurify from "dompurify";
       activeCommitIndex = -1;
       headOid = null;
       headPlain = "";
+      headHtml = "";
       refreshStatusLeft();
       return;
     }
@@ -969,6 +982,7 @@ import DOMPurify from "dompurify";
     viewingOid = null;
     headOid = null;
     headPlain = "";
+    headHtml = "";
     currentBranchName = "main";
     branches = [];
     hasConflict = false;
@@ -1230,9 +1244,9 @@ import DOMPurify from "dompurify";
     if (!dirty) return;
     const head = await store.readHead(activeDraftId);
     if (!head) return;
-    const headHtml = head.html || head.text || "";
+    const headBody = head.html || head.text || "";
     const result = store.reviewWorkingTree(
-      headHtml,
+      headBody,
       currentHtml,
       currentBranchName || "HEAD"
     );
@@ -1470,50 +1484,131 @@ import DOMPurify from "dompurify";
     return out;
   }
 
+  function wordDiffParts(oldText, newText) {
+    if (oldText === newText) {
+      return newText ? [[DIFF_EQUAL, newText]] : [];
+    }
+    const hd = new HtmlDiff(protectLt(oldText), protectLt(newText));
+    hd.splitInputsIntoWords();
+    hd.matchGranularity = Math.min(4, hd.oldWords.length, hd.newWords.length);
+    const ops = hd.operations();
+    const parts = [];
+    for (const opp of ops) {
+      const action = opp.action;
+      if (action === HTMLDIFF_ACTION.none) continue;
+      if (action === HTMLDIFF_ACTION.equal) {
+        parts.push([
+          DIFF_EQUAL,
+          joinWords(hd.newWords, opp.startInNew, opp.endInNew),
+        ]);
+      } else if (action === HTMLDIFF_ACTION.delete) {
+        parts.push([
+          DIFF_DELETE,
+          joinWords(hd.oldWords, opp.startInOld, opp.endInOld),
+        ]);
+      } else if (action === HTMLDIFF_ACTION.insert) {
+        parts.push([
+          DIFF_INSERT,
+          joinWords(hd.newWords, opp.startInNew, opp.endInNew),
+        ]);
+      } else if (action === HTMLDIFF_ACTION.replace) {
+        parts.push([
+          DIFF_DELETE,
+          joinWords(hd.oldWords, opp.startInOld, opp.endInOld),
+        ]);
+        parts.push([
+          DIFF_INSERT,
+          joinWords(hd.newWords, opp.startInNew, opp.endInNew),
+        ]);
+      }
+    }
+    return coalesceShortEquals(parts);
+  }
+
+  /** Project AST ops → plain DIFF parts (shape from aligner; words inside replace). */
+  function diffsFromAstOps(ops) {
+    const parts = [];
+    let first = true;
+    function pushSep() {
+      if (!first) parts.push([DIFF_EQUAL, "\n\n"]);
+      first = false;
+    }
+    for (const op of ops) {
+      if (op.type === "equal") {
+        const text = nodePlainText(op.node);
+        pushSep();
+        if (text) parts.push([DIFF_EQUAL, text]);
+        continue;
+      }
+      if (op.type === "replace") {
+        const oldT = nodePlainText(op.base || op.ours);
+        const newT = nodePlainText(op.theirs);
+        pushSep();
+        const inner = wordDiffParts(oldT, newT);
+        if (inner.length) parts.push(...inner);
+        else if (newT) parts.push([DIFF_EQUAL, newT]);
+        continue;
+      }
+      if (op.type === "insert") {
+        const text = nodePlainText(op.theirs || op.node);
+        pushSep();
+        if (text) parts.push([DIFF_INSERT, text]);
+        continue;
+      }
+      if (op.type === "delete") {
+        // Review-style two-way: side "theirs" means dirty deleted this base block.
+        if (op.side === "theirs") {
+          const text = nodePlainText(op.base || op.ours);
+          pushSep();
+          if (text) parts.push([DIFF_DELETE, text]);
+        } else if (op.side === "ours") {
+          // HEAD missing, dirty has it → insert
+          const text = nodePlainText(op.theirs || op.base);
+          pushSep();
+          if (text) parts.push([DIFF_INSERT, text]);
+        }
+      }
+    }
+    return parts;
+  }
+
   function diffs(baselineText, current) {
     const key = baselineText + "\0" + current;
     if (diffsCacheKey === key) return diffsCacheParts;
 
     let parts;
-    if (baselineText === current) {
-      parts = current ? [[DIFF_EQUAL, current]] : [];
-    } else {
-      const hd = new HtmlDiff(protectLt(baselineText), protectLt(current));
-      hd.splitInputsIntoWords();
-      // Same as HtmlDiff.build(): findMatch loops matchGranularity→1.
-      hd.matchGranularity = Math.min(4, hd.oldWords.length, hd.newWords.length);
-      const ops = hd.operations();
-      parts = [];
-      for (const opp of ops) {
-        const action = opp.action;
-        if (action === HTMLDIFF_ACTION.none) continue;
-        if (action === HTMLDIFF_ACTION.equal) {
-          parts.push([
-            DIFF_EQUAL,
-            joinWords(hd.newWords, opp.startInNew, opp.endInNew),
-          ]);
-        } else if (action === HTMLDIFF_ACTION.delete) {
-          parts.push([
-            DIFF_DELETE,
-            joinWords(hd.oldWords, opp.startInOld, opp.endInOld),
-          ]);
-        } else if (action === HTMLDIFF_ACTION.insert) {
-          parts.push([
-            DIFF_INSERT,
-            joinWords(hd.newWords, opp.startInNew, opp.endInNew),
-          ]);
-        } else if (action === HTMLDIFF_ACTION.replace) {
-          parts.push([
-            DIFF_DELETE,
-            joinWords(hd.oldWords, opp.startInOld, opp.endInOld),
-          ]);
-          parts.push([
-            DIFF_INSERT,
-            joinWords(hd.newWords, opp.startInNew, opp.endInNew),
-          ]);
+    // Dirty Diff: structure from PM JSON aligner; history still uses plain HtmlDiff.
+    if (
+      !isViewingHistory() &&
+      tipTap &&
+      headHtml &&
+      baselineText === headPlain
+    ) {
+      try {
+        const headDoc = htmlToDoc(headHtml);
+        const dirtyDoc = normalizeDoc(tipTap.getJSON());
+        const ops = alignTwoWay(headDoc, dirtyDoc);
+        parts = diffsFromAstOps(ops);
+        // Guard: if AST projection disagrees with plain equality, fall back.
+        const projected = parts
+          .filter((p) => p[0] !== DIFF_DELETE)
+          .map((p) => p[1])
+          .join("");
+        const plainNow = (current || "").replace(/\u00a0/g, " ");
+        if (projected.replace(/\s+/g, " ").trim() !== plainNow.replace(/\s+/g, " ").trim()) {
+          parts = null;
         }
+      } catch {
+        parts = null;
       }
-      parts = coalesceShortEquals(parts);
+    }
+
+    if (!parts) {
+      if (baselineText === current) {
+        parts = current ? [[DIFF_EQUAL, current]] : [];
+      } else {
+        parts = wordDiffParts(baselineText, current);
+      }
     }
 
     diffsCacheKey = key;

@@ -1,20 +1,18 @@
 import { Editor, Extension, Node as TiptapNode } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
-import Paragraph from "@tiptap/extension-paragraph";
-import Underline from "@tiptap/extension-underline";
-import TextAlign from "@tiptap/extension-text-align";
-import TextStyle from "@tiptap/extension-text-style";
-import Color from "@tiptap/extension-color";
-import FontFamily from "@tiptap/extension-font-family";
+import Placeholder from "@tiptap/extension-placeholder";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import {
+  canonicalizeTextHtml,
+  kindredContentExtensions,
+  prettyPrintHtml,
+} from "./kindredSchema.js";
 import {
   DEFAULT_FONT_FAMILY,
   fontNameFromCssValue,
   loadGoogleFont,
   mountFontFamilyPicker,
 } from "./fontCatalog.js";
-import Placeholder from "@tiptap/extension-placeholder";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 const keptSelectionKey = new PluginKey("keptSelection");
 
@@ -91,46 +89,6 @@ const KeptSelection = Extension.create({
   },
 });
 
-/** TipTap v2 has no official FontSize package; mirror Color on textStyle. */
-const FontSize = Extension.create({
-  name: "fontSize",
-  addOptions() {
-    return { types: ["textStyle"] };
-  },
-  addGlobalAttributes() {
-    return [
-      {
-        types: this.options.types,
-        attributes: {
-          fontSize: {
-            default: null,
-            parseHTML: (element) => element.style.fontSize || null,
-            renderHTML: (attributes) => {
-              if (!attributes.fontSize) return {};
-              return { style: `font-size: ${attributes.fontSize}` };
-            },
-          },
-        },
-      },
-    ];
-  },
-  addCommands() {
-    return {
-      setFontSize:
-        (fontSize) =>
-        ({ chain }) =>
-          chain().setMark("textStyle", { fontSize }).run(),
-      unsetFontSize:
-        () =>
-        ({ chain }) =>
-          chain()
-            .setMark("textStyle", { fontSize: null })
-            .removeEmptyTextStyle()
-            .run(),
-    };
-  },
-});
-
 const ConflictParagraph = TiptapNode.create({
   name: "conflictParagraph",
   priority: 1000,
@@ -156,58 +114,16 @@ const ConflictParagraph = TiptapNode.create({
   },
 });
 
-function attrOrNull(el, name) {
-  const v = el.getAttribute(name);
-  return v == null || v === "" ? null : v;
-}
-
-const KindredParagraph = Paragraph.extend({
-  addAttributes() {
-    return {
-      ...this.parent?.(),
-      alignOurs: {
-        default: null,
-        parseHTML: (el) => attrOrNull(el, "data-kindred-align-ours"),
-        renderHTML: (attrs) =>
-          attrs.alignOurs ? { "data-kindred-align-ours": attrs.alignOurs } : {},
-      },
-      alignTheirs: {
-        default: null,
-        parseHTML: (el) => attrOrNull(el, "data-kindred-align-theirs"),
-        renderHTML: (attrs) =>
-          attrs.alignTheirs ? { "data-kindred-align-theirs": attrs.alignTheirs } : {},
-      },
-      alignLabelOurs: {
-        default: null,
-        parseHTML: (el) => attrOrNull(el, "data-kindred-align-label-ours"),
-        renderHTML: (attrs) =>
-          attrs.alignLabelOurs
-            ? { "data-kindred-align-label-ours": attrs.alignLabelOurs }
-            : {},
-      },
-      alignLabelTheirs: {
-        default: null,
-        parseHTML: (el) => attrOrNull(el, "data-kindred-align-label-theirs"),
-        renderHTML: (attrs) =>
-          attrs.alignLabelTheirs
-            ? { "data-kindred-align-label-theirs": attrs.alignLabelTheirs }
-            : {},
-      },
-    };
-  },
-});
-
-const ALIGN_PILL = {
-  left: { label: "Left", icon: "≡" },
-  center: { label: "Center", icon: "≡≡" },
-  right: { label: "Right", icon: "≡" },
-  justify: { label: "Justify", icon: "≡≡≡" },
+const ALIGN_LABEL = {
+  left: "Left",
+  center: "Center",
+  right: "Right",
+  justify: "Justify",
 };
 
 function alignPillContent(align) {
   const key = String(align || "left").toLowerCase();
-  const spec = ALIGN_PILL[key] || ALIGN_PILL.left;
-  return `${spec.label}`;
+  return ALIGN_LABEL[key] || ALIGN_LABEL.left;
 }
 const BLOCK_SEP = "\n\n";
 const overlayKey = new PluginKey("kindredOverlay");
@@ -262,7 +178,7 @@ const CONFLICT_PREVIEW_TAGS = new Set([
 ]);
 
 /** Inline-safe HTML for conflict button labels (TipTap marks only). */
-export function conflictPreviewHtml(html) {
+function conflictPreviewHtml(html) {
   const tmp = document.createElement("div");
   tmp.innerHTML = String(html || "");
   const out = document.createElement("div");
@@ -325,87 +241,6 @@ function fillConflictBtn(btn, html) {
   btn.textContent = "\u00a0";
 }
 
-/**
- * Pretty-print with newlines only between sibling blocks.
- * Never injects \\n before closing tags (that would sit inside paragraph text).
- */
-export function prettyPrintHtml(html) {
-  const compact = String(html || "")
-    .replace(/>\s+</g, "><")
-    .trim();
-  if (!compact) return "";
-  return compact
-    .replace(
-      /><(p|h[1-6]|ul|ol|li|blockquote|pre|hr|div)(\s[^>]*)?>/gi,
-      ">\n<$1$2>"
-    )
-    .trim();
-}
-
-/** Drop trailing empty hard breaks / whitespace at the end of a block (keep mid-paragraph br). */
-function trimTrailingInsignificant(el) {
-  while (el.lastChild) {
-    const last = el.lastChild;
-    if (last.nodeType === Node.TEXT_NODE) {
-      const trimmed = (last.nodeValue || "").replace(/[\s\u00a0]+$/g, "");
-      if (!trimmed) {
-        el.removeChild(last);
-        continue;
-      }
-      if (trimmed !== last.nodeValue) last.nodeValue = trimmed;
-      break;
-    }
-    if (last.nodeType === Node.ELEMENT_NODE && last.tagName === "BR") {
-      el.removeChild(last);
-      continue;
-    }
-    if (last.nodeType === Node.ELEMENT_NODE) {
-      trimTrailingInsignificant(last);
-      break;
-    }
-    break;
-  }
-}
-
-/** Stable style attrs for dirty compare (trailing ; / prop order / spacing). */
-function canonicalizeStyleAttr(style) {
-  return String(style || "")
-    .split(";")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((decl) => {
-      const i = decl.indexOf(":");
-      if (i < 0) return decl.replace(/\s+/g, " ");
-      const prop = decl.slice(0, i).trim().toLowerCase();
-      const val = decl.slice(i + 1).trim().replace(/\s+/g, " ");
-      return `${prop}: ${val}`;
-    })
-    .sort()
-    .join("; ");
-}
-
-/**
- * Mark-preserving HTML normalize for save + dirty compare.
- * Strips TipTap serialization chrome; keeps real marks and mid-paragraph br.
- */
-export function canonicalizeTextHtml(html) {
-  const raw = String(html || "").trim();
-  if (!raw) return "";
-  const doc = new DOMParser().parseFromString(raw, "text/html");
-  const root = doc.body;
-  for (const el of root.querySelectorAll(
-    "p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, div"
-  )) {
-    trimTrailingInsignificant(el);
-  }
-  for (const el of root.querySelectorAll("[style]")) {
-    const next = canonicalizeStyleAttr(el.getAttribute("style"));
-    if (next) el.setAttribute("style", next);
-    else el.removeAttribute("style");
-  }
-  return prettyPrintHtml(root.innerHTML);
-}
-
 /** Clipboard → plain text so tags stay literal (not TipTap structure). */
 function pasteTextFromClipboard(dataTransfer) {
   if (!dataTransfer) return null;
@@ -421,13 +256,13 @@ function pasteTextFromClipboard(dataTransfer) {
  * Text body for TipTap is always getHTML() output.
  * Do not sniff clipboard/source HTML into the document schema.
  */
-export function ensureHtml(content) {
+function ensureHtml(content) {
   if (!content) return "<p></p>";
   return content;
 }
 
 /** Structured text-conflict node (not git textual markers). */
-function formatConflictMarkers(labelOurs, oursStr, labelTheirs, theirsStr) {
+export function formatConflictMarkers(labelOurs, oursStr, labelTheirs, theirsStr) {
   return (
     `<span data-kindred-text-conflict` +
     ` data-kindred-label-ours="${escapeHtml(labelOurs)}"` +
@@ -436,54 +271,6 @@ function formatConflictMarkers(labelOurs, oursStr, labelTheirs, theirsStr) {
     ` data-kindred-theirs="${escapeHtml(theirsStr)}"` +
     `></span>`
   );
-}
-
-const LEGACY_CONFLICT_RE =
-  /<<<<<<< ([^\n]*)\n([\s\S]*?)\n=======\n([\s\S]*?)\n>>>>>>> ([^\n]*)(?:\n|$)/g;
-
-function parseLegacyConflictSegments(str) {
-  const re = new RegExp(LEGACY_CONFLICT_RE.source, "g");
-  const segments = [];
-  let last = 0;
-  let m;
-  while ((m = re.exec(str)) !== null) {
-    if (m.index > last) {
-      segments.push({ type: "text", text: str.slice(last, m.index) });
-    }
-    segments.push({
-      type: "conflict",
-      oursLabel: m[1],
-      ours: m[2],
-      theirs: m[3],
-      theirsLabel: m[4],
-    });
-    last = m.index + m[0].length;
-  }
-  if (!segments.length) return null;
-  if (last < str.length) {
-    segments.push({ type: "text", text: str.slice(last) });
-  }
-  return segments;
-}
-
-/** Convert legacy <<<<<<< hunks to structured nodes. No-op if none. */
-export function migrateLegacyConflictHtml(html) {
-  const s = String(html || "");
-  if (!s.includes("<<<<<<< ")) return s;
-  const segs = parseLegacyConflictSegments(s);
-  if (!segs) return s;
-  return segs
-    .map((seg) =>
-      seg.type === "text"
-        ? seg.text
-        : formatConflictMarkers(
-            seg.oursLabel,
-            seg.ours,
-            seg.theirsLabel,
-            seg.theirs
-          )
-    )
-    .join("");
 }
 
 function parseStructuredConflictSegments(html) {
@@ -522,7 +309,7 @@ function parseStructuredConflictSegments(html) {
   return segments;
 }
 
-/** Parse structured text conflicts only (legacy markers are not protocol). */
+/** Parse structured text conflicts. */
 export function parseConflictSegments(text) {
   return parseStructuredConflictSegments(text);
 }
@@ -540,7 +327,7 @@ export function htmlHasAlignConflict(html) {
   return alignConflictCount(html) > 0;
 }
 
-export function alignConflictCount(html) {
+function alignConflictCount(html) {
   const raw = String(html || "");
   if (!raw || !raw.includes("data-kindred-align-ours")) return 0;
   const doc = new DOMParser().parseFromString(raw, "text/html");
@@ -558,23 +345,9 @@ export function unresolvedMergeConflictCount(html) {
 export function stripKindredProtocol(html) {
   const raw = String(html || "");
   if (!raw) return "";
-  if (
-    !raw.includes("data-kindred-") &&
-    !raw.includes("<<<<<<< ")
-  ) {
-    return raw;
-  }
-  let s = raw;
-  if (s.includes("<<<<<<< ")) {
-    const segs = parseLegacyConflictSegments(s);
-    if (segs) {
-      s = segs
-        .map((seg) => (seg.type === "text" ? seg.text : seg.ours || ""))
-        .join("");
-    }
-  }
+  if (!raw.includes("data-kindred-")) return raw;
   const doc = new DOMParser().parseFromString(
-    `<div id="__kindred_root">${s}</div>`,
+    `<div id="__kindred_root">${raw}</div>`,
     "text/html"
   );
   const root = doc.getElementById("__kindred_root");
@@ -1477,26 +1250,9 @@ export function createKindredEditor({
     element,
     autofocus: true,
     extensions: [
-      StarterKit.configure({
-        heading: false,
-        bulletList: false,
-        orderedList: false,
-        listItem: false,
-        blockquote: false,
-        codeBlock: false,
-        code: false,
-        horizontalRule: false,
-        paragraph: false,
-      }),
-      KindredParagraph,
+      ...kindredContentExtensions(),
       ConflictParagraph,
-      Underline,
-      TextStyle,
-      Color,
-      FontSize,
-      FontFamily,
       KeptSelection,
-      TextAlign.configure({ types: ["paragraph"] }),
       Placeholder.configure({ placeholder }),
       KindredOverlay.configure({ diffsFn, onConflictAction, onAlignConflictAction }),
     ],
@@ -1549,7 +1305,7 @@ export function setHtml(editor, html, { emitUpdate = false } = {}) {
   editor.commands.setContent(ensureHtml(html), emitUpdate);
 }
 
-export function setOverlay(editor, partial) {
+function setOverlay(editor, partial) {
   if (!editor) return;
   editor.commands.setKindredOverlay(partial);
 }
@@ -1574,5 +1330,3 @@ export function refreshOverlay(editor, {
     conflictMode: conflictMode === "review" ? "review" : "merge",
   });
 }
-
-export { BLOCK_SEP, formatConflictMarkers };
