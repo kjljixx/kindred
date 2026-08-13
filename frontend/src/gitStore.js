@@ -418,8 +418,6 @@ const VOLUME = "kindred";
     return {
       id,
       model: m.model || DEFAULT_MODEL,
-      revisionCost: Number(m.revisionCost) || 0,
-      totalCost: Number(m.totalCost) || 0,
       createdAt: Number(m.createdAt) || now,
       updatedAt: Number(m.updatedAt) || now,
       activeBranch: m.activeBranch || "main",
@@ -471,7 +469,7 @@ const VOLUME = "kindred";
   }
 
   function normalizeChatsState(raw, fallbackBranch = "main") {
-    const empty = { activeChatId: null, chats: [] };
+    const empty = { activeChatId: null, chats: [], totalCost: 0 };
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return empty;
     // Legacy unit-scoped map (e.g. { text: [...] }) — drop; no migration.
     if (Array.isArray(raw.chats) === false && !("activeChatId" in raw)) {
@@ -487,7 +485,7 @@ const VOLUME = "kindred";
     if (activeChatId && !chats.some((c) => c.id === activeChatId)) {
       activeChatId = null;
     }
-    return { activeChatId, chats };
+    return { activeChatId, chats, totalCost: Number(raw.totalCost) || 0 };
   }
 
   async function readChats(id) {
@@ -565,7 +563,7 @@ const VOLUME = "kindred";
     return titleFromText(text || "");
   }
 
-  // text + cost/model content (excludes meta bookkeeping, title, chats).
+  // text + model content (excludes meta bookkeeping, title, chats).
   function dirtyContentKey(state) {
     const hasConflict =
       !!state.hasConflict ||
@@ -573,8 +571,6 @@ const VOLUME = "kindred";
     return JSON.stringify({
       html: storeTextHtml(state.html || state.text || "", { hasConflict }),
       model: state.model || DEFAULT_MODEL,
-      revisionCost: Number(state.revisionCost) || 0,
-      totalCost: Number(state.totalCost) || 0,
     });
   }
 
@@ -603,8 +599,6 @@ const VOLUME = "kindred";
       {
         ...(state.meta || {}),
         model: state.model ?? state.meta?.model,
-        revisionCost: state.revisionCost ?? state.meta?.revisionCost,
-        totalCost: state.totalCost ?? state.meta?.totalCost,
         createdAt: state.createdAt ?? state.meta?.createdAt,
         updatedAt: state.updatedAt ?? Date.now(),
         activeBranch: state.activeBranch ?? state.meta?.activeBranch,
@@ -637,8 +631,6 @@ const VOLUME = "kindred";
       html,
       text: html,
       model: meta.model,
-      revisionCost: meta.revisionCost,
-      totalCost: meta.totalCost,
       title,
       customTitle: meta.customTitle,
       createdAt: meta.createdAt,
@@ -749,8 +741,6 @@ const VOLUME = "kindred";
       html: body,
       text: body,
       model: DEFAULT_MODEL,
-      revisionCost: 0,
-      totalCost: 0,
       ...(trimmedTitle ? { title: trimmedTitle, customTitle: true } : { customTitle: false }),
       createdAt: now,
       updatedAt: now,
@@ -758,7 +748,11 @@ const VOLUME = "kindred";
       hasConflict: false,
       pendingMerge: null,
     });
-    await writeJson(`${dir}/${CHATS_FILE}`, { activeChatId: null, chats: [] });
+    await writeJson(`${dir}/${CHATS_FILE}`, {
+      activeChatId: null,
+      chats: [],
+      totalCost: 0,
+    });
     await touchBranchAccess(dir, "main", now);
     await flush();
     return readWorkingFiles(id);
@@ -949,8 +943,6 @@ const VOLUME = "kindred";
       html: body,
       text: body,
       model: metaRaw?.model || DEFAULT_MODEL,
-      revisionCost: Number(metaRaw?.revisionCost) || 0,
-      totalCost: Number(metaRaw?.totalCost) || 0,
       createdAt: metaRaw?.createdAt,
       updatedAt: metaRaw?.updatedAt,
       activeBranch: metaRaw?.activeBranch || "main",
@@ -984,7 +976,6 @@ const VOLUME = "kindred";
       html: body,
       text: body,
       model: snap.model,
-      revisionCost: snap.revisionCost,
       updatedAt: Date.now(),
       hasConflict: false,
       pendingMerge: null,
@@ -1029,8 +1020,6 @@ const VOLUME = "kindred";
       html: body,
       text: body,
       model: snap.model,
-      revisionCost: snap.revisionCost,
-      totalCost: snap.totalCost,
       activeBranch: branch,
       updatedAt: Date.now(),
       hasConflict: false,
@@ -2810,8 +2799,6 @@ const VOLUME = "kindred";
       : {
           text: "",
           model: DEFAULT_MODEL,
-          revisionCost: 0,
-          totalCost: 0,
         };
 
     const text = mergeText(
@@ -2829,18 +2816,6 @@ const VOLUME = "kindred";
       text: text.mergedText,
       model: pickThreeWay(baseSnap.model, oursSnap.model, theirsSnap.model) ||
         DEFAULT_MODEL,
-      revisionCost:
-        Number(
-          pickThreeWay(
-            baseSnap.revisionCost,
-            oursSnap.revisionCost,
-            theirsSnap.revisionCost
-          )
-        ) || 0,
-      totalCost: Math.max(
-        Number(oursSnap.totalCost) || 0,
-        Number(theirsSnap.totalCost) || 0
-      ),
       activeBranch: ours,
       updatedAt: Date.now(),
       hasConflict: !text.cleanMerge,
@@ -3012,7 +2987,6 @@ const VOLUME = "kindred";
             text: draft.text || "",
             html: draft.html,
             model: draft.model || DEFAULT_MODEL,
-            revisionCost: Number(draft.revisionCost) || 0,
             createdAt: draft.updatedAt || draft.createdAt || Date.now(),
           },
         ];
@@ -3020,7 +2994,11 @@ const VOLUME = "kindred";
       if (!revisions) revisions = [];
 
       const createdAt = Number(draft.createdAt) || Date.now();
-      const totalCost = Number(draft.totalCost) || 0;
+      const chatsInit = {
+        activeChatId: null,
+        chats: [],
+        totalCost: Number(draft.totalCost) || 0,
+      };
 
       if (!revisions.length) {
         const body = migrateLegacyTextBody(draft.html, draft.text);
@@ -3029,14 +3007,12 @@ const VOLUME = "kindred";
           html: body,
           text: body,
           model: draft.model || DEFAULT_MODEL,
-          revisionCost: Number(draft.revisionCost) || 0,
-          totalCost,
           title: titleFromText(body),
           createdAt,
           updatedAt: Number(draft.updatedAt) || createdAt,
           activeBranch: "main",
         });
-        await writeJson(`${dir}/${CHATS_FILE}`, { activeChatId: null, chats: [] });
+        await writeJson(`${dir}/${CHATS_FILE}`, chatsInit);
       } else {
         for (const rev of revisions) {
           const ts = Number(rev.createdAt) || Date.now();
@@ -3049,8 +3025,6 @@ const VOLUME = "kindred";
             html: body,
             text: body,
             model: rev.model || DEFAULT_MODEL,
-            revisionCost: Number(rev.revisionCost) || 0,
-            totalCost,
             title: titleFromText(body),
             createdAt,
             updatedAt: ts,
@@ -3058,7 +3032,7 @@ const VOLUME = "kindred";
           });
           await commitFiles(dir, autoMessage("Commit", new Date(ts)));
         }
-        await writeJson(`${dir}/${CHATS_FILE}`, { activeChatId: null, chats: [] });
+        await writeJson(`${dir}/${CHATS_FILE}`, chatsInit);
       }
       migrated += 1;
     }

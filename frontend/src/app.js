@@ -91,7 +91,6 @@ import DOMPurify from "dompurify";
   let converting = false;
   let applyingHistory = false;
   let currentModel = DEFAULT_MODEL;
-  let revisionCost = 0;
   let draftCost = 0;
   let statusMessage = "";
   let statusLevel = "";
@@ -519,9 +518,7 @@ import DOMPurify from "dompurify";
   }
 
   function updateMeta() {
-    metaEl.textContent =
-      `${currentModel} · ${formatCost(revisionCost)} this revision` +
-      ` · ${formatCost(draftCost)} total`;
+    metaEl.textContent = `${currentModel} · ${formatCost(draftCost)} total`;
   }
 
   function escapeHtml(s) {
@@ -619,8 +616,6 @@ import DOMPurify from "dompurify";
       html: currentHtml,
       text: currentHtml,
       model: currentModel,
-      revisionCost,
-      totalCost: draftCost,
       hasConflict,
       pendingMerge,
       activeBranch: currentBranchName,
@@ -628,7 +623,7 @@ import DOMPurify from "dompurify";
   }
 
   function chatsState() {
-    return { activeChatId, chats: chatRecords };
+    return { activeChatId, chats: chatRecords, totalCost: draftCost };
   }
 
   async function persistChatsNow() {
@@ -637,6 +632,7 @@ import DOMPurify from "dompurify";
       const next = await store.saveChats(activeDraftId, chatsState());
       activeChatId = next.activeChatId;
       chatRecords = next.chats;
+      draftCost = Number(next.totalCost) || 0;
     } catch (err) {
       console.warn("kindred: failed to save chats", err);
     }
@@ -647,12 +643,14 @@ import DOMPurify from "dompurify";
       chatRecords = [];
       activeChatId = null;
       chatView = "list";
+      draftCost = 0;
       return;
     }
     try {
       const state = await store.readChats(id);
       chatRecords = state.chats || [];
       activeChatId = state.activeChatId || null;
+      draftCost = Number(state.totalCost) || 0;
       chatView = activeChatId ? "thread" : "list";
       if (activeChatId && !chatRecords.some((c) => c.id === activeChatId)) {
         activeChatId = null;
@@ -662,6 +660,7 @@ import DOMPurify from "dompurify";
       console.warn("kindred: failed to load chats", err);
       chatRecords = [];
       activeChatId = null;
+      draftCost = 0;
       chatView = "list";
     }
   }
@@ -673,6 +672,7 @@ import DOMPurify from "dompurify";
     chatBusy = false;
     composerDraft = "";
     renamingChatId = null;
+    draftCost = 0;
   }
 
   function activeChat() {
@@ -932,12 +932,6 @@ import DOMPurify from "dompurify";
     if (!currentHtml) currentHtml = "<p></p>";
     currentText = ""; // filled by applyRevisionToEditor via getPlain
     currentModel = snap.model || DEFAULT_MODEL;
-    revisionCost = Number(snap.revisionCost);
-    if (!Number.isFinite(revisionCost)) revisionCost = 0;
-    if (snap.totalCost != null) {
-      draftCost = Number(snap.totalCost);
-      if (!Number.isFinite(draftCost)) draftCost = revisionCost;
-    }
     if (historical) {
       // Merge bookkeeping is working-tree only; never adopt it from old commits.
       hasConflict = false;
@@ -967,7 +961,6 @@ import DOMPurify from "dompurify";
     currentText = "";
     clearChatState();
     currentModel = DEFAULT_MODEL;
-    revisionCost = 0;
     draftCost = 0;
     commits = [];
     activeCommitIndex = -1;
@@ -1020,8 +1013,6 @@ import DOMPurify from "dompurify";
     viewingOid = null;
     renamingGit = null;
     const wt = await store.readWorkingFiles(id);
-    draftCost = Number(wt.totalCost);
-    if (!Number.isFinite(draftCost)) draftCost = 0;
     hasConflict = !!wt.hasConflict;
     pendingMerge = wt.pendingMerge || null;
     if (hasConflict) paneMode = "git";
@@ -2525,7 +2516,6 @@ import DOMPurify from "dompurify";
       setStatus("");
       renderChatThread({ stickBottom: true });
       await persistChatsNow();
-      persistActiveDraftSoon();
     } catch (err) {
       chat.messages = prior;
       renderChatThread({ stickBottom: true });

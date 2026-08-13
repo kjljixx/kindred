@@ -1360,11 +1360,11 @@ button.pane-title {
 }
 
 .git-dirty-modes {
-  background-color: var(--color-bg-inset);
+  background-color: var(--color-bg);
   border-radius: var(--radius-2);
-  margin: 0 var(--space-4);
+  margin: 0;
   width: fit-content;
-  padding: var(--space-4) var(--space-4);
+  padding: var(--space-4) var(--space-5);
 }
 
 .git-dirty-modes .tab:disabled {
