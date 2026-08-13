@@ -250,7 +250,9 @@ import DOMPurify from "dompurify";
         toolbarEl &&
         (active === toolbarEl.querySelector("[data-font-size]") ||
           active === toolbarEl.querySelector("[data-font-family]") ||
-          active === toolbarEl.querySelector("[data-color-input]"))
+          active === toolbarEl.querySelector("[data-font-family-trigger]") ||
+          active === toolbarEl.querySelector("[data-color-input]") ||
+          active?.closest?.("[data-font-family-panel]"))
       ) {
         return;
       }

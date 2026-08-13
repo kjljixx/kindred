@@ -6,6 +6,12 @@ import TextAlign from "@tiptap/extension-text-align";
 import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import FontFamily from "@tiptap/extension-font-family";
+import {
+  DEFAULT_FONT_FAMILY,
+  fontNameFromCssValue,
+  loadGoogleFont,
+  mountFontFamilyPicker,
+} from "./fontCatalog.js";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -1235,12 +1241,20 @@ function syncToolbar(editor, toolbarEl) {
     if (fontSizeInput.value !== next) fontSizeInput.value = next;
   }
   const fontFamilySelect = toolbarEl.querySelector("[data-font-family]");
-  if (fontFamilySelect && document.activeElement !== fontFamilySelect) {
+  const fontFamilyTrigger = toolbarEl.querySelector("[data-font-family-trigger]");
+  if (
+    fontFamilySelect &&
+    document.activeElement !== fontFamilySelect &&
+    document.activeElement !== fontFamilyTrigger
+  ) {
     syncSelectValue(
       fontFamilySelect,
       attrs.fontFamily,
-      normalizeToolbarFontFamily
+      normalizeToolbarFontFamily,
+      DEFAULT_FONT_FAMILY
     );
+    const name = fontNameFromCssValue(fontFamilySelect.value);
+    if (name) loadGoogleFont(name);
   }
 }
 
@@ -1249,6 +1263,11 @@ export function bindToolbar(editor, toolbarEl) {
   const colorInput = toolbarEl.querySelector("[data-color-input]");
   const fontSizeInput = toolbarEl.querySelector("[data-font-size]");
   const fontFamilySelect = toolbarEl.querySelector("[data-font-family]");
+  const fontFamilyPicker = fontFamilySelect
+    ? mountFontFamilyPicker(fontFamilySelect)
+    : null;
+  const fontFamilyTrigger = toolbarEl.querySelector("[data-font-family-trigger]");
+  const fontFamilyPanel = toolbarEl.querySelector("[data-font-family-panel]");
   let stashedSelection = null;
 
   const isColorPickerOpen = () => Boolean(document.querySelector(".clr-picker.clr-open"));
@@ -1261,6 +1280,9 @@ export function bindToolbar(editor, toolbarEl) {
   const isKeepTargetActive = () => {
     const el = document.activeElement;
     if (el && (el === fontSizeInput || el === fontFamilySelect || el === colorInput)) return true;
+    if (el && fontFamilyTrigger && (el === fontFamilyTrigger || fontFamilyPanel?.contains(el))) {
+      return true;
+    }
     if (isColorPickerOpen()) return true;
     if (isChatComposerActive()) return true;
     return false;
@@ -1346,11 +1368,16 @@ export function bindToolbar(editor, toolbarEl) {
   };
   const onFontSizeChange = () => applyFontSize({ returnFocus: false });
   const onFontFamily = () => {
-    const value = fontFamilySelect?.value || "";
+    const value = fontFamilySelect?.value || DEFAULT_FONT_FAMILY;
+    const name = fontNameFromCssValue(value);
+    if (name) loadGoogleFont(name);
     const chain = editor.chain().focus();
     if (stashedSelection) chain.setTextSelection(stashedSelection);
-    if (!value) chain.unsetFontFamily().run();
-    else chain.setFontFamily(value).run();
+    if (!value || normalizeToolbarFontFamily(value) === normalizeToolbarFontFamily(DEFAULT_FONT_FAMILY)) {
+      chain.unsetFontFamily().run();
+    } else {
+      chain.setFontFamily(value).run();
+    }
     clearStashedSelection();
   };
   const onEditorPointerDown = (e) => {
@@ -1387,6 +1414,10 @@ export function bindToolbar(editor, toolbarEl) {
   fontFamilySelect?.addEventListener("focus", stashSelection);
   fontFamilySelect?.addEventListener("blur", scheduleClearIfNoKeepTarget);
   fontFamilySelect?.addEventListener("change", onFontFamily);
+  fontFamilyTrigger?.addEventListener("mousedown", stashSelection);
+  fontFamilyTrigger?.addEventListener("focus", stashSelection);
+  fontFamilyTrigger?.addEventListener("blur", scheduleClearIfNoKeepTarget);
+  fontFamilyPanel?.addEventListener("mousedown", stashSelection);
   editor.view.dom.addEventListener("pointerdown", onEditorPointerDown);
   editor.on("focus", onEditorFocus);
   document.addEventListener("pointerdown", onDocPointerDown);
@@ -1410,6 +1441,11 @@ export function bindToolbar(editor, toolbarEl) {
     fontFamilySelect?.removeEventListener("focus", stashSelection);
     fontFamilySelect?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
     fontFamilySelect?.removeEventListener("change", onFontFamily);
+    fontFamilyTrigger?.removeEventListener("mousedown", stashSelection);
+    fontFamilyTrigger?.removeEventListener("focus", stashSelection);
+    fontFamilyTrigger?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
+    fontFamilyPanel?.removeEventListener("mousedown", stashSelection);
+    fontFamilyPicker?.destroy?.();
     editor.view.dom.removeEventListener("pointerdown", onEditorPointerDown);
     editor.off("focus", onEditorFocus);
     document.removeEventListener("pointerdown", onDocPointerDown);
