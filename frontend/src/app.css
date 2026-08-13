@@ -1270,13 +1270,29 @@ button.pane-title {
 
 .chat-composer-row {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--space-5);
+}
+
+.chat-input-hit {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  /* Invisible padding expands the click target; negative margin keeps layout size. */
+  padding: var(--space-5);
+  margin: calc(-1 * var(--space-5));
+  cursor: text;
+}
+
+.chat-input-hit:has(#chat-input:disabled) {
+  cursor: default;
+  pointer-events: none;
 }
 
 .chat-composer textarea,
 #chat-input {
   flex: 1;
+  width: 100%;
   min-width: 0;
   resize: none;
   max-height: var(--size-composer-max);
@@ -1307,10 +1323,6 @@ button.pane-title {
   overflow: auto;
   min-height: 0;
   padding: var(--space-4) 0 var(--space-6);
-}
-
-#git-dirty-section {
-  margin-top: var(--space-4);
 }
 
 #git-dirty-section + .git-section {

@@ -1,5 +1,6 @@
 Editor
 TODO
+- Maintain some form of cursor/selection visual even when blurred; use for font selection, font color selection, font size changes, and also when trying to pass of selection/cursor position to chat.
 - Format Lock; everything you type stays in the same format even if you move your cursor
 - Add highlighting text
 - Add Links
