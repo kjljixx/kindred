@@ -1,82 +1,37 @@
 from __future__ import annotations
 
-UNIT_SYSTEM = (
-  "Give concise, actionable feedback on the unit of text you were given."
-  "Prioritize scannability when formatting your response."
-)
-
-TEXT_SYSTEM = (
-  "Give concise, actionable overarching feedback. Do not rewrite the text."
-  "Prioritize scannability when formatting your response."
-)
-
 CHAT_SYSTEM = (
-  "Prioritize scannability when formatting your response."
+  "You are a writing coach. Help the user improve their draft. "
+  "Prioritize scannability when formatting your response. "
+  "The draft may include <caret> (collapsed cursor) or <selection>…</selection> "
+  "markers showing where the user was focused; treat those as context, not as "
+  "literal text to quote back."
 )
 
-def sentence_user(*, text: str, index: int, sentence: str, total: int) -> str:
+
+def annotate_draft(draft_text: str, selection_from: int, selection_to: int) -> str:
+  """Escape angle brackets, then insert caret/selection markers at plain offsets."""
+  text = str(draft_text or "")
+  n = len(text)
+  start = max(0, min(int(selection_from), n))
+  end = max(0, min(int(selection_to), n))
+  if end < start:
+    start, end = end, start
+
+  def esc(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+  if start == end:
+    return f"{esc(text[:start])}<caret>{esc(text[start:])}"
   return (
-    f"Full text:\n{text}\n\n"
-    f"Review sentence {index + 1} of {total} in context of the full text.\n"
-    f"Target sentence:\n{sentence}\n\n"
-    "Comment on clarity, flow from/to neighbors, diction, rhythm, and any "
-    "grammar issues. Keep the response short (a few sentences)."
+    f"{esc(text[:start])}<selection>{esc(text[start:end])}</selection>"
+    f"{esc(text[end:])}"
   )
 
 
-def paragraph_user(*, text: str, index: int, paragraph: str, total: int) -> str:
+def chat_user_turn(*, draft_text: str, selection_from: int, selection_to: int, message: str) -> str:
+  annotated = annotate_draft(draft_text, selection_from, selection_to)
   return (
-    f"Full text:\n{text}\n\n"
-    f"Review paragraph {index + 1} of {total} in context of the full text.\n"
-    f"Target paragraph:\n{paragraph}\n\n"
-    "Comment on unity, development, transitions, internal coherence, and how "
-    "the paragraph serves the overall text. Keep the response short (a short paragraph)."
+    f"Draft (with focus markers):\n{annotated}\n\n"
+    f"Question:\n{message.strip()}"
   )
-
-
-def fulltext_user(*, text: str) -> str:
-  return (
-    f"Full text:\n{text}\n\n"
-    "Provide overarching feedback on thesis/through-line, structure, pacing, "
-    "voice consistency, and the highest-leverage revisions. Keep it focused "
-    "and actionable."
-  )
-
-
-def chat_context_user(
-  *,
-  text: str,
-  scope: str,
-  unit_text: str,
-  unit_feedback: str,
-  text_current: str = "",
-  unit_text_current: str = "",
-) -> str:
-  """Pack text + this unit's original review into the first user turn."""
-  scope_label = {
-    "text": "the text as a whole",
-    "sentence": "one sentence",
-    "paragraph": "one paragraph",
-  }.get(scope, scope)
-
-  text = text.strip()
-  text_current = text_current.strip()
-  unit_text = unit_text.strip()
-  unit_text_current = unit_text_current.strip()
-
-  parts: list[str] = []
-  if text_current and text_current != text:
-    parts.append(f"Original text (when reviewed):\n{text}")
-    parts.append(f"\nCurrent text (after edits):\n{text_current}")
-  else:
-    parts.append(f"Full text:\n{text}")
-
-  parts.append(f"\nYou previously reviewed {scope_label}.")
-  if scope != "text" and unit_text:
-    if unit_text_current and unit_text_current != unit_text:
-      parts.append(f"\nOriginal target {scope}:\n{unit_text}")
-      parts.append(f"\nCurrent target {scope}:\n{unit_text_current}")
-    else:
-      parts.append(f"\nTarget {scope}:\n{unit_text}")
-  parts.append(f"\nYour earlier feedback:\n{unit_feedback}")
-  return "\n".join(parts)

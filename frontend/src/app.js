@@ -33,9 +33,12 @@ import DOMPurify from "dompurify";
   const editor = document.getElementById("editor");
   const toolbarEl = document.getElementById("editor-toolbar");
   const feedbackEl = document.getElementById("feedback");
+  const chatListEl = document.getElementById("chat-list");
   const draftListEl = document.getElementById("draft-list");
   const draftsHeading = document.getElementById("drafts-heading");
-  const feedbackTabs = document.getElementById("feedback-tabs");
+  const chatBackBtn = document.getElementById("chat-back-btn");
+  const chatHeading = document.getElementById("chat-heading");
+  const newChatBtn = document.getElementById("new-chat-btn");
   const paneModeCluster = document.getElementById("pane-mode-cluster");
   const gitPane = document.getElementById("git-pane");
   const gitDirtySection = document.getElementById("git-dirty-section");
@@ -48,7 +51,7 @@ import DOMPurify from "dompurify";
   const chatSend = document.getElementById("chat-send");
   const statusEl = document.getElementById("status");
   const metaEl = document.getElementById("meta");
-  const analyzeBtn = document.getElementById("analyze-btn");
+  const commitBtn = document.getElementById("commit-btn");
   const importBtn = document.getElementById("import-btn");
   const exportControls = document.getElementById("export-controls");
   const exportBtn = document.getElementById("export-btn");
@@ -58,7 +61,6 @@ import DOMPurify from "dompurify";
   const draftHeaderSep = document.getElementById("draft-header-sep");
   const draftHeaderTitleEl = document.getElementById("draft-header-title");
   const draftHeaderTitleInput = document.getElementById("draft-header-title-input");
-  const scopeTabs = feedbackTabs.querySelectorAll(".tab");
   const panes = document.getElementById("panes");
   const draftPane = document.getElementById("draft-pane");
   const divider = document.getElementById("divider");
@@ -70,25 +72,22 @@ import DOMPurify from "dompurify";
   let diffsCacheKey = null;
   let diffsCacheParts = null;
 
+  /** History overlay baseline (previous commit plain); not analysis. */
   let baseline = "";
   let currentText = "";
   let currentHtml = "";
   /** Working-tree body for auto-title + counts (not history / review markup). */
   let dirtyHtml = "";
   let dirtyText = "";
-  let result = null;
-  let mode = "global";
-  let paneMode = "review";
-  let activeSentence = null;
-  let activeParagraph = null;
-  let chatFocus = { scope: "text", index: null };
-  let chats = {};
+  let paneMode = "chat";
+  let chatRecords = [];
+  let activeChatId = null;
+  /** @type {"list"|"thread"} */
+  let chatView = "list";
   let chatBusy = false;
-  let chatDrafts = { text: "", sentence: "", paragraph: "" };
-  let localSentencePct = 40.00;
-  let localResizing = false;
+  let composerDraft = "";
+  let renamingChatId = null;
   let rendering = false;
-  let analyzing = false;
   let converting = false;
   let applyingHistory = false;
   let currentModel = DEFAULT_MODEL;
@@ -147,11 +146,10 @@ import DOMPurify from "dompurify";
           conflictMode,
         });
       } else {
-        // Text: map analysis spans for sent-hl without painting git-style diffs.
         refreshOverlay(tipTap, {
-          baseline,
+          baseline: "",
           currentPlain: currentText,
-          highlight: activeHighlight(),
+          highlight: null,
           showDiffs: false,
           markedHtml: "",
           conflictMode,
@@ -205,7 +203,6 @@ import DOMPurify from "dompurify";
       if (
         suppressEditorUpdate ||
         rendering ||
-        analyzing ||
         converting ||
         applyingHistory ||
         gitBusy ||
@@ -218,12 +215,12 @@ import DOMPurify from "dompurify";
       if (pendingMerge || hasConflict || htmlHasAlignConflict(currentHtml)) syncMergeStatus();
       refreshStatusLeft();
       workingDirty = true;
-      updateAnalyzeBtn();
+      updateCommitBtn();
       syncOverlayFromState();
       syncHeaderTitle();
       void ensureDraftForText(currentText).then(() => {
         syncRightPane();
-        updateAnalyzeBtn();
+        updateCommitBtn();
       });
       persistActiveDraftSoon();
     },
@@ -282,7 +279,7 @@ import DOMPurify from "dompurify";
 
   function updateExportBtn() {
     const exportDisabled =
-      converting || analyzing || gitBusy || !hasExportableBody() || isViewingHistory();
+      converting || gitBusy || !hasExportableBody() || isViewingHistory();
     importBtn.hidden = !activeDraftId;
     exportControls.hidden = !activeDraftId;
     importBtn.disabled = !canOpenImportDialog();
@@ -291,41 +288,28 @@ import DOMPurify from "dompurify";
     if (exportDisabled || !activeDraftId) setExportMenuOpen(false);
   }
 
-  function updateAnalyzeBtn() {
+  function updateCommitBtn() {
     const hasText = !editorIsEmpty();
     const unresolved = unresolvedMergeConflictCount(currentHtml) > 0;
     const finishMerge = !!(pendingMerge && !unresolved);
     // Dirty review: Commit stays enabled; unresolved hunks auto-keep Dirty on commit.
     const blockCommitForConflicts = unresolved && !dirtyReviewing;
-    analyzeBtn.hidden = !activeDraftId;
-    if (paneMode === "git") {
-      analyzeBtn.textContent = pendingMerge ? "Merge" : "Commit";
-      analyzeBtn.disabled =
-        analyzing ||
-        converting ||
-        gitBusy ||
-        !hasText ||
-        isViewingHistory() ||
-        blockCommitForConflicts ||
-        (!workingDirty && !finishMerge);
-    } else {
-      analyzeBtn.textContent = "Analyze";
-      // Live merges: view feedback only — no new analysis.
-      analyzeBtn.disabled =
-        analyzing ||
-        converting ||
-        gitBusy ||
-        !hasText ||
-        isViewingHistory() ||
-        !!pendingMerge;
-    }
+    commitBtn.hidden = !activeDraftId || paneMode !== "git";
+    commitBtn.textContent = pendingMerge ? "Merge" : "Commit";
+    commitBtn.disabled =
+      converting ||
+      gitBusy ||
+      !hasText ||
+      isViewingHistory() ||
+      blockCommitForConflicts ||
+      (!workingDirty && !finishMerge);
     updateExportBtn();
   }
 
   async function refreshWorkingDirty() {
     if (!activeDraftId || !store) {
       workingDirty = false;
-      updateAnalyzeBtn();
+      updateCommitBtn();
       return;
     }
     try {
@@ -334,15 +318,7 @@ import DOMPurify from "dompurify";
       console.warn("kindred: dirty check failed", err);
       workingDirty = true;
     }
-    updateAnalyzeBtn();
-  }
-
-  function syncScopeTabSelection() {
-    scopeTabs.forEach((t) => {
-      const on = t.dataset.mode === mode;
-      t.classList.toggle("active", on);
-      t.setAttribute("aria-selected", on ? "true" : "false");
-    });
+    updateCommitBtn();
   }
 
   function syncPaneModeTabs() {
@@ -496,15 +472,6 @@ import DOMPurify from "dompurify";
     }
   }
 
-  function formatAnalysisProgress(event) {
-    return [
-      `analyzing...`,
-      `sentences ${event.sentences_done}/${event.sentences_total}`,
-      `paragraphs ${event.paragraphs_done}/${event.paragraphs_total}`,
-      `text ${event.text_done}/${event.text_total}`,
-    ].join(" · ");
-  }
-
   function formatCost(n) {
     const v = Number(n);
     if (!Number.isFinite(v) || v <= 0) return "$0.0000";
@@ -611,9 +578,6 @@ import DOMPurify from "dompurify";
     return {
       html: currentHtml,
       text: currentHtml,
-      baseline,
-      result,
-      chats,
       model: currentModel,
       revisionCost,
       totalCost: draftCost,
@@ -621,6 +585,59 @@ import DOMPurify from "dompurify";
       pendingMerge,
       activeBranch: currentBranchName,
     };
+  }
+
+  function chatsState() {
+    return { activeChatId, chats: chatRecords };
+  }
+
+  async function persistChatsNow() {
+    if (!activeDraftId || !store) return;
+    try {
+      const next = await store.saveChats(activeDraftId, chatsState());
+      activeChatId = next.activeChatId;
+      chatRecords = next.chats;
+    } catch (err) {
+      console.warn("kindred: failed to save chats", err);
+    }
+  }
+
+  async function loadChatsForDraft(id) {
+    if (!id || !store) {
+      chatRecords = [];
+      activeChatId = null;
+      chatView = "list";
+      return;
+    }
+    try {
+      const state = await store.readChats(id);
+      chatRecords = state.chats || [];
+      activeChatId = state.activeChatId || null;
+      chatView = activeChatId ? "thread" : "list";
+      if (activeChatId && !chatRecords.some((c) => c.id === activeChatId)) {
+        activeChatId = null;
+        chatView = "list";
+      }
+    } catch (err) {
+      console.warn("kindred: failed to load chats", err);
+      chatRecords = [];
+      activeChatId = null;
+      chatView = "list";
+    }
+  }
+
+  function clearChatState() {
+    chatRecords = [];
+    activeChatId = null;
+    chatView = "list";
+    chatBusy = false;
+    composerDraft = "";
+    renamingChatId = null;
+  }
+
+  function activeChat() {
+    if (!activeChatId) return null;
+    return chatRecords.find((c) => c.id === activeChatId) || null;
   }
 
   async function persistActiveDraftNow() {
@@ -669,7 +686,8 @@ import DOMPurify from "dompurify";
     pendingMerge = null;
     dirtyReviewing = false;
     workingDirty = !!(text || "").trim();
-    paneMode = "review";
+    paneMode = "chat";
+    clearChatState();
     await refreshDraftList();
     return draft;
   }
@@ -682,7 +700,7 @@ import DOMPurify from "dompurify";
     if (!(text || "").length) return null;
     const draft = await createDraft(text);
     syncRightPane();
-    updateAnalyzeBtn();
+    updateCommitBtn();
     return draft;
   }
 
@@ -712,16 +730,37 @@ import DOMPurify from "dompurify";
     refreshStatusLeft();
   }
 
+  function syncChatHeader() {
+    const showChatChrome = !!(activeDraftId && paneMode === "chat");
+    const inList = showChatChrome && chatView === "list";
+    const inThread = showChatChrome && chatView === "thread";
+    draftsHeading.hidden = !!activeDraftId;
+    if (chatBackBtn) {
+      chatBackBtn.hidden = !inThread;
+      chatBackBtn.textContent = "All";
+    }
+    if (chatHeading) chatHeading.hidden = true;
+    if (newChatBtn) {
+      newChatBtn.hidden = !showChatChrome;
+      newChatBtn.textContent = "New";
+      newChatBtn.classList.toggle("btn-primary", inList);
+      newChatBtn.classList.toggle("btn-secondary", !inList);
+    }
+  }
+
   function showHomePane() {
-    paneMode = "review";
-    feedbackTabs.hidden = true;
+    paneMode = "chat";
     paneModeCluster.hidden = true;
     draftsHeading.hidden = false;
+    if (chatHeading) chatHeading.hidden = true;
+    if (newChatBtn) newChatBtn.hidden = true;
+    if (chatBackBtn) chatBackBtn.hidden = true;
     feedbackEl.hidden = true;
+    if (chatListEl) chatListEl.hidden = true;
     chatComposer.hidden = true;
     gitPane.hidden = true;
     draftListEl.hidden = false;
-    analyzeBtn.hidden = true;
+    commitBtn.hidden = true;
     importBtn.hidden = true;
     exportControls.hidden = true;
     setExportMenuOpen(false);
@@ -729,52 +768,50 @@ import DOMPurify from "dompurify";
     syncPaneModeTabs();
   }
 
-  function showComposePane() {
+  function showGitPane() {
     draftsHeading.hidden = true;
     draftListEl.hidden = true;
+    if (chatHeading) chatHeading.hidden = true;
+    if (newChatBtn) newChatBtn.hidden = true;
+    if (chatBackBtn) chatBackBtn.hidden = true;
+    feedbackEl.hidden = true;
+    if (chatListEl) chatListEl.hidden = true;
+    chatComposer.hidden = true;
     paneModeCluster.hidden = false;
+    gitPane.hidden = false;
     syncPaneModeTabs();
-    if (paneMode === "git") {
-      feedbackTabs.hidden = true;
-      feedbackEl.hidden = true;
-      chatComposer.hidden = true;
-      gitPane.hidden = false;
-      renderGitPane();
-    } else {
-      feedbackTabs.hidden = true;
-      feedbackEl.hidden = false;
-      chatComposer.hidden = true;
-      gitPane.hidden = true;
-      renderFeedback();
-    }
-    updateAnalyzeBtn();
+    renderGitPane();
+    updateCommitBtn();
   }
 
-  function showReviewPane() {
+  function showChatPane() {
     draftsHeading.hidden = true;
     draftListEl.hidden = true;
     paneModeCluster.hidden = false;
+    gitPane.hidden = true;
     syncPaneModeTabs();
-    if (paneMode === "git") {
-      feedbackTabs.hidden = true;
+    syncChatHeader();
+    if (chatView === "list") {
       feedbackEl.hidden = true;
       chatComposer.hidden = true;
-      gitPane.hidden = false;
-      renderGitPane();
+      if (chatListEl) {
+        chatListEl.hidden = false;
+        renderChatList();
+      }
     } else {
-      feedbackTabs.hidden = !result;
+      if (chatListEl) chatListEl.hidden = true;
       feedbackEl.hidden = false;
-      gitPane.hidden = true;
+      chatComposer.hidden = false;
+      renderChatThread();
       syncChatComposer();
-      renderFeedback();
     }
-    updateAnalyzeBtn();
+    updateCommitBtn();
   }
 
   function syncRightPane() {
     if (!activeDraftId) showHomePane();
-    else if (result || hasConflict) showReviewPane();
-    else showComposePane();
+    else if (paneMode === "git") showGitPane();
+    else showChatPane();
   }
 
   function renderDraftList() {
@@ -850,18 +887,10 @@ import DOMPurify from "dompurify";
 
   function loadSnapshotState(snap, { historical = false, historyBaseline = undefined } = {}) {
     // Past commits / tip-after-commit: diff against previous commit when provided.
-    baseline =
-      historyBaseline !== undefined
-        ? historyBaseline
-        : snap.baseline || "";
+    baseline = historyBaseline !== undefined ? historyBaseline : "";
     currentHtml = snap.html || snap.text || "";
     if (!currentHtml) currentHtml = "<p></p>";
     currentText = ""; // filled by applyRevisionToEditor via getPlain
-    result = snap.result || null;
-    chats =
-      snap.chats && typeof snap.chats === "object" && !Array.isArray(snap.chats)
-        ? snap.chats
-        : {};
     currentModel = snap.model || DEFAULT_MODEL;
     revisionCost = Number(snap.revisionCost);
     if (!Number.isFinite(revisionCost)) revisionCost = 0;
@@ -880,12 +909,6 @@ import DOMPurify from "dompurify";
       pendingMerge = snap.pendingMerge || null;
       dirtyReviewing = hasConflict && !pendingMerge;
     }
-    activeSentence = null;
-    activeParagraph = null;
-    chatFocus = { scope: "text", index: null };
-    chatDrafts = { text: "", sentence: "", paragraph: "" };
-    mode = "global";
-    syncScopeTabSelection();
     clearHistory();
     applyRevisionToEditor();
     if (!historical) syncDirtyBodyFromCurrent();
@@ -894,7 +917,7 @@ import DOMPurify from "dompurify";
     syncMergeStatus();
     refreshStatusLeft();
     syncHeaderTitle();
-    updateAnalyzeBtn();
+    updateCommitBtn();
     syncRightPane();
   }
 
@@ -902,14 +925,7 @@ import DOMPurify from "dompurify";
     baseline = "";
     currentHtml = text ? plainToHtml(text) : "<p></p>";
     currentText = "";
-    result = null;
-    chats = {};
-    chatFocus = { scope: "text", index: null };
-    chatDrafts = { text: "", sentence: "", paragraph: "" };
-    activeSentence = null;
-    activeParagraph = null;
-    mode = "global";
-    syncScopeTabSelection();
+    clearChatState();
     currentModel = DEFAULT_MODEL;
     revisionCost = 0;
     draftCost = 0;
@@ -941,14 +957,15 @@ import DOMPurify from "dompurify";
     updateMeta();
     setStatus("");
     refreshStatusLeft();
-    updateAnalyzeBtn();
+    updateCommitBtn();
     syncRightPane();
   }
 
   async function goHome() {
     await flushSaveTimer();
     activeDraftId = null;
-    paneMode = "review";
+    paneMode = "chat";
+    clearChatState();
     resetEditorState({ text: "" });
     syncHeaderTitle();
     tipTap?.commands.focus();
@@ -959,7 +976,7 @@ import DOMPurify from "dompurify";
     const draft = findDraft(id) || (await store.readWorkingFiles(id));
     if (!draft) return;
     activeDraftId = id;
-    paneMode = "review";
+    paneMode = "chat";
     viewingOid = null;
     renamingGit = null;
     const wt = await store.readWorkingFiles(id);
@@ -969,6 +986,7 @@ import DOMPurify from "dompurify";
     pendingMerge = wt.pendingMerge || null;
     if (hasConflict) paneMode = "git";
     await refreshCommits();
+    await loadChatsForDraft(id);
     loadSnapshotState(wt, { historical: false });
     if (commits.length) activeCommitIndex = commits.length - 1;
     await refreshDraftList();
@@ -986,6 +1004,7 @@ import DOMPurify from "dompurify";
     await store.deleteDraft(id);
     if (activeDraftId === id) {
       activeDraftId = null;
+      clearChatState();
       resetEditorState({ text: "" });
     }
     await refreshDraftList();
@@ -1178,7 +1197,7 @@ import DOMPurify from "dompurify";
     syncMergeStatus();
     refreshStatusLeft();
     syncHeaderTitle();
-    updateAnalyzeBtn();
+    updateCommitBtn();
     persistActiveDraftSoon();
     renderGitPane();
   }
@@ -1213,7 +1232,7 @@ import DOMPurify from "dompurify";
     syncMergeStatus();
     refreshStatusLeft();
     syncHeaderTitle();
-    updateAnalyzeBtn();
+    updateCommitBtn();
     persistActiveDraftSoon();
   }
 
@@ -1311,7 +1330,7 @@ import DOMPurify from "dompurify";
     syncMergeStatus();
     refreshStatusLeft();
     syncHeaderTitle();
-    updateAnalyzeBtn();
+    updateCommitBtn();
     persistActiveDraftSoon();
   }
 
@@ -1453,191 +1472,19 @@ import DOMPurify from "dompurify";
     return parts;
   }
 
-  /** Map caret offset in current text → baseline offset (inserts use the anchor basePos). */
-  function mapCurrentToBaseline(baselineText, current, currentOffset) {
-    if (!baselineText) return null;
-    if (baselineText === current) return currentOffset;
-
-    const parts = diffs(baselineText, current);
-    let basePos = 0;
-    let curPos = 0;
-
-    for (const [op, data] of parts) {
-      const len = data.length;
-      if (op === DIFF_EQUAL) {
-        if (currentOffset <= curPos + len) {
-          return basePos + (currentOffset - curPos);
-        }
-        basePos += len;
-        curPos += len;
-      } else if (op === DIFF_INSERT) {
-        if (currentOffset <= curPos + len) {
-          return basePos;
-        }
-        curPos += len;
-      } else if (op === DIFF_DELETE) {
-        basePos += len;
-      }
-    }
-    return basePos;
-  }
-
-  /** Current text corresponding to a baseline [start, end) span after edits. */
-  function currentSliceForBaselineRange(baselineText, current, start, end) {
-    if (!baselineText) return "";
-    if (baselineText === current) return baselineText.slice(start, end);
-    const parts = diffs(baselineText, current);
-    let basePos = 0;
-    let out = "";
-    for (const [op, data] of parts) {
-      const len = data.length;
-      if (op === DIFF_EQUAL) {
-        const sliceStart = Math.max(0, start - basePos);
-        const sliceEnd = Math.min(len, end - basePos);
-        if (sliceStart < sliceEnd) out += data.slice(sliceStart, sliceEnd);
-        basePos += len;
-      } else if (op === DIFF_DELETE) {
-        basePos += len;
-      } else if (op === DIFF_INSERT) {
-        // Match sent-hl: inserts whose baseline anchor falls in the span belong to it.
-        if (basePos >= start && basePos < end) out += data;
-      }
-    }
-    return out;
-  }
-
-  function caretCurrentOffset() {
-    if (!tipTap) return 0;
-    const { from } = tipTap.state.selection;
-    return tipTap.state.doc.textBetween(0, from, "\n\n", "\n").length;
-  }
-
-  function findUnitAt(units, offset) {
-    if (offset == null || !units) return null;
-    for (const u of units) {
-      if (offset >= u.start && offset < u.end) return u;
-    }
-    for (let i = units.length - 1; i >= 0; i--) {
-      const u = units[i];
-      if (offset === u.end) return u;
-    }
-    return null;
-  }
-
-  function findParagraphForSentence(sentence) {
-    if (!result || !sentence) return null;
-    for (const p of result.paragraphs) {
-      if (sentence.start >= p.start && sentence.start < p.end) return p;
-    }
-    return null;
-  }
-
-  /** True when caret sits in blank lines between (or outside) paragraph spans. */
-  function isBetweenParagraphs(offset, paragraphs) {
-    if (offset == null || !paragraphs || !paragraphs.length) return false;
-    if (offset < paragraphs[0].start) return true;
-    for (let i = 0; i < paragraphs.length - 1; i++) {
-      if (offset > paragraphs[i].end && offset < paragraphs[i + 1].start) {
-        return true;
-      }
-    }
-    return offset > paragraphs[paragraphs.length - 1].end;
-  }
-
-  function activeHighlight() {
-    if (paneMode !== "review") return null;
-    if (mode !== "local") return null;
-    if (
-      chatFocus.scope === "paragraph" &&
-      activeParagraph
-    ) {
-      return { start: activeParagraph.start, end: activeParagraph.end };
-    }
-    if (!activeSentence) return null;
-    return { start: activeSentence.start, end: activeSentence.end };
-  }
-
-  function selectionIsEditorRange() {
-    if (!tipTap) return false;
+  /** Plain offsets for TipTap selection (paragraphs joined with \n\n). */
+  function caretSelectionOffsets() {
+    if (!tipTap) return { from: 0, to: 0 };
     const { from, to } = tipTap.state.selection;
-    return tipTap.isFocused && to > from;
+    const fromOff = tipTap.state.doc.textBetween(0, from, "\n\n", "\n").length;
+    const toOff = tipTap.state.doc.textBetween(0, to, "\n\n", "\n").length;
+    return { from: Math.min(fromOff, toOff), to: Math.max(fromOff, toOff) };
   }
 
-  function syncEditorHighlight(force = false) {
-    if (!force && selectionIsEditorRange()) return;
-    syncOverlayFromState();
-  }
-
-  function applyLocalFromCaret() {
-    const prevSentenceIndex = activeSentence ? activeSentence.index : null;
-    updateLocalFromCaret();
-    const sentenceChanged =
-      (activeSentence ? activeSentence.index : null) !== prevSentenceIndex;
-    if (activeSentence && sentenceChanged) {
-      syncLocalChatFocus({ preferSentence: true });
-    }
-    if (selectionIsEditorRange()) {
-      if (activeSentence) {
-        mode = "local";
-        syncScopeTabSelection();
-        renderFeedback();
-      } else if (mode === "local") {
-        setMode("global");
-      }
-      return;
-    }
-    if (activeSentence) {
-      if (mode !== "local") setMode("local");
-      else if (sentenceChanged) {
-        renderFeedback();
-        syncEditorHighlight(true);
-      }
-    } else if (mode === "local") {
-      setMode("global");
-    } else {
-      syncEditorHighlight();
-    }
-  }
-
-  function chatKey(scope, index) {
-    if (scope === "text") return "text";
-    return `${scope}:${index}`;
-  }
-
-  function messagesForKey(scope, index) {
-    const key = chatKey(scope, index);
-    const list = chats[key];
-    return Array.isArray(list) ? list : [];
-  }
-
-  function canChatScope(scope) {
-    if (!result || chatBusy || analyzing) return false;
-    // Live merges: browse existing feedback, but don't create new chats.
-    if (pendingMerge) return false;
-    if (scope === "text") return true;
-    if (scope === "sentence") return !!activeSentence;
-    if (scope === "paragraph") return !!activeParagraph;
-    return false;
-  }
-
-  function chatPlaceholder(scope) {
-    if (scope === "sentence") return "Ask about this sentence";
-    if (scope === "paragraph") return "Ask about this paragraph";
-    return "Ask about the text";
-  }
-
-  function captureChatDrafts() {
-    if (chatInput && !chatComposer.hidden) {
-      chatDrafts.text = chatInput.value || "";
-    }
-    feedbackEl.querySelectorAll(".unit-composer textarea").forEach((ta) => {
-      const form = ta.closest(".unit-composer");
-      if (!form) return;
-      const scope = form.dataset.scope;
-      if (scope === "sentence" || scope === "paragraph") {
-        chatDrafts[scope] = ta.value || "";
-      }
-    });
+  function canUseComposer() {
+    if (!activeDraftId || chatView !== "thread" || !activeChatId) return false;
+    if (chatBusy || converting || gitBusy || isViewingHistory()) return false;
+    return true;
   }
 
   function resizeTextarea(el) {
@@ -1649,55 +1496,29 @@ import DOMPurify from "dompurify";
     el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`;
   }
 
-  function syncComposerControls(form, input, sendBtn, scope) {
-    const enabled = canChatScope(scope);
-    const draft = chatDrafts[scope] || "";
-    input.placeholder = chatPlaceholder(scope);
-    input.setAttribute("aria-label", chatPlaceholder(scope));
-    if (document.activeElement !== input) {
-      input.value = draft;
-      resizeTextarea(input);
-    }
-    input.disabled = !enabled;
-    sendBtn.disabled = !enabled || !(input.value || "").trim();
-    form.setAttribute("aria-busy", chatBusy ? "true" : "false");
-  }
-
   function syncChatComposer() {
-    const showGlobal = !!(
-      result &&
-      mode === "global" &&
-      paneMode !== "git" &&
-      !pendingMerge
+    const show = !!(
+      activeDraftId &&
+      paneMode === "chat" &&
+      chatView === "thread" &&
+      activeChatId
     );
-    chatComposer.hidden = !showGlobal;
-    if (showGlobal) {
-      syncComposerControls(chatComposer, chatInput, chatSend, "text");
+    chatComposer.hidden = !show;
+    if (!show) {
+      chatComposer.classList.remove("is-separated");
+      return;
     }
-    feedbackEl.querySelectorAll(".unit-composer").forEach((form) => {
-      const scope = form.dataset.scope;
-      const input = form.querySelector("textarea");
-      const sendBtn = form.querySelector(".chat-send");
-      if (!input || !sendBtn) return;
-      if (scope === "sentence" || scope === "paragraph") {
-        syncComposerControls(form, input, sendBtn, scope);
-      }
-    });
-    syncComposerSeparators();
-    requestAnimationFrame(() => {
-      bindComposerScrollWatch(feedbackEl);
-      if (typeof composerSepObserver !== "undefined") {
-        feedbackEl.querySelectorAll(".local-pane-scroll").forEach((el) => {
-          composerSepObserver.observe(el);
-          bindComposerScrollWatch(el);
-        });
-      } else {
-        feedbackEl.querySelectorAll(".local-pane-scroll").forEach((el) => {
-          bindComposerScrollWatch(el);
-        });
-      }
-      syncComposerSeparators();
-    });
+    const enabled = canUseComposer();
+    chatInput.placeholder = "Ask about the draft...";
+    chatInput.setAttribute("aria-label", "Ask about the draft");
+    if (document.activeElement !== chatInput) {
+      chatInput.value = composerDraft;
+      resizeTextarea(chatInput);
+    }
+    chatInput.disabled = !enabled;
+    chatSend.disabled = !enabled || !(chatInput.value || "").trim();
+    chatComposer.setAttribute("aria-busy", chatBusy ? "true" : "false");
+    requestAnimationFrame(() => syncComposerSeparators());
   }
 
   function scrollAreaOverflows(el) {
@@ -1723,14 +1544,6 @@ import DOMPurify from "dompurify";
     } else {
       chatComposer.classList.remove("is-separated");
     }
-    feedbackEl.querySelectorAll(".local-pane > .unit-composer").forEach((form) => {
-      const scroll = form.previousElementSibling;
-      const needs =
-        scroll &&
-        scroll.classList.contains("local-pane-scroll") &&
-        composerNeedsSeparator(scroll);
-      form.classList.toggle("is-separated", !!needs);
-    });
   }
 
   function bindComposerScrollWatch(el) {
@@ -1741,379 +1554,175 @@ import DOMPurify from "dompurify";
     });
   }
 
-  function renderUnitComposer(scope, index) {
-    if (pendingMerge) return "";
-    const enabled = canChatScope(scope);
-    const placeholder = chatPlaceholder(scope);
-    const draft = escapeHtml(chatDrafts[scope] || "");
-    return (
-      `<form class="chat-composer unit-composer" data-scope="${scope}" data-index="${index}" aria-busy="false">` +
-      `<div class="chat-composer-row">` +
-      `<textarea rows="1" class="chat-input" placeholder="${placeholder}" aria-label="${placeholder}" autocomplete="off"${enabled ? "" : " disabled"}>${draft}</textarea>` +
-      `<button type="submit" class="btn btn-primary chat-send"${enabled ? "" : " disabled"}>Send</button>` +
-      `</div>` +
-      `</form>`
-    );
-  }
-
-  function renderChatThread(scope, index) {
-    const msgs = messagesForKey(scope, index);
-    if (!msgs.length) return "";
-    return (
-      `<div class="chat-thread" role="log" aria-live="polite">` +
-      msgs
-        .map((m) => {
-          const role = m.role === "assistant" ? "assistant" : "user";
-          const label = role === "assistant" ? "Coach" : "You";
-          const body =
-            role === "assistant"
-              ? renderMarkdown(m.content || "")
-              : escapeHtml(m.content || "");
-          return (
-            `<div class="chat-msg ${role}" aria-label="${label}">` +
-            `<div class="chat-msg-body">${body}</div>` +
-            `</div>`
-          );
-        })
-        .join("") +
-      `</div>`
-    );
-  }
-
-  function unitPayload(scope, index) {
-    const originalText = baseline || currentText;
-    const liveText = currentText || originalText;
-    const textChanged =
-      !!originalText && !!liveText && originalText !== liveText;
-
-    if (scope === "text") {
-      return {
-        scope: "text",
-        unit_text: "",
-        unit_feedback: result?.text || "",
-        text_current: textChanged ? liveText : "",
-        unit_text_current: "",
-      };
+  function renderChatList() {
+    if (!chatListEl) return;
+    if (!chatRecords.length) {
+      chatListEl.innerHTML =
+        `<p class="draft-list-empty">No chats yet. Start a new chat to ask about this draft.</p>`;
+      return;
     }
-    if (scope === "sentence" && activeSentence && activeSentence.index === index) {
-      const originalUnit = activeSentence.text || "";
-      let unitCurrent = "";
-      if (textChanged && baseline) {
-        unitCurrent = currentSliceForBaselineRange(
-          baseline,
-          currentText,
-          activeSentence.start,
-          activeSentence.end
+    const sorted = chatRecords
+      .slice()
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    chatListEl.innerHTML = sorted
+      .map((c) => {
+        const branch = c.lastBranch ? ` · ${c.lastBranch}` : "";
+        const title = escapeHtml(c.title || store.DEFAULT_CHAT_TITLE);
+        const renaming = renamingChatId === c.id;
+        const titleHtml = renaming
+          ? `<input class="draft-item-title-input" data-action="rename-input" value="${title}" aria-label="Chat title" />`
+          : `<span class="draft-item-title">${title}</span>`;
+        return (
+          `<div class="draft-item" role="listitem" data-id="${escapeHtml(c.id)}">` +
+          `<div class="draft-item-body" data-action="open">` +
+          titleHtml +
+          `<span class="draft-item-meta">${escapeHtml(formatDraftTime(c.updatedAt))}${escapeHtml(branch)}</span>` +
+          `</div>` +
+          `<button type="button" class="draft-item-delete" data-action="delete" title="Delete chat" aria-label="Delete chat">×</button>` +
+          `</div>`
         );
-      }
-      return {
-        scope: "sentence",
-        unit_text: originalUnit,
-        unit_feedback: activeSentence.feedback || "",
-        text_current: textChanged ? liveText : "",
-        unit_text_current:
-          unitCurrent && unitCurrent !== originalUnit ? unitCurrent : "",
-      };
-    }
-    if (scope === "paragraph" && activeParagraph && activeParagraph.index === index) {
-      const originalUnit = activeParagraph.text || "";
-      let unitCurrent = "";
-      if (textChanged && baseline) {
-        unitCurrent = currentSliceForBaselineRange(
-          baseline,
-          currentText,
-          activeParagraph.start,
-          activeParagraph.end
-        );
-      }
-      return {
-        scope: "paragraph",
-        unit_text: originalUnit,
-        unit_feedback: activeParagraph.feedback || "",
-        text_current: textChanged ? liveText : "",
-        unit_text_current:
-          unitCurrent && unitCurrent !== originalUnit ? unitCurrent : "",
-      };
-    }
-    return null;
-  }
-
-  function syncLocalChatFocus({ preferSentence = false } = {}) {
-    if (!activeSentence) {
-      chatFocus = { scope: "sentence", index: null };
-      return;
-    }
-    if (
-      !preferSentence &&
-      chatFocus.scope === "paragraph" &&
-      activeParagraph &&
-      chatFocus.index === activeParagraph.index
-    ) {
-      return;
-    }
-    if (
-      !preferSentence &&
-      chatFocus.scope === "sentence" &&
-      chatFocus.index === activeSentence.index
-    ) {
-      return;
-    }
-    chatFocus = { scope: "sentence", index: activeSentence.index };
-  }
-
-  function captureScrollState(el) {
-    if (!el) return null;
-    return {
-      top: el.scrollTop,
-      atBottom: scrollAreaAtBottom(el),
-    };
-  }
-
-  function captureFeedbackScroll() {
-    const snapshot = {
-      global: null,
-      sentence: null,
-      paragraph: null,
-    };
-    if (mode === "global") {
-      snapshot.global = captureScrollState(feedbackEl);
-      return snapshot;
-    }
-    snapshot.sentence = captureScrollState(
-      feedbackEl.querySelector(".local-sentence .local-pane-scroll")
-    );
-    snapshot.paragraph = captureScrollState(
-      feedbackEl.querySelector(".local-paragraph .local-pane-scroll")
-    );
-    return snapshot;
-  }
-
-  function applyScrollState(el, state, stickBottom) {
-    if (!el) return;
-    if (stickBottom) {
-      el.scrollTop = el.scrollHeight;
-      return;
-    }
-    if (state) el.scrollTop = state.top;
-  }
-
-  function restoreFeedbackScroll(snapshot, stickBottomScope) {
-    if (!snapshot) return;
-    if (mode === "global") {
-      applyScrollState(
-        feedbackEl,
-        snapshot.global,
-        stickBottomScope === "text"
+      })
+      .join("");
+    if (renamingChatId) {
+      const input = chatListEl.querySelector(
+        `.draft-item[data-id="${CSS.escape(renamingChatId)}"] .draft-item-title-input`
       );
-      return;
+      if (input) {
+        input.focus();
+        input.select();
+      }
     }
-    applyScrollState(
-      feedbackEl.querySelector(".local-sentence .local-pane-scroll"),
-      snapshot.sentence,
-      stickBottomScope === "sentence"
-    );
-    applyScrollState(
-      feedbackEl.querySelector(".local-paragraph .local-pane-scroll"),
-      snapshot.paragraph,
-      stickBottomScope === "paragraph"
-    );
   }
 
-  function renderFeedback({ stickBottomScope = null } = {}) {
-    captureChatDrafts();
-    const scrollSnapshot = captureFeedbackScroll();
-    feedbackEl.classList.remove("local-split-host");
-    if (!result) {
-      feedbackEl.innerHTML = `<p class="muted">Analyze a draft to see feedback.</p>`;
-      syncChatComposer();
+  function renderChatThread({ stickBottom = false } = {}) {
+    const chat = activeChat();
+    if (!chat) {
+      feedbackEl.innerHTML = `<p class="muted">Select or create a chat.</p>`;
       return;
     }
-
-    if (mode === "global") {
-      chatFocus = { scope: "text", index: null };
-      feedbackEl.innerHTML =
-        `<div class="block focused">` +
-        `<div class="body">${renderMarkdown(result.text)}</div>` +
-        `</div>` +
-        renderChatThread("text", null);
-      syncChatComposer();
-      requestAnimationFrame(() => {
-        restoreFeedbackScroll(scrollSnapshot, stickBottomScope);
-        syncComposerSeparators();
-      });
-      return;
-    }
-
-    if (!activeSentence) {
-      feedbackEl.innerHTML =
-        `<p class="muted">Click into a sentence to see local feedback.</p>`;
-      syncChatComposer();
-      return;
-    }
-
-    syncLocalChatFocus();
-    const para = activeParagraph;
-    const sentFocused =
-      chatFocus.scope === "sentence" && chatFocus.index === activeSentence.index;
-    const paraFocused =
-      para &&
-      chatFocus.scope === "paragraph" &&
-      chatFocus.index === para.index;
-
-    const sentenceHtml =
-      `<div class="block" data-scope="sentence" data-index="${activeSentence.index}">` +
-      `<p class="quote">${escapeHtml(activeSentence.text)}</p>` +
-      `<div class="body">${renderMarkdown(activeSentence.feedback)}</div>` +
-      `</div>` +
-      renderChatThread("sentence", activeSentence.index);
-
-    let paragraphHtml;
-    if (para) {
-      paragraphHtml =
-        `<div class="block" data-scope="paragraph" data-index="${para.index}">` +
-        `<p class="quote">${escapeHtml(para.text)}</p>` +
-        `<div class="body">${renderMarkdown(para.feedback)}</div>` +
-        `</div>` +
-        renderChatThread("paragraph", para.index);
+    const msgs = Array.isArray(chat.messages) ? chat.messages : [];
+    const scrollTop = feedbackEl.scrollTop;
+    const wasAtBottom = scrollAreaAtBottom(feedbackEl);
+    if (!msgs.length) {
+      feedbackEl.innerHTML = `<p class="muted">Ask anything about the draft.</p>`;
     } else {
-      paragraphHtml = `<p class="muted">No paragraph feedback for this selection.</p>`;
+      feedbackEl.innerHTML =
+        `<div class="chat-thread" role="log" aria-live="polite">` +
+        msgs
+          .map((m) => {
+            const role = m.role === "assistant" ? "assistant" : "user";
+            const label = role === "assistant" ? "Coach" : "You";
+            const body =
+              role === "assistant"
+                ? renderMarkdown(m.content || "")
+                : escapeHtml(m.content || "");
+            return (
+              `<div class="chat-msg ${role}" aria-label="${label}">` +
+              `<div class="chat-msg-body">${body}</div>` +
+              `</div>`
+            );
+          })
+          .join("") +
+        `</div>`;
     }
-
-    feedbackEl.classList.add("local-split-host");
-    feedbackEl.innerHTML =
-      `<div class="local-split">` +
-      `<div class="local-pane local-sentence${sentFocused ? " focused" : ""}" data-scope="sentence" data-index="${activeSentence.index}">` +
-      `<div class="local-pane-scroll">${sentenceHtml}</div>` +
-      renderUnitComposer("sentence", activeSentence.index) +
-      `</div>` +
-      `<div id="local-divider" role="separator" aria-orientation="horizontal" aria-label="Resize sentence and paragraph panes" tabindex="0"></div>` +
-      `<div class="local-pane local-paragraph${paraFocused ? " focused" : ""}"${para ? ` data-scope="paragraph" data-index="${para.index}"` : ""}>` +
-      `<div class="local-pane-scroll">${paragraphHtml}</div>` +
-      (para ? renderUnitComposer("paragraph", para.index) : "") +
-      `</div>` +
-      `</div>`;
-    applyLocalSplit();
-    bindLocalDivider();
-    syncChatComposer();
     requestAnimationFrame(() => {
-      restoreFeedbackScroll(scrollSnapshot, stickBottomScope);
+      if (stickBottom || wasAtBottom) {
+        feedbackEl.scrollTop = feedbackEl.scrollHeight;
+      } else {
+        feedbackEl.scrollTop = scrollTop;
+      }
+      bindComposerScrollWatch(feedbackEl);
       syncComposerSeparators();
     });
   }
 
-  function applyLocalSplit() {
-    const sentencePane = feedbackEl.querySelector(".local-sentence");
-    if (!sentencePane) return;
-    sentencePane.style.flex = `0 0 ${localSentencePct}%`;
-    syncComposerSeparators();
+  async function createChat() {
+    if (!activeDraftId) return;
+    const now = Date.now();
+    const id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `chat-${now}-${Math.random().toString(36).slice(2, 10)}`;
+    const chat = {
+      id,
+      title: store.DEFAULT_CHAT_TITLE || "New Chat",
+      lastBranch: currentBranchName || "main",
+      createdAt: now,
+      updatedAt: now,
+      messages: [],
+    };
+    chatRecords = [chat, ...chatRecords];
+    activeChatId = id;
+    chatView = "thread";
+    composerDraft = "";
+    await persistChatsNow();
+    syncRightPane();
+    tipTap?.commands.focus();
   }
 
-  function setLocalSplitFromClientY(clientY) {
-    const split = feedbackEl.querySelector(".local-split");
-    if (!split) return;
-    const rect = split.getBoundingClientRect();
-    if (rect.height <= 0) return;
-    const y = clientY - rect.top;
-    const min = 64;
-    const max = rect.height - 64 - 5;
-    const clamped = Math.min(max, Math.max(min, y));
-    localSentencePct = (clamped / rect.height) * 100;
-    applyLocalSplit();
+  async function openChat(id) {
+    const chat = chatRecords.find((c) => c.id === id);
+    if (!chat) return;
+    activeChatId = id;
+    chat.lastBranch = currentBranchName || chat.lastBranch || "main";
+    chat.updatedAt = Date.now();
+    chatView = "thread";
+    composerDraft = "";
+    await persistChatsNow();
+    syncRightPane();
   }
 
-  function bindLocalDivider() {
-    const localDivider = document.getElementById("local-divider");
-    if (!localDivider || localDivider.dataset.bound === "1") return;
-    localDivider.dataset.bound = "1";
-
-    function endLocalResize() {
-      if (!localResizing) return;
-      localResizing = false;
-      localDivider.classList.remove("dragging");
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
+  async function deleteChat(id) {
+    const chat = chatRecords.find((c) => c.id === id);
+    if (!chat) return;
+    const ok = window.confirm(`Delete chat “${chat.title || "New Chat"}”?`);
+    if (!ok) return;
+    chatRecords = chatRecords.filter((c) => c.id !== id);
+    if (activeChatId === id) {
+      activeChatId = null;
+      chatView = "list";
+      composerDraft = "";
     }
-
-    localDivider.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      localResizing = true;
-      localDivider.classList.add("dragging");
-      document.body.style.cursor = "row-resize";
-      document.body.style.userSelect = "none";
-      localDivider.setPointerCapture(e.pointerId);
-    });
-
-    localDivider.addEventListener("pointermove", (e) => {
-      if (!localResizing) return;
-      setLocalSplitFromClientY(e.clientY);
-    });
-
-    localDivider.addEventListener("pointerup", endLocalResize);
-    localDivider.addEventListener("pointercancel", endLocalResize);
-
-    localDivider.addEventListener("keydown", (e) => {
-      const step = e.shiftKey ? 8 : 3;
-      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-        e.preventDefault();
-        localSentencePct = Math.min(
-          80,
-          Math.max(15, localSentencePct + (e.key === "ArrowUp" ? -step : step))
-        );
-        applyLocalSplit();
-      }
-    });
+    if (renamingChatId === id) renamingChatId = null;
+    await persistChatsNow();
+    syncRightPane();
   }
 
-  function updateLocalFromCaret() {
-    if (!result || !baseline) {
-      activeSentence = null;
-      activeParagraph = null;
+  async function finishChatRename(id, value, { cancel = false } = {}) {
+    if (renamingChatId !== id) return;
+    renamingChatId = null;
+    const chat = chatRecords.find((c) => c.id === id);
+    if (!chat) {
+      renderChatList();
       return;
     }
-    const curOff = caretCurrentOffset();
-    const baseOff = mapCurrentToBaseline(baseline, currentText, curOff);
-    if (baseOff == null || isBetweenParagraphs(baseOff, result.paragraphs)) {
-      activeSentence = null;
-      activeParagraph = null;
-      return;
+    if (!cancel) {
+      const trimmed = String(value ?? "").trim();
+      chat.title = trimmed || store.DEFAULT_CHAT_TITLE || "New Chat";
+      chat.updatedAt = Date.now();
+      await persistChatsNow();
     }
-    activeSentence = findUnitAt(result.sentences, baseOff);
-    activeParagraph = activeSentence
-      ? findParagraphForSentence(activeSentence)
-      : findUnitAt(result.paragraphs, baseOff);
+    renderChatList();
+    syncChatHeader();
   }
 
-  function setMode(next) {
-    mode = next;
-    syncScopeTabSelection();
-    if (mode === "local") {
-      updateLocalFromCaret();
-      syncLocalChatFocus({ preferSentence: true });
-    } else {
-      activeSentence = null;
-      chatFocus = { scope: "text", index: null };
-    }
-    renderFeedback();
-    syncEditorHighlight(true);
+  function showChatList() {
+    chatView = "list";
+    composerDraft = "";
+    syncRightPane();
   }
-
-  scopeTabs.forEach((tab) => {
-    tab.addEventListener("click", () => setMode(tab.dataset.mode));
-  });
 
   function setPaneMode(next) {
-    if (next !== "review" && next !== "git") return;
+    if (next !== "chat" && next !== "git") return;
     if (paneMode === next) {
       syncPaneModeTabs();
       return;
     }
     paneMode = next;
     syncPaneModeTabs();
-    updateAnalyzeBtn();
+    updateCommitBtn();
     syncRightPane();
-    syncEditorHighlight(true);
+    syncOverlayFromState();
     if (paneMode === "git") {
       renderGitPane();
       void refreshWorkingDirty();
@@ -2160,7 +1769,7 @@ import DOMPurify from "dompurify";
     if (!commits.length) {
       gitDirtySection.hidden = true;
       gitDirtyModes.innerHTML = "";
-      gitCommitList.innerHTML = `<p class="git-empty">No commits yet. Analyze or Commit to create one.</p>`;
+      gitCommitList.innerHTML = `<p class="git-empty">No commits yet. Commit to create one.</p>`;
     } else {
       const atDirty = !viewingOid;
       const modesLocked = gitBusy || !!pendingMerge;
@@ -2230,14 +1839,14 @@ import DOMPurify from "dompurify";
   async function runGit(fn) {
     if (!activeDraftId || gitBusy) return;
     gitBusy = true;
-    updateAnalyzeBtn();
+    updateCommitBtn();
     try {
       await fn();
     } catch (err) {
       setStatus(String(err.message || err), "danger");
     } finally {
       gitBusy = false;
-      updateAnalyzeBtn();
+      updateCommitBtn();
       if (paneMode === "git") renderGitPane();
     }
   }
@@ -2250,13 +1859,12 @@ import DOMPurify from "dompurify";
     // Dirty review: keep Dirty for any unresolved hunks, then commit clean HTML.
     if (dirtyReviewing) await leaveDirtyReview();
     await flushSaveTimer();
-    baseline = currentText;
     const verb = hasConflict || pendingMerge ? "Merge" : "Commit";
     await store.saveWorkingTree(activeDraftId, snapshotState());
     const dirty = await store.isDirty(activeDraftId);
     if (!dirty && !pendingMerge) {
       workingDirty = false;
-      updateAnalyzeBtn();
+      updateCommitBtn();
       setStatus("Nothing to commit");
       return;
     }
@@ -2272,26 +1880,11 @@ import DOMPurify from "dompurify";
     setStatus("");
     await refreshDraftList();
     renamingGit = { kind: "commit", key: oid };
-    updateAnalyzeBtn();
+    updateCommitBtn();
   }
 
-  async function analyzeOrCommit() {
-    if (paneMode === "git") {
-      await runGit(manualCommit);
-      return;
-    }
-    await analyze();
-  }
-
-  editor.addEventListener("click", (e) => {
-    if (!result) return;
-    applyLocalFromCaret();
-  });
-
-  editor.addEventListener("keyup", (e) => {
-    if (!result) return;
-    const nav = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"];
-    if (nav.includes(e.key)) applyLocalFromCaret();
+  commitBtn.addEventListener("click", () => {
+    void runGit(manualCommit);
   });
 
   const importFileInput = document.createElement("input");
@@ -2321,7 +1914,7 @@ import DOMPurify from "dompurify";
   }
 
   function canOpenImportDialog() {
-    if (converting || analyzing || gitBusy || applyingHistory) return false;
+    if (converting || gitBusy || applyingHistory) return false;
     if (isViewingHistory()) return false;
     // Import replaces the doc (allowed during dirty review and live merges).
     return true;
@@ -2330,7 +1923,7 @@ import DOMPurify from "dompurify";
   async function importChosenFile(file) {
     if (!file) return;
     converting = true;
-    updateAnalyzeBtn();
+    updateCommitBtn();
     setStatus("importing...");
     try {
       if (pendingMerge && activeDraftId && store) {
@@ -2361,7 +1954,7 @@ import DOMPurify from "dompurify";
       syncOverlayFromState();
       syncRightPane();
       if (paneMode === "git") renderGitPane();
-      updateAnalyzeBtn();
+      updateCommitBtn();
       refreshStatusLeft();
       syncHeaderTitle();
       await refreshWorkingDirty();
@@ -2371,7 +1964,7 @@ import DOMPurify from "dompurify";
       setStatus(String(err.message || err), "danger");
     } finally {
       converting = false;
-      updateAnalyzeBtn();
+      updateCommitBtn();
     }
   }
 
@@ -2402,7 +1995,7 @@ import DOMPurify from "dompurify";
     if (exportBtn.disabled) return;
     setExportMenuOpen(false);
     converting = true;
-    updateAnalyzeBtn();
+    updateCommitBtn();
     setStatus("exporting...");
     try {
       pullFromEditor();
@@ -2428,7 +2021,7 @@ import DOMPurify from "dompurify";
       setStatus(String(err.message || err), "danger");
     } finally {
       converting = false;
-      updateAnalyzeBtn();
+      updateCommitBtn();
     }
   }
 
@@ -2467,117 +2060,6 @@ import DOMPurify from "dompurify";
     if (e.key === "Escape" && !exportMenu.hidden) {
       setExportMenuOpen(false);
     }
-  });
-
-  async function readReviewStream(res, onProgress) {
-    if (!res.body) {
-      throw new Error(res.statusText || "Review failed");
-    }
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let finalResult = null;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        let event;
-        try {
-          event = JSON.parse(line);
-        } catch {
-          throw new Error("Invalid progress event from server");
-        }
-        if (event.type === "progress") {
-          onProgress(event);
-        } else if (event.type === "done") {
-          finalResult = event.result;
-        } else if (event.type === "error") {
-          throw new Error(event.detail || "Review failed");
-        }
-      }
-    }
-    if (!finalResult) {
-      throw new Error("Review ended without a result");
-    }
-    return finalResult;
-  }
-
-  async function analyze() {
-    if (pendingMerge) {
-      setStatus("Finish the merge before analyzing.", "warn");
-      return;
-    }
-    if (isViewingHistory()) {
-      setStatus("Return to the latest commit before analyzing.");
-      return;
-    }
-    const text = (currentText || "").trim();
-    if (!text) {
-      setStatus("Paste or type some text first.");
-      return;
-    }
-    analyzing = true;
-    updateAnalyzeBtn();
-    syncChatComposer();
-    setStatus("analyzing...");
-    try {
-      await ensureDraftForText(text);
-      await flushSaveTimer();
-      const res = await fetch("/api/review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const detail = data.detail;
-        throw new Error(
-          typeof detail === "string" ? detail : res.statusText || "Review failed"
-        );
-      }
-      const data = await readReviewStream(res, (event) => {
-        setStatus(formatAnalysisProgress(event));
-      });
-      result = data;
-      baseline = text;
-      currentText = text;
-      syncDirtyBodyFromCurrent();
-      currentModel = data.model || DEFAULT_MODEL;
-      revisionCost = Number(data.total_cost) || 0;
-      draftCost += revisionCost;
-      chats = {};
-      chatFocus = { scope: "text", index: null };
-      chatDrafts = { text: "", sentence: "", paragraph: "" };
-      clearHistory();
-      syncOverlayFromState();
-      activeSentence = null;
-      activeParagraph = null;
-      setMode("global");
-      await store.commitAnalyze(activeDraftId, snapshotState());
-      viewingOid = null;
-      workingDirty = false;
-      await refreshCommits();
-      activeCommitIndex = commits.length - 1;
-      updateMeta();
-      setStatus("");
-      await refreshDraftList();
-      syncRightPane();
-      await refreshWorkingDirty();
-    } catch (err) {
-      setStatus(String(err.message || err), "danger");
-    } finally {
-      analyzing = false;
-      updateAnalyzeBtn();
-      syncChatComposer();
-    }
-  }
-
-  analyzeBtn.addEventListener("click", () => {
-    analyzeOrCommit();
   });
 
   async function switchBranch(name) {
@@ -2740,7 +2222,7 @@ import DOMPurify from "dompurify";
     ]);
     loadSnapshotState(snap, { historical: true, historyBaseline: prevPlain });
     renderGitPane();
-    updateAnalyzeBtn();
+    updateCommitBtn();
   }
 
   async function restoreCommitOid(oid) {
@@ -2882,22 +2364,6 @@ import DOMPurify from "dompurify";
     }, 0);
   });
 
-  feedbackEl.addEventListener("click", (e) => {
-    if (!result || mode !== "local") return;
-    if (e.target.closest("#local-divider")) return;
-    if (e.target.closest(".unit-composer")) return;
-    const pane = e.target.closest(".local-pane[data-scope]");
-    if (!pane || !feedbackEl.contains(pane)) return;
-    const scope = pane.dataset.scope;
-    if (scope !== "sentence" && scope !== "paragraph") return;
-    const index = Number(pane.dataset.index);
-    if (!Number.isFinite(index)) return;
-    if (chatFocus.scope === scope && chatFocus.index === index) return;
-    chatFocus = { scope, index };
-    renderFeedback();
-    syncEditorHighlight(true);
-  });
-
   async function readChatStream(res) {
     if (!res.body) {
       throw new Error(res.statusText || "Chat failed");
@@ -2933,23 +2399,55 @@ import DOMPurify from "dompurify";
     return doneEvent;
   }
 
-  async function sendChat(scope, index, inputEl) {
-    if (!canChatScope(scope)) return;
-    const text = (inputEl?.value || chatDrafts[scope] || "").trim();
-    if (!text) return;
-    const payload = unitPayload(scope, index);
-    if (!payload) return;
+  function apiMessagesFromChat(messages) {
+    return (messages || [])
+      .filter((m) => m && (m.role === "user" || m.role === "assistant"))
+      .map((m) => {
+        if (m.role === "assistant") {
+          return { role: "assistant", content: m.content || "" };
+        }
+        const item = {
+          role: "user",
+          content: m.content || "",
+          draft_text: m.draftText ?? "",
+        };
+        if (m.selection && typeof m.selection === "object") {
+          item.selection = {
+            from: Number(m.selection.from) || 0,
+            to: Number(m.selection.to) || 0,
+          };
+        }
+        return item;
+      });
+  }
 
-    chatFocus = { scope, index: index == null ? null : index };
-    const prior = messagesForKey(scope, index).slice();
-    const key = chatKey(scope, index);
-    chats[key] = [...prior, { role: "user", content: text }];
-    chatDrafts[scope] = "";
-    if (inputEl) {
-      inputEl.value = "";
-      resizeTextarea(inputEl);
+  async function sendChat() {
+    if (!canUseComposer()) return;
+    const chat = activeChat();
+    if (!chat) return;
+    const text = (chatInput?.value || composerDraft || "").trim();
+    if (!text) return;
+
+    pullFromEditor();
+    const draftText = tipTap ? getPlain(tipTap) : currentText || "";
+    const selection = caretSelectionOffsets();
+    const prior = Array.isArray(chat.messages) ? chat.messages.slice() : [];
+    const userMsg = {
+      role: "user",
+      content: text,
+      draftText,
+      selection,
+    };
+    chat.messages = [...prior, userMsg];
+    chat.lastBranch = currentBranchName || chat.lastBranch || "main";
+    chat.updatedAt = Date.now();
+    composerDraft = "";
+    if (chatInput) {
+      chatInput.value = "";
+      resizeTextarea(chatInput);
     }
-    renderFeedback({ stickBottomScope: scope });
+    renderChatThread({ stickBottom: true });
+    syncChatComposer();
 
     chatBusy = true;
     syncChatComposer();
@@ -2959,15 +2457,11 @@ import DOMPurify from "dompurify";
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text: baseline || currentText,
-          text_current: payload.text_current || "",
           model: currentModel,
-          scope: payload.scope,
-          unit_text: payload.unit_text,
-          unit_feedback: payload.unit_feedback,
-          unit_text_current: payload.unit_text_current || "",
-          messages: prior,
+          messages: apiMessagesFromChat(prior),
           message: text,
+          draft_text: draftText,
+          selection,
         }),
       });
       if (!res.ok) {
@@ -2980,32 +2474,98 @@ import DOMPurify from "dompurify";
       const data = await readChatStream(res);
       const reply = String(data.reply || "");
       const cost = Number(data.cost) || 0;
-      chats[key] = [
-        ...(Array.isArray(chats[key]) ? chats[key] : prior),
+      chat.messages = [
+        ...(Array.isArray(chat.messages) ? chat.messages : prior),
         { role: "assistant", content: reply },
       ];
+      chat.lastBranch = currentBranchName || chat.lastBranch || "main";
+      chat.updatedAt = Date.now();
       draftCost += cost;
       updateMeta();
       setStatus("");
-      renderFeedback({ stickBottomScope: scope });
-      persistActiveDraftNow();
+      renderChatThread({ stickBottom: true });
+      await persistChatsNow();
+      persistActiveDraftSoon();
     } catch (err) {
-      chats[key] = prior;
-      renderFeedback({ stickBottomScope: scope });
+      chat.messages = prior;
+      renderChatThread({ stickBottom: true });
       setStatus(String(err.message || err), "danger");
+      await persistChatsNow();
     } finally {
       chatBusy = false;
       syncChatComposer();
     }
   }
 
+  newChatBtn?.addEventListener("click", () => {
+    void createChat();
+  });
+
+  chatBackBtn?.addEventListener("click", () => {
+    showChatList();
+  });
+
+  chatListEl?.addEventListener("click", (e) => {
+    const item = e.target.closest(".draft-item");
+    if (!item || !chatListEl.contains(item)) return;
+    const id = item.dataset.id;
+    const actionEl = e.target.closest("[data-action]");
+    const action = actionEl?.dataset.action;
+    if (action === "delete") {
+      e.preventDefault();
+      e.stopPropagation();
+      void deleteChat(id);
+      return;
+    }
+    if (action === "rename-input") return;
+    void openChat(id);
+  });
+
+  chatListEl?.addEventListener("contextmenu", (e) => {
+    const item = e.target.closest(".draft-item");
+    if (!item || !chatListEl.contains(item)) return;
+    if (e.target.closest("[data-action='delete']")) return;
+    if (e.target.closest(".draft-item-title-input")) return;
+    e.preventDefault();
+    renamingChatId = item.dataset.id;
+    renderChatList();
+  });
+
+  chatListEl?.addEventListener("keydown", (e) => {
+    const input = e.target.closest(".draft-item-title-input");
+    if (!input || !chatListEl.contains(input)) return;
+    const item = input.closest(".draft-item");
+    const id = item?.dataset.id;
+    if (!id) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void finishChatRename(id, input.value);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      void finishChatRename(id, input.value, { cancel: true });
+    }
+  });
+
+  chatListEl?.addEventListener("focusout", (e) => {
+    const input = e.target.closest(".draft-item-title-input");
+    if (!input || !chatListEl.contains(input)) return;
+    const item = input.closest(".draft-item");
+    const id = item?.dataset.id;
+    if (!id || renamingChatId !== id) return;
+    setTimeout(() => {
+      if (renamingChatId === id) {
+        void finishChatRename(id, input.value);
+      }
+    }, 0);
+  });
+
   chatComposer.addEventListener("submit", (e) => {
     e.preventDefault();
-    sendChat("text", null, chatInput);
+    void sendChat();
   });
 
   chatInput.addEventListener("input", () => {
-    chatDrafts.text = chatInput.value || "";
+    composerDraft = chatInput.value || "";
     resizeTextarea(chatInput);
     syncChatComposer();
   });
@@ -3013,47 +2573,8 @@ import DOMPurify from "dompurify";
   chatInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendChat("text", null, chatInput);
+      void sendChat();
     }
-  });
-
-  feedbackEl.addEventListener("submit", (e) => {
-    const form = e.target.closest(".unit-composer");
-    if (!form || !feedbackEl.contains(form)) return;
-    e.preventDefault();
-    const scope = form.dataset.scope;
-    const index = Number(form.dataset.index);
-    const input = form.querySelector("textarea");
-    if (scope !== "sentence" && scope !== "paragraph") return;
-    if (!Number.isFinite(index)) return;
-    sendChat(scope, index, input);
-  });
-
-  feedbackEl.addEventListener("input", (e) => {
-    const ta = e.target.closest(".unit-composer textarea");
-    if (!ta || !feedbackEl.contains(ta)) return;
-    const form = ta.closest(".unit-composer");
-    const scope = form?.dataset.scope;
-    if (scope !== "sentence" && scope !== "paragraph") return;
-    chatDrafts[scope] = ta.value || "";
-    resizeTextarea(ta);
-    const sendBtn = form.querySelector(".chat-send");
-    if (sendBtn) {
-      sendBtn.disabled = !canChatScope(scope) || !(ta.value || "").trim();
-    }
-  });
-
-  feedbackEl.addEventListener("keydown", (e) => {
-    const ta = e.target.closest(".unit-composer textarea");
-    if (!ta || !feedbackEl.contains(ta)) return;
-    if (e.key !== "Enter" || e.shiftKey) return;
-    e.preventDefault();
-    const form = ta.closest(".unit-composer");
-    const scope = form?.dataset.scope;
-    const index = Number(form?.dataset.index);
-    if (scope !== "sentence" && scope !== "paragraph") return;
-    if (!Number.isFinite(index)) return;
-    sendChat(scope, index, ta);
   });
 
   // Resizable divider between draft and feedback

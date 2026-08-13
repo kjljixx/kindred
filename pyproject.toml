@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "kindred"
 version = "0.1.0"
-description = "Local GUI and CLI for reviewing writing quality with LLMs"
+description = "Local writing GUI with draft-scoped AI chat"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

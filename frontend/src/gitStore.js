@@ -7,10 +7,12 @@ const VOLUME = "kindred";
   const MIGRATED_KEY = "kindred:drafts-migrated";
   const AUTHOR = { name: "kindred", email: "kindred@local" };
   const TEXT_FILE = "text.html";
-  const TRACKED = [TEXT_FILE, "review.json", "chats.json", "meta.json"];
+  const TRACKED = [TEXT_FILE, "meta.json"];
   const TITLE_FILE = "title.txt";
   const BRANCH_ACCESS_FILE = "branch-access.json";
+  const CHATS_FILE = "draft-chats.json";
   const DEFAULT_MODEL = "openai/gpt-5.6-luna";
+  const DEFAULT_CHAT_TITLE = "New Chat";
 
   const fs = new LightningFS(VOLUME);
   const pfs = fs.promises;
@@ -75,7 +77,7 @@ const VOLUME = "kindred";
 
   /**
    * TipTap getHTML() → plain (same idea as editor getText).
-   * Only call on known editor HTML — never on already-plain baselines
+   * Only call on known editor HTML — never on already-plain text
    * (plain may contain literal "<em>test</em>" etc.).
    * Structured conflict nodes are empty spans (sides in attrs) → skipped.
    */
@@ -329,11 +331,6 @@ const VOLUME = "kindred";
     return canonicalizeTextHtml(stripKindredProtocol(raw));
   }
 
-  /** Baseline field is always plain text — never HTML-parse it. */
-  function plainBaselineFrom(value) {
-    return asPlain(value);
-  }
-
   /** text body from the app is TipTap getHTML(); canonicalize for stable dirty. */
   function textHtmlFromEditor(value) {
     return storeTextHtml(value);
@@ -432,22 +429,90 @@ const VOLUME = "kindred";
     };
   }
 
-  function normalizeReview(review) {
-    if (!review || typeof review !== "object") {
-      return { result: null, baseline: "" };
+  function normalizeSelection(sel) {
+    if (!sel || typeof sel !== "object") return { from: 0, to: 0 };
+    const from = Math.max(0, Number(sel.from) || 0);
+    const to = Math.max(0, Number(sel.to) || from);
+    return { from, to: Math.max(from, to) };
+  }
+
+  function normalizeChatMessage(msg) {
+    if (!msg || typeof msg !== "object") return null;
+    const role = String(msg.role || "").trim();
+    const content = String(msg.content || "");
+    if (role !== "user" && role !== "assistant") return null;
+    if (role === "assistant") {
+      return { role, content };
     }
     return {
-      result: review.result ?? null,
-      baseline:
-        typeof review.baseline === "string"
-          ? plainBaselineFrom(review.baseline)
-          : "",
+      role,
+      content,
+      draftText: String(msg.draftText ?? ""),
+      selection: normalizeSelection(msg.selection),
     };
   }
 
-  function normalizeChats(chats) {
-    if (chats && typeof chats === "object" && !Array.isArray(chats)) return chats;
-    return {};
+  function normalizeChatRecord(chat, fallbackBranch = "main") {
+    if (!chat || typeof chat !== "object") return null;
+    const id = String(chat.id || "").trim();
+    if (!id) return null;
+    const now = Date.now();
+    const messages = Array.isArray(chat.messages)
+      ? chat.messages.map(normalizeChatMessage).filter(Boolean)
+      : [];
+    return {
+      id,
+      title: String(chat.title || "").trim() || DEFAULT_CHAT_TITLE,
+      lastBranch: String(chat.lastBranch || fallbackBranch || "main").trim() || "main",
+      createdAt: Number(chat.createdAt) || now,
+      updatedAt: Number(chat.updatedAt) || now,
+      messages,
+    };
+  }
+
+  function normalizeChatsState(raw, fallbackBranch = "main") {
+    const empty = { activeChatId: null, chats: [] };
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return empty;
+    // Legacy unit-scoped map (e.g. { text: [...] }) — drop; no migration.
+    if (Array.isArray(raw.chats) === false && !("activeChatId" in raw)) {
+      return empty;
+    }
+    const chats = (Array.isArray(raw.chats) ? raw.chats : [])
+      .map((c) => normalizeChatRecord(c, fallbackBranch))
+      .filter(Boolean);
+    let activeChatId =
+      typeof raw.activeChatId === "string" && raw.activeChatId
+        ? raw.activeChatId
+        : null;
+    if (activeChatId && !chats.some((c) => c.id === activeChatId)) {
+      activeChatId = null;
+    }
+    return { activeChatId, chats };
+  }
+
+  async function readChats(id) {
+    const dir = textDir(id);
+    const meta = normalizeMeta(await readJson(`${dir}/meta.json`, null), id);
+    let branch = meta.activeBranch || "main";
+    try {
+      branch =
+        (await git.currentBranch({ fs, dir, test: true })) || branch;
+    } catch {
+      /* keep meta branch */
+    }
+    return normalizeChatsState(
+      await readJson(`${dir}/${CHATS_FILE}`, null),
+      branch
+    );
+  }
+
+  async function saveChats(id, state) {
+    const dir = textDir(id);
+    const meta = normalizeMeta(await readJson(`${dir}/meta.json`, null), id);
+    const next = normalizeChatsState(state, meta.activeBranch || "main");
+    await writeJson(`${dir}/${CHATS_FILE}`, next);
+    await flush();
+    return next;
   }
 
   async function writeTitleFile(dir, title) {
@@ -500,16 +565,13 @@ const VOLUME = "kindred";
     return titleFromText(text || "");
   }
 
-  // text / review / chats content (excludes meta bookkeeping + title.txt).
+  // text + cost/model content (excludes meta bookkeeping, title, chats).
   function dirtyContentKey(state) {
     const hasConflict =
       !!state.hasConflict ||
       !!(state.meta && state.meta.hasConflict);
     return JSON.stringify({
       html: storeTextHtml(state.html || state.text || "", { hasConflict }),
-      baseline: state.baseline || "",
-      result: state.result ?? null,
-      chats: normalizeChats(state.chats),
       model: state.model || DEFAULT_MODEL,
       revisionCost: Number(state.revisionCost) || 0,
       totalCost: Number(state.totalCost) || 0,
@@ -556,11 +618,6 @@ const VOLUME = "kindred";
     const title = await resolveTitle(dir, html, state.title, customTitle);
     await writeTitleFile(dir, title);
     await writeText(`${dir}/${TEXT_FILE}`, html);
-    await writeJson(`${dir}/review.json`, {
-      result: state.result ?? null,
-      baseline: plainBaselineFrom(state.baseline || ""),
-    });
-    await writeJson(`${dir}/chats.json`, normalizeChats(state.chats));
     await writeJson(`${dir}/meta.json`, meta);
     return { meta, title };
   }
@@ -568,8 +625,6 @@ const VOLUME = "kindred";
   async function readWorkingFiles(id) {
     const dir = textDir(id);
     let html = await readText(`${dir}/${TEXT_FILE}`, "");
-    const review = normalizeReview(await readJson(`${dir}/review.json`, null));
-    const chats = normalizeChats(await readJson(`${dir}/chats.json`, {}));
     const meta = normalizeMeta(await readJson(`${dir}/meta.json`, null), id);
     if ((meta.hasConflict || meta.pendingMerge) && html.includes("<<<<<<< ")) {
       html = migrateLegacyConflictHtml(html);
@@ -581,9 +636,6 @@ const VOLUME = "kindred";
       id,
       html,
       text: html,
-      baseline: review.baseline,
-      result: review.result,
-      chats,
       model: meta.model,
       revisionCost: meta.revisionCost,
       totalCost: meta.totalCost,
@@ -634,13 +686,7 @@ const VOLUME = "kindred";
     const dir = textDir(id);
     const state = await readWorkingFiles(id);
     if (!(await hasHead(dir))) {
-      return !!(
-        state.html ||
-        state.text ||
-        state.result ||
-        state.baseline ||
-        (state.chats && Object.keys(state.chats).length)
-      );
+      return !!(state.html || state.text);
     }
     const headOid = await git.resolveRef({ fs, dir, ref: "HEAD" });
     const head = await readFilesAtOid(dir, headOid);
@@ -674,7 +720,6 @@ const VOLUME = "kindred";
           updatedAt: state.updatedAt,
           createdAt: state.createdAt,
           activeBranch: branch,
-          hasAnalysis: !!state.result || commitCount > 0,
           commitCount,
           hasConflict: state.hasConflict,
         });
@@ -703,9 +748,6 @@ const VOLUME = "kindred";
       id,
       html: body,
       text: body,
-      baseline: "",
-      result: null,
-      chats: {},
       model: DEFAULT_MODEL,
       revisionCost: 0,
       totalCost: 0,
@@ -716,6 +758,7 @@ const VOLUME = "kindred";
       hasConflict: false,
       pendingMerge: null,
     });
+    await writeJson(`${dir}/${CHATS_FILE}`, { activeChatId: null, chats: [] });
     await touchBranchAccess(dir, "main", now);
     await flush();
     return readWorkingFiles(id);
@@ -803,25 +846,6 @@ const VOLUME = "kindred";
     await writeWorkingFiles(textDir(id), next);
     await flush();
     return readWorkingFiles(id);
-  }
-
-  async function commitAnalyze(id, state) {
-    const dir = textDir(id);
-    const now = Date.now();
-    await writeWorkingFiles(dir, {
-      ...state,
-      id,
-      updatedAt: now,
-      hasConflict: false,
-      pendingMerge: null,
-    });
-    const oid = await commitFiles(dir, autoMessage("Analyze", new Date(now)));
-    const meta = normalizeMeta(await readJson(`${dir}/meta.json`, null), id);
-    meta.activeBranch =
-      (await git.currentBranch({ fs, dir, test: true })) || meta.activeBranch;
-    await writeJson(`${dir}/meta.json`, meta);
-    await flush();
-    return { oid, state: await readWorkingFiles(id) };
   }
 
   async function commitWorkingTree(id, { verb = "Commit" } = {}) {
@@ -920,15 +944,10 @@ const VOLUME = "kindred";
       }
     }
     const body = await readPath(TEXT_FILE, false);
-    const review = normalizeReview(await readPath("review.json", true));
-    const chats = normalizeChats(await readPath("chats.json", true));
     const metaRaw = await readPath("meta.json", true);
     return {
       html: body,
       text: body,
-      baseline: review.baseline,
-      result: review.result,
-      chats,
       model: metaRaw?.model || DEFAULT_MODEL,
       revisionCost: Number(metaRaw?.revisionCost) || 0,
       totalCost: Number(metaRaw?.totalCost) || 0,
@@ -964,8 +983,6 @@ const VOLUME = "kindred";
       ...prev,
       html: body,
       text: body,
-      result: snap.result,
-      chats: snap.chats,
       model: snap.model,
       revisionCost: snap.revisionCost,
       updatedAt: Date.now(),
@@ -1011,9 +1028,6 @@ const VOLUME = "kindred";
       ...prev,
       html: body,
       text: body,
-      baseline: snap.baseline,
-      result: snap.result,
-      chats: snap.chats,
       model: snap.model,
       revisionCost: snap.revisionCost,
       totalCost: snap.totalCost,
@@ -2736,7 +2750,6 @@ const VOLUME = "kindred";
 
   async function finishCleanMerge(id, dir, mergeOid) {
     const synced = await restoreCommitToWorkingTree(id, mergeOid);
-    synced.baseline = tipTapHtmlToPlain(synced.html || synced.text || "");
     synced.hasConflict = false;
     synced.pendingMerge = null;
     synced.updatedAt = Date.now();
@@ -2796,9 +2809,6 @@ const VOLUME = "kindred";
       ? await readFilesAtOid(dir, baseOid)
       : {
           text: "",
-          baseline: "",
-          result: null,
-          chats: {},
           model: DEFAULT_MODEL,
           revisionCost: 0,
           totalCost: 0,
@@ -2817,14 +2827,6 @@ const VOLUME = "kindred";
       ...prev,
       html: text.mergedText,
       text: text.mergedText,
-      baseline: text.cleanMerge
-        ? tipTapHtmlToPlain(text.mergedText)
-        : plainBaselineFrom(
-            pickThreeWay(baseSnap.baseline, oursSnap.baseline, theirsSnap.baseline) ||
-              ""
-          ),
-      result: pickThreeWay(baseSnap.result, oursSnap.result, theirsSnap.result),
-      chats: pickThreeWay(baseSnap.chats, oursSnap.chats, theirsSnap.chats) || {},
       model: pickThreeWay(baseSnap.model, oursSnap.model, theirsSnap.model) ||
         DEFAULT_MODEL,
       revisionCost:
@@ -3004,13 +3006,11 @@ const VOLUME = "kindred";
       await git.init({ fs, dir, defaultBranch: "main" });
 
       let revisions = Array.isArray(draft.revisions) ? draft.revisions : null;
-      if (!revisions && draft.result) {
+      if (!revisions && (draft.html || draft.text)) {
         revisions = [
           {
             text: draft.text || "",
-            baseline: draft.baseline || "",
-            result: draft.result,
-            chats: draft.chats || {},
+            html: draft.html,
             model: draft.model || DEFAULT_MODEL,
             revisionCost: Number(draft.revisionCost) || 0,
             createdAt: draft.updatedAt || draft.createdAt || Date.now(),
@@ -3028,9 +3028,6 @@ const VOLUME = "kindred";
           id: draft.id,
           html: body,
           text: body,
-          baseline: plainBaselineFrom(draft.baseline || ""),
-          result: draft.result || null,
-          chats: draft.chats || {},
           model: draft.model || DEFAULT_MODEL,
           revisionCost: Number(draft.revisionCost) || 0,
           totalCost,
@@ -3039,6 +3036,7 @@ const VOLUME = "kindred";
           updatedAt: Number(draft.updatedAt) || createdAt,
           activeBranch: "main",
         });
+        await writeJson(`${dir}/${CHATS_FILE}`, { activeChatId: null, chats: [] });
       } else {
         for (const rev of revisions) {
           const ts = Number(rev.createdAt) || Date.now();
@@ -3050,9 +3048,6 @@ const VOLUME = "kindred";
             id: draft.id,
             html: body,
             text: body,
-            baseline: plainBaselineFrom(rev.baseline || ""),
-            result: rev.result || null,
-            chats: rev.chats || {},
             model: rev.model || DEFAULT_MODEL,
             revisionCost: Number(rev.revisionCost) || 0,
             totalCost,
@@ -3061,12 +3056,9 @@ const VOLUME = "kindred";
             updatedAt: ts,
             activeBranch: "main",
           });
-          await commitFiles(dir, autoMessage("Analyze", new Date(ts)));
+          await commitFiles(dir, autoMessage("Commit", new Date(ts)));
         }
-        const idx = Number(draft.activeRevisionIndex);
-        if (Number.isFinite(idx) && idx >= 0 && idx < revisions.length) {
-          // Leave WT at last migrated commit (head); head is the natural open state.
-        }
+        await writeJson(`${dir}/${CHATS_FILE}`, { activeChatId: null, chats: [] });
       }
       migrated += 1;
     }
@@ -3153,7 +3145,6 @@ const KindredGitStore = {
   deleteDraft,
   renameDraft,
   saveWorkingTree,
-  commitAnalyze,
   commitWorkingTree,
   listCommits,
   readAtCommit,
@@ -3170,12 +3161,15 @@ const KindredGitStore = {
   amendCommitMessage,
   isDirty,
   readWorkingFiles,
+  readChats,
+  saveChats,
   autoMessage,
   nextSequentialName,
   titleFromText,
   htmlToPlain: tipTapHtmlToPlain,
   reviewWorkingTree,
   dumpFsTree,
+  DEFAULT_CHAT_TITLE,
 };
 
 export { KindredGitStore };

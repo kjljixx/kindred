@@ -6,8 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>kindred</title>
   <link rel="stylesheet" href="/static/coloris.min.css" />
-  <script type="module" crossorigin src="/static/assets/index-D8nlG7oT.js"></script>
-  <link rel="stylesheet" crossorigin href="/static/assets/index-DWDuA71F.css">
+  <script type="module" crossorigin src="/static/assets/index-CA4ZWoPY.js"></script>
+  <link rel="stylesheet" crossorigin href="/static/assets/index-m6N6tYzr.css">
 </head>
 
 <body>
@@ -82,24 +82,22 @@
         </div>
         <div id="editor" class="editor" spellcheck="true" data-placeholder="Paste or type your text here. Double-click to import."></div>
       </section>
-      <div id="divider" role="separator" aria-orientation="vertical" aria-label="Resize draft and feedback panes"
+      <div id="divider" role="separator" aria-orientation="vertical" aria-label="Resize draft and chat panes"
         tabindex="0"></div>
       <section id="feedback-pane">
         <header class="pane-header feedback-header">
           <div class="feedback-header-left">
-            <button type="button" id="analyze-btn" class="btn btn-primary" hidden disabled>Analyze</button>
+            <button type="button" id="commit-btn" class="btn btn-primary" hidden disabled>Commit</button>
             <span id="drafts-heading" class="pane-title">Drafts</span>
+            <button type="button" id="chat-back-btn" class="btn btn-secondary chat-back-btn" hidden>All</button>
+            <span id="chat-heading" class="pane-title" hidden>Chats</span>
+            <button type="button" id="new-chat-btn" class="btn btn-secondary" hidden>New</button>
           </div>
           <div id="pane-mode-cluster" class="pane-mode-cluster" hidden>
-            <div class="tab-group is-active" data-group="review">
+            <div class="tab-group is-active" data-group="chat">
               <div class="tabs tabs-primary" role="tablist" aria-label="Pane mode">
-                <button type="button" class="tab btn btn-secondary active" data-pane="review" role="tab"
-                  aria-selected="true">Review</button>
-              </div>
-              <div id="feedback-tabs" class="tabs tabs-secondary" role="tablist" aria-label="Feedback scope" hidden>
-                <button type="button" class="tab active" data-mode="global" role="tab"
-                  aria-selected="true">Global</button>
-                <button type="button" class="tab" data-mode="local" role="tab" aria-selected="false">Local</button>
+                <button type="button" class="tab btn btn-secondary active" data-pane="chat" role="tab"
+                  aria-selected="true">Chat</button>
               </div>
             </div>
             <div class="tab-group" data-group="git">
@@ -110,9 +108,10 @@
           </div>
         </header>
         <div id="feedback" class="feedback" hidden></div>
+        <div id="chat-list" class="chat-list draft-list" role="list" hidden></div>
         <form id="chat-composer" class="chat-composer" hidden aria-busy="false">
           <div class="chat-composer-row">
-            <textarea id="chat-input" rows="1" placeholder="Ask about the text..." aria-label="Ask about the text"
+            <textarea id="chat-input" rows="1" placeholder="Ask about the draft..." aria-label="Ask about the draft"
               autocomplete="off" disabled></textarea>
             <button type="submit" id="chat-send" class="btn btn-primary" disabled>Send</button>
           </div>

@@ -30,7 +30,10 @@ class KindredPage:
   DRAFT_LIST = (By.ID, "draft-list")
   DRAFTS_HEADING = (By.ID, "drafts-heading")
   HOME_BTN = (By.ID, "home-btn")
-  ANALYZE_BTN = (By.ID, "analyze-btn")
+  COMMIT_BTN = (By.ID, "commit-btn")
+  CHAT_TAB = (By.CSS_SELECTOR, '#pane-mode-cluster .tab[data-pane="chat"]')
+  CHAT_LIST = (By.ID, "chat-list")
+  NEW_CHAT_BTN = (By.ID, "new-chat-btn")
   DRAFT_HEADER_TITLE = (By.ID, "draft-header-title")
   DRAFT_HEADER_TITLE_INPUT = (By.ID, "draft-header-title-input")
   STATUS = (By.ID, "status")
@@ -221,13 +224,14 @@ class KindredPage:
   def wait_until_draft_active(self) -> None:
     self.wait_until_drafts_pane_hidden()
     self.wait.until(EC.visibility_of_element_located(self.PANE_MODE_CLUSTER))
-    self.wait.until(EC.visibility_of_element_located(self.ANALYZE_BTN))
+    self.wait.until(EC.visibility_of_element_located(self.CHAT_TAB))
 
   def switch_to_git(self) -> None:
     self.wait_until_draft_active()
     self.driver.find_element(*self.GIT_TAB).click()
     self.wait.until(EC.visibility_of_element_located(self.GIT_PANE))
-    self.wait.until(lambda d: d.find_element(*self.ANALYZE_BTN).text in ("Commit", "Merge"))
+    self.wait.until(EC.visibility_of_element_located(self.COMMIT_BTN))
+    self.wait.until(lambda d: d.find_element(*self.COMMIT_BTN).text in ("Commit", "Merge"))
 
   def _accept_alert_if_present(self) -> None:
     try:
@@ -237,7 +241,8 @@ class KindredPage:
       pass
 
   def commit(self) -> None:
-    btn = self.wait.until(EC.element_to_be_clickable(self.ANALYZE_BTN))
+    self.switch_to_git()
+    btn = self.wait.until(EC.element_to_be_clickable(self.COMMIT_BTN))
     label = btn.text
     if label not in ("Commit", "Merge"):
       raise AssertionError(f"expected Commit/Merge button, got {label!r}")
