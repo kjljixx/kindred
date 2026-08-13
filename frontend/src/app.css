@@ -537,7 +537,6 @@ button.pane-title {
   align-items: stretch;
   flex-shrink: 0;
   border-radius: var(--btn-radius);
-  background: var(--btn-secondary-bg);
 }
 
 .export-split:has(:disabled) {
@@ -547,11 +546,6 @@ button.pane-title {
 .export-split .btn:disabled {
   opacity: 1;
 }
-
-.export-split.is-open {
-  background: var(--btn-secondary-bg-hover);
-}
-
 .export-split .btn-secondary {
   background: transparent;
   border-radius: 0;
@@ -562,14 +556,13 @@ button.pane-title {
 }
 
 #export-btn {
-  padding: var(--btn-pad-y) var(--space-4) var(--btn-pad-y) var(--btn-pad-x);
+  padding: var(--btn-pad-y) 0 var(--btn-pad-y) var(--btn-pad-x);
   border-top-left-radius: var(--btn-radius);
   border-bottom-left-radius: var(--btn-radius);
 }
 
 .export-menu-btn {
   padding: 0 var(--space-3);
-  border-left: 1px solid var(--btn-secondary-bg-hover);
   border-top-right-radius: var(--btn-radius);
   border-bottom-right-radius: var(--btn-radius);
 }
