@@ -2737,57 +2737,9 @@ const VOLUME = "kindred";
     return oursVal;
   }
 
-  async function finishCleanMerge(id, dir, mergeOid) {
-    const synced = await restoreCommitToWorkingTree(id, mergeOid);
-    synced.hasConflict = false;
-    synced.pendingMerge = null;
-    synced.updatedAt = Date.now();
-    await writeWorkingFiles(dir, synced);
-    await flush();
-    let oid = mergeOid;
-    if (await isDirty(id)) {
-      const info = await git.readCommit({ fs, dir, oid: mergeOid });
-      const parents = info.commit.parent || [];
-      await stageTracked(dir);
-      oid = await git.commit({
-        fs,
-        dir,
-        message: info.commit.message || autoMessage("Merge"),
-        author: AUTHOR,
-        parent: parents.length >= 2 ? parents : [mergeOid],
-      });
-      await flush();
-    }
-    return {
-      ok: true,
-      conflict: false,
-      oid,
-      state: await readWorkingFiles(id),
-    };
-  }
-
-  async function writeConflictMerge(id, dir, ours, theirsBranch, text) {
-    const state = await readWorkingFiles(id);
-    let body = String(text ?? "");
-    if (body.includes("<<<<<<< ")) body = migrateLegacyConflictHtml(body);
-    state.html = body;
-    state.text = body;
-    state.hasConflict = true;
-    state.pendingMerge = { ours, theirs: theirsBranch };
-    state.updatedAt = Date.now();
-    await writeWorkingFiles(dir, state);
-    await flush();
-    return {
-      ok: false,
-      conflict: true,
-      files: [TEXT_FILE],
-      state: await readWorkingFiles(id),
-    };
-  }
-
   /**
-   * isomorphic-git cannot merge when findMergeBase returns 0 or >1 bases
-   * (throws MergeNotSupportedError). Fall back to a single-base 3-way merge.
+   * Apply a 3-way merge into the working tree without committing (like
+   * `git merge --no-commit`). Sets pendingMerge so the user finishes via Merge.
    */
   async function manualThreeWayMerge(id, ours, theirsBranch, oursOid, theirsOid, bases) {
     const dir = textDir(id);
@@ -2819,7 +2771,7 @@ const VOLUME = "kindred";
       activeBranch: ours,
       updatedAt: Date.now(),
       hasConflict: !text.cleanMerge,
-      pendingMerge: text.cleanMerge ? null : { ours, theirs: theirsBranch },
+      pendingMerge: { ours, theirs: theirsBranch },
     };
     await writeWorkingFiles(dir, mergedState);
     await flush();
@@ -2833,24 +2785,20 @@ const VOLUME = "kindred";
       };
     }
 
-    const oid = await commitFiles(dir, autoMessage("Merge"), {
-      parent: [oursOid, theirsOid],
-    });
     return {
       ok: true,
       conflict: false,
-      oid,
       state: await readWorkingFiles(id),
     };
   }
 
   async function mergeBranch(id, theirs) {
-    const dir = textDir(id);
     const branch = String(theirs || "").trim();
     if (!branch) throw new Error("Branch required");
     const ours = await currentBranch(id);
     if (branch === ours) throw new Error("Already on that branch");
 
+    const dir = textDir(id);
     const oursOid = await git.resolveRef({ fs, dir, ref: ours });
     const theirsOid = await git.resolveRef({ fs, dir, ref: branch });
     let bases = [];
@@ -2866,84 +2814,7 @@ const VOLUME = "kindred";
       bases = [];
     }
 
-    // isomorphic-git only supports exactly one merge base.
-    if (bases.length !== 1) {
-      return manualThreeWayMerge(id, ours, branch, oursOid, theirsOid, bases);
-    }
-
-    try {
-      const result = await git.merge({
-        fs,
-        dir,
-        ours,
-        theirs: branch,
-        abortOnConflict: false,
-        author: AUTHOR,
-        message: autoMessage("Merge"),
-        mergeDriver: async ({ branches, contents, path }) => {
-          const baseText = contents[0] ?? "";
-          const oursText = contents[1] ?? "";
-          const theirsText = contents[2] ?? "";
-          if (path !== TEXT_FILE) {
-            return { cleanMerge: true, mergedText: oursText };
-          }
-          const labelOurs = branches[1] || "ours";
-          const labelTheirs = branches[2] || "theirs";
-          return mergeText(
-            baseText,
-            oursText,
-            theirsText,
-            labelOurs,
-            labelTheirs
-          );
-        },
-      });
-      await flush();
-      const mergeOid =
-        (result && result.oid) ||
-        (await git.resolveRef({ fs, dir, ref: "HEAD" }));
-      return finishCleanMerge(id, dir, mergeOid);
-    } catch (err) {
-      if (
-        err &&
-        (err.code === "MergeNotSupportedError" ||
-          err.name === "MergeNotSupportedError")
-      ) {
-        return manualThreeWayMerge(id, ours, branch, oursOid, theirsOid, bases);
-      }
-      const isConflict =
-        err &&
-        (err.code === "MergeConflictError" ||
-          err.name === "MergeConflictError" ||
-          (Array.isArray(err.data) && err.data.length));
-      if (!isConflict) throw err;
-
-      let text = await readText(`${dir}/${TEXT_FILE}`, "");
-      if (text.includes("<<<<<<< ")) {
-        text = migrateLegacyConflictHtml(text);
-      } else if (!text.includes("data-kindred-text-conflict")) {
-        try {
-          const oursSnap = await readFilesAtOid(dir, oursOid);
-          const theirsSnap = await readFilesAtOid(dir, theirsOid);
-          const baseOid = bases[0];
-          let baseText = "";
-          if (baseOid) {
-            const baseSnap = await readFilesAtOid(dir, baseOid);
-            baseText = baseSnap.html || baseSnap.text || "";
-          }
-          text = mergeText(
-            baseText,
-            oursSnap.html || oursSnap.text || "",
-            theirsSnap.html || theirsSnap.text || "",
-            ours,
-            branch
-          ).mergedText;
-        } catch (markerErr) {
-          console.warn("kindred: could not build conflict markers", markerErr);
-        }
-      }
-      return writeConflictMerge(id, dir, ours, branch, text);
-    }
+    return manualThreeWayMerge(id, ours, branch, oursOid, theirsOid, bases);
   }
 
   async function migrateFromLocalStorage() {

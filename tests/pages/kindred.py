@@ -46,6 +46,7 @@ class KindredPage:
   GIT_COMMIT_ROWS = (By.CSS_SELECTOR, '#git-commit-list .git-row[data-git="view"]')
   DIRTY_ROW = (By.CSS_SELECTOR, '#git-commit-list .git-row[data-git="dirty"]')
   DIRTY_TEXT_BTN = (By.CSS_SELECTOR, '#git-dirty-modes [data-git="dirty-text"]')
+  DIRTY_DIFF_BTN = (By.CSS_SELECTOR, '#git-dirty-modes [data-git="dirty-diff"]')
   DIRTY_REVIEW_BTN = (By.CSS_SELECTOR, '#git-dirty-modes [data-git="dirty-review"]')
   MERGE_CONFLICT = (By.CSS_SELECTOR, "#editor .merge-conflict")
   CONFLICT_OURS = (By.CSS_SELECTOR, "#editor .merge-conflict-btn.merge-conflict-ours")
@@ -163,6 +164,29 @@ class KindredPage:
     btn = self.wait.until(EC.element_to_be_clickable(self.DIRTY_REVIEW_BTN))
     btn.click()
     self.wait_for_conflicts()
+
+  def enter_dirty_text(self) -> None:
+    btn = self.wait.until(EC.element_to_be_clickable(self.DIRTY_TEXT_BTN))
+    btn.click()
+    self.wait.until(
+      lambda d: "active" in (d.find_element(*self.DIRTY_TEXT_BTN).get_attribute("class") or "")
+    )
+
+  def enter_dirty_diff(self) -> None:
+    btn = self.wait.until(EC.element_to_be_clickable(self.DIRTY_DIFF_BTN))
+    btn.click()
+    self.wait.until(
+      lambda d: "active" in (d.find_element(*self.DIRTY_DIFF_BTN).get_attribute("class") or "")
+    )
+
+  def dirty_mode_enabled(self, mode: str) -> bool:
+    loc = {
+      "text": self.DIRTY_TEXT_BTN,
+      "diff": self.DIRTY_DIFF_BTN,
+      "review": self.DIRTY_REVIEW_BTN,
+    }[mode]
+    btn = self.wait.until(EC.presence_of_element_located(loc))
+    return btn.is_enabled()
 
   def has_merge_conflict_ui(self) -> bool:
     return bool(self.driver.find_elements(*self.MERGE_CONFLICT))
@@ -307,7 +331,7 @@ class KindredPage:
       )
     )
 
-  def merge_branch(self, name: str) -> None:
+  def merge_branch(self, name: str, *, expect_conflicts: bool = True) -> None:
     row = self.wait.until(
       EC.presence_of_element_located(
         (By.CSS_SELECTOR, f'#git-branch-list .git-row[data-branch="{name}"]')
@@ -323,7 +347,17 @@ class KindredPage:
       )
     )
     merge_btn.click()
-    self.wait_for_conflicts()
+    if expect_conflicts:
+      self.wait_for_conflicts()
+    else:
+      self.wait_until_status_contains("merge ready")
+
+  def commit_count(self) -> int:
+    return len(self.driver.find_elements(*self.GIT_COMMIT_ROWS))
+
+  def commit_button_label(self) -> str:
+    btn = self.wait.until(EC.visibility_of_element_located(self.COMMIT_BTN))
+    return (btn.text or "").strip()
 
   def branch_names(self) -> list[str]:
     rows = self.driver.find_elements(By.CSS_SELECTOR, "#git-branch-list .git-row[data-branch]")

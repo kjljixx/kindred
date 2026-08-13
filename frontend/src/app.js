@@ -1149,19 +1149,26 @@ import DOMPurify from "dompurify";
   function syncMergeStatus() {
     const unresolved = unresolvedMergeConflictCount(currentHtml) > 0;
     hasConflict = unresolved;
-    if (dirtyReviewing && !pendingMerge) {
-      // Dirty review must not touch the status bar.
-      if (!unresolved) {
+    if (dirtyReviewing) {
+      // Review hunks (dirty or clean pending-merge review) must not claim a live
+      // merge conflict in the status bar.
+      if (!unresolved && !pendingMerge) {
         dirtyReviewing = false;
         if (paneMode === "git") renderGitPane();
+      }
+      if (pendingMerge) {
+        setStatus("merge ready; commit to finish merge", "warn");
       }
       return;
     }
     if (unresolved) {
       setStatus("merge conflict; choose a resolution for each change", "warn");
     } else if (pendingMerge) {
-      setStatus("conflicts resolved; commit to finish merge", "warn");
-    } else if (statusLevel === "warn" && /merge conflict|conflicts resolved/i.test(statusMessage)) {
+      setStatus("merge ready; commit to finish merge", "warn");
+    } else if (
+      statusLevel === "warn" &&
+      /merge conflict|conflicts resolved|merge ready/i.test(statusMessage)
+    ) {
       setStatus("");
     }
   }
@@ -1193,8 +1200,17 @@ import DOMPurify from "dompurify";
 
   async function setDirtyEditView(mode) {
     if (mode !== "Text" && mode !== "Diff") return;
-    if (pendingMerge) return;
-    if (dirtyReviewing) await leaveDirtyReview();
+    // Leaving Review must win over the pending-merge lock: review hunks look like
+    // unresolved conflicts but are not a live merge conflict.
+    if (dirtyReviewing) {
+      await leaveDirtyReview();
+      dirtyViewMode = mode;
+      syncMergeStatus();
+      renderGitPane();
+      syncOverlayFromState();
+      return;
+    }
+    if (pendingMerge && unresolvedMergeConflictCount(currentHtml) > 0) return;
     dirtyViewMode = mode;
     renderGitPane();
     syncOverlayFromState();
@@ -1203,7 +1219,7 @@ import DOMPurify from "dompurify";
   async function enterDirtyReview() {
     if (!activeDraftId || !store) return;
     if (isViewingHistory()) return;
-    if (pendingMerge) return;
+    if (pendingMerge && unresolvedMergeConflictCount(currentHtml) > 0) return;
     if (dirtyReviewing) return;
     if (unresolvedMergeConflictCount(currentHtml) > 0) return;
     if (!headOid) return;
@@ -1805,7 +1821,9 @@ import DOMPurify from "dompurify";
       gitCommitList.innerHTML = `<p class="git-empty">No commits yet. Commit to create one.</p>`;
     } else {
       const atDirty = !viewingOid;
-      const modesLocked = gitBusy || !!pendingMerge;
+      const unresolved = unresolvedMergeConflictCount(currentHtml) > 0;
+      const modesLocked =
+        gitBusy || (!!pendingMerge && unresolved && !dirtyReviewing);
       const textActive = !dirtyReviewing && dirtyViewMode === "Text";
       const diffActive = !dirtyReviewing && dirtyViewMode === "Diff";
       const reviewActive = atDirty && dirtyReviewing;
@@ -2201,21 +2219,9 @@ import DOMPurify from "dompurify";
   async function mergeIntoCurrent(name) {
     await flushSaveTimer();
     const result = await store.mergeBranch(activeDraftId, name);
-    if (result.conflict) {
-      hasConflict = true;
-      pendingMerge = result.state.pendingMerge;
-      paneMode = "git";
-      loadSnapshotState(result.state, { historical: false });
-      setStatus("merge conflict; choose a resolution for each change", "warn");
-    } else {
-      hasConflict = false;
-      pendingMerge = null;
-      viewingOid = null;
-      await refreshCommits();
-      const wt = await store.readWorkingFiles(activeDraftId);
-      loadSnapshotState(wt, { historical: false });
-      setStatus("");
-    }
+    viewingOid = null;
+    paneMode = "git";
+    loadSnapshotState(result.state, { historical: false });
     await refreshDraftList();
     syncPaneModeTabs();
     syncRightPane();
