@@ -330,17 +330,17 @@ import DOMPurify from "dompurify";
   }
 
   function updateCommitBtn() {
-    const hasText = !editorIsEmpty();
     const unresolved = unresolvedMergeConflictCount(currentHtml) > 0;
     const finishMerge = !!(pendingMerge && !unresolved);
     // Dirty review: Commit stays enabled; unresolved hunks auto-keep Dirty on commit.
+    // Use hasExportableBody — conflict display anchors can make getPlain() empty.
     const blockCommitForConflicts = unresolved && !dirtyReviewing;
     commitBtn.hidden = !activeDraftId || paneMode !== "git";
     commitBtn.textContent = pendingMerge ? "Merge" : "Commit";
     commitBtn.disabled =
       converting ||
       gitBusy ||
-      !hasText ||
+      !hasExportableBody() ||
       isViewingHistory() ||
       blockCommitForConflicts ||
       (!workingDirty && !finishMerge);

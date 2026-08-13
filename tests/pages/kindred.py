@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 from selenium.common.exceptions import (
   NoAlertPresentException,
@@ -89,7 +90,7 @@ class KindredPage:
     )
 
   def paste_html(self, html: str) -> None:
-    """Paste HTML into the TipTap editor (text/html clipboard only)."""
+    """Paste HTML into the TipTap editor (text/html + plain fallback)."""
     self.wait.until(EC.presence_of_element_located(self.EDITOR))
     self.driver.execute_script(
       """
@@ -99,6 +100,9 @@ class KindredPage:
       el.focus();
       const dt = new DataTransfer();
       dt.setData('text/html', html);
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      dt.setData('text/plain', (tmp.textContent || '').replace(/\\u00a0/g, ' '));
       el.dispatchEvent(new ClipboardEvent('paste', {
         clipboardData: dt,
         bubbles: true,
@@ -160,36 +164,146 @@ class KindredPage:
     row.click()
     self.wait.until(lambda d: "viewing old commit" not in self.status_text())
 
-  def enter_dirty_review(self) -> None:
-    btn = self.wait.until(EC.element_to_be_clickable(self.DIRTY_REVIEW_BTN))
-    btn.click()
-    self.wait_for_conflicts()
+  def enter_dirty_review(self, *, expect_conflicts: bool = True) -> None:
+    self._click_dirty_mode("review")
+    if expect_conflicts:
+      self.wait_for_conflicts()
+    self._wait_git_idle()
 
   def enter_dirty_text(self) -> None:
-    btn = self.wait.until(EC.element_to_be_clickable(self.DIRTY_TEXT_BTN))
-    btn.click()
-    self.wait.until(
-      lambda d: "active" in (d.find_element(*self.DIRTY_TEXT_BTN).get_attribute("class") or "")
-    )
+    self._click_dirty_mode("text")
+    self.wait.until(lambda d: self.dirty_mode_active("text"))
+    self.wait.until(lambda d: not self.has_merge_conflict_ui())
+    self._wait_git_idle()
 
   def enter_dirty_diff(self) -> None:
-    btn = self.wait.until(EC.element_to_be_clickable(self.DIRTY_DIFF_BTN))
-    btn.click()
+    self._click_dirty_mode("diff")
+    self.wait.until(lambda d: self.dirty_mode_active("diff"))
+    self.wait.until(lambda d: not self.has_merge_conflict_ui())
+    self._wait_git_idle()
+
+  def _dirty_mode_selector(self, mode: str) -> str:
+    return {
+      "text": '#git-dirty-modes [data-git="dirty-text"]',
+      "diff": '#git-dirty-modes [data-git="dirty-diff"]',
+      "review": '#git-dirty-modes [data-git="dirty-review"]',
+    }[mode]
+
+  def _click_dirty_mode(self, mode: str) -> None:
+    sel = self._dirty_mode_selector(mode)
+    last_err: Exception | None = None
+    for _ in range(8):
+      try:
+        self._wait_git_idle()
+        # During live merge with unresolved conflicts, mode tabs stay disabled —
+        # still allow Review leave via Text/Diff only when those tabs are enabled.
+        clicked = self.driver.execute_script(
+          """
+          const sel = arguments[0];
+          const btn = document.querySelector(sel);
+          if (!btn || btn.disabled) return false;
+          btn.click();
+          return true;
+          """,
+          sel,
+        )
+        if clicked:
+          return
+        time.sleep(0.1)
+      except StaleElementReferenceException as err:
+        last_err = err
+        time.sleep(0.1)
+    if last_err is not None:
+      raise last_err
+    raise TimeoutException(f"could not click dirty mode {mode!r}")
+
+  def _wait_git_idle(self) -> None:
+    """Wait until runGit finished (gitBusy cleared).
+
+    Do not infer idle from Text/Diff tab enabled — pending merge with
+    unresolved conflicts intentionally disables those tabs while git is idle.
+    """
+
+    def idle(driver) -> bool:
+      return bool(
+        driver.execute_script(
+          """
+          const newBranch = document.getElementById('git-new-branch');
+          if (!newBranch) return true;
+          // new-branch is disabled while gitBusy OR when there are no commits.
+          // If any commit row exists, disabled means busy.
+          const hasCommits = !!document.querySelector(
+            '#git-commit-list .git-row[data-git="view"]'
+          );
+          if (!hasCommits) return true;
+          return !newBranch.disabled;
+          """
+        )
+      )
+
+    self.wait.until(idle)
+
+  def wait_until_commit_clickable(self) -> None:
     self.wait.until(
-      lambda d: "active" in (d.find_element(*self.DIRTY_DIFF_BTN).get_attribute("class") or "")
+      lambda d: bool(
+        d.execute_script(
+          """
+          const btn = document.getElementById('commit-btn');
+          return !!(btn && !btn.hidden && !btn.disabled);
+          """
+        )
+      )
     )
 
   def dirty_mode_enabled(self, mode: str) -> bool:
-    loc = {
-      "text": self.DIRTY_TEXT_BTN,
-      "diff": self.DIRTY_DIFF_BTN,
-      "review": self.DIRTY_REVIEW_BTN,
-    }[mode]
-    btn = self.wait.until(EC.presence_of_element_located(loc))
-    return btn.is_enabled()
+    sel = self._dirty_mode_selector(mode)
+    return bool(
+      self.driver.execute_script(
+        """
+        const btn = document.querySelector(arguments[0]);
+        return !!(btn && !btn.disabled);
+        """,
+        sel,
+      )
+    )
+
+  def dirty_mode_active(self, mode: str) -> bool:
+    """Re-query via JS each call — mode tabs are remounted often (avoid stale refs)."""
+    sel = self._dirty_mode_selector(mode)
+    try:
+      return bool(
+        self.driver.execute_script(
+          """
+          const btn = document.querySelector(arguments[0]);
+          return !!(btn && btn.classList.contains('active'));
+          """,
+          sel,
+        )
+      )
+    except StaleElementReferenceException:
+      return False
 
   def has_merge_conflict_ui(self) -> bool:
     return bool(self.driver.find_elements(*self.MERGE_CONFLICT))
+
+  def editor_body_text(self) -> str:
+    """Visible editor text without conflict/diff chrome widgets."""
+    return (
+      self.driver.execute_script(
+        """
+        const pm = document.querySelector('#editor .ProseMirror');
+        if (!pm) return '';
+        const clone = pm.cloneNode(true);
+        clone.querySelectorAll('.merge-conflict, .diff-del, [data-diff-del]').forEach((el) => el.remove());
+        return (clone.textContent || '').replace(/\\u00a0/g, ' ').replace(/\\s+/g, ' ').trim();
+        """
+      )
+      or ""
+    )
+
+  def wait_until_editor_body_text(self, text: str) -> None:
+    want = (text or "").replace("\xa0", " ").strip()
+    self.wait.until(lambda d: self.editor_body_text() == want)
 
   def type_text(self, text: str) -> None:
     editor = self.wait.until(EC.presence_of_element_located(self.EDITOR))
@@ -266,16 +380,27 @@ class KindredPage:
 
   def commit(self) -> None:
     self.switch_to_git()
-    btn = self.wait.until(EC.element_to_be_clickable(self.COMMIT_BTN))
-    label = btn.text
+    self._wait_git_idle()
+    self.wait_until_commit_clickable()
+    label = self.commit_button_label()
     if label not in ("Commit", "Merge"):
       raise AssertionError(f"expected Commit/Merge button, got {label!r}")
     before = len(self.driver.find_elements(By.CSS_SELECTOR, '#git-commit-list .git-row[data-git="view"]'))
-    btn.click()
+    clicked = self.driver.execute_script(
+      """
+      const btn = document.getElementById('commit-btn');
+      if (!btn || btn.disabled || btn.hidden) return false;
+      btn.click();
+      return true;
+      """
+    )
+    if not clicked:
+      raise TimeoutException("commit button not clickable")
     self.wait.until(
       lambda d: len(d.find_elements(By.CSS_SELECTOR, '#git-commit-list .git-row[data-git="view"]'))
       > before
     )
+    self._wait_git_idle()
     # Dismiss post-commit message rename so later actions aren't blocked
     try:
       inp = self.driver.find_element(By.CSS_SELECTOR, "#git-commit-list .git-row-title-input")
@@ -401,6 +526,17 @@ class KindredPage:
       )
     )
 
+  def open_draft_at(self, index: int = 0) -> None:
+    """Open a draft from the home list (0 = first row)."""
+    self.wait.until(EC.visibility_of_element_located(self.DRAFT_LIST))
+    self.wait.until(
+      lambda d: len(d.find_elements(By.CSS_SELECTOR, "#draft-list .draft-item[data-id]"))
+      > index
+    )
+    rows = self.driver.find_elements(By.CSS_SELECTOR, "#draft-list .draft-item[data-id]")
+    rows[index].click()
+    self.wait_until_draft_active()
+
   def wait_for_conflicts(self) -> None:
     self.wait.until(EC.presence_of_element_located(self.MERGE_CONFLICT))
 
@@ -408,3 +544,107 @@ class KindredPage:
     ours = self.wait.until(EC.presence_of_element_located(self.CONFLICT_OURS))
     theirs = self.driver.find_element(*self.CONFLICT_THEIRS)
     return (ours.text or "").replace("\xa0", " "), (theirs.text or "").replace("\xa0", " ")
+
+  def conflict_count(self) -> int:
+    return len(self.driver.find_elements(*self.MERGE_CONFLICT))
+
+  def click_conflict_keep_ours(self, index: int = 0) -> None:
+    self._click_conflict_btn(self.CONFLICT_OURS, index)
+
+  def click_conflict_keep_theirs(self, index: int = 0) -> None:
+    self._click_conflict_btn(self.CONFLICT_THEIRS, index)
+
+  def click_conflict_keep_both(self, index: int = 0) -> None:
+    both = (By.CSS_SELECTOR, "#editor .merge-conflict-btn.merge-conflict-both")
+    self._click_conflict_btn(both, index)
+
+  def _click_conflict_btn(self, loc: tuple, index: int) -> None:
+    last_err: Exception | None = None
+    for _ in range(5):
+      try:
+        before = self.conflict_count()
+        btns = self.driver.find_elements(*loc)
+        if index >= len(btns):
+          raise AssertionError(
+            f"no conflict button at index {index} for {loc} (have {len(btns)})"
+          )
+        btns[index].click()
+        self.wait.until(
+          lambda d: self.conflict_count() < before or not self.has_merge_conflict_ui()
+        )
+        self._wait_git_idle()
+        # After last conflict in a live merge, Merge must become clickable.
+        if not self.has_merge_conflict_ui() and self.commit_button_label() == "Merge":
+          self.wait_until_commit_clickable()
+        return
+      except StaleElementReferenceException as err:
+        last_err = err
+    if last_err is not None:
+      raise last_err
+
+  def diff_ins_texts(self) -> list[str]:
+    els = self.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-ins")
+    return [(e.text or "").replace("\xa0", " ") for e in els]
+
+  def diff_del_texts(self) -> list[str]:
+    els = self.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-del")
+    return [(e.text or "").replace("\xa0", " ") for e in els]
+
+  def commit_button_disabled(self) -> bool:
+    btn = self.wait.until(EC.visibility_of_element_located(self.COMMIT_BTN))
+    return not btn.is_enabled()
+
+  def wait_until_editor_text(self, text: str) -> None:
+    want = (text or "").replace("\xa0", " ").strip()
+    self.wait.until(lambda d: self.editor_text() == want)
+
+  def paragraph_count(self) -> int:
+    return int(
+      self.driver.execute_script(
+        """
+        const pm = document.querySelector('#editor .ProseMirror');
+        if (!pm) return 0;
+        return pm.querySelectorAll(':scope > p').length;
+        """
+      )
+      or 0
+    )
+
+  def editor_has_tag(self, tag: str) -> bool:
+    tag = tag.lower()
+    return bool(
+      self.driver.execute_script(
+        """
+        const tag = arguments[0];
+        const pm = document.querySelector('#editor .ProseMirror');
+        return !!(pm && pm.querySelector(tag));
+        """,
+        tag,
+      )
+    )
+
+  def toolbar_click(self, cmd: str) -> None:
+    btn = self.wait.until(
+      EC.element_to_be_clickable(
+        (By.CSS_SELECTOR, f'#editor-toolbar button[data-cmd="{cmd}"]')
+      )
+    )
+    btn.click()
+
+  def select_all_in_editor(self) -> None:
+    self.press_keys(Keys.CONTROL + "a")
+
+  def paragraph_text_align(self, index: int = 0) -> str:
+    return (
+      self.driver.execute_script(
+        """
+        const i = arguments[0];
+        const pm = document.querySelector('#editor .ProseMirror');
+        const p = pm && pm.querySelectorAll(':scope > p')[i];
+        if (!p) return '';
+        return (p.style && p.style.textAlign) || '';
+        """,
+        index,
+      )
+      or ""
+    )

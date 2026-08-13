@@ -13,9 +13,14 @@ def _safe_name(nodeid: str) -> str:
 
 
 def save_failure_artifacts(page, nodeid: str) -> Path:
-  """Write LightningFS tree + editor HTML for a failed test. Returns artifact dir."""
+  """Write screenshot, LightningFS tree, and editor HTML for a failed test."""
   out = ARTIFACTS_DIR / _safe_name(nodeid)
   out.mkdir(parents=True, exist_ok=True)
+
+  try:
+    page.driver.save_screenshot(str(out / "screenshot.png"))
+  except Exception as err:  # noqa: BLE001 — best-effort diagnostics
+    (out / "screenshot_error.txt").write_text(str(err), encoding="utf-8")
 
   try:
     html = page.editor_html()
