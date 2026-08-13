@@ -991,6 +991,8 @@ button.pane-title {
   user-select: none;
 }
 
+/* Inline mark styles (color/font-size/font-family) beat .diff-del color. */
+
 .kindred-conflict-anchor {
   display: none;
 }

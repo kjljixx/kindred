@@ -545,6 +545,18 @@ class KindredPage:
     theirs = self.driver.find_element(*self.CONFLICT_THEIRS)
     return (ours.text or "").replace("\xa0", " "), (theirs.text or "").replace("\xa0", " ")
 
+  def conflict_button_html(self) -> tuple[str, str]:
+    ours = self.wait.until(EC.presence_of_element_located(self.CONFLICT_OURS))
+    theirs = self.driver.find_element(*self.CONFLICT_THEIRS)
+    return (ours.get_attribute("innerHTML") or "", theirs.get_attribute("innerHTML") or "")
+
+  def has_keep_both_button(self) -> bool:
+    return bool(
+      self.driver.find_elements(
+        By.CSS_SELECTOR, "#editor .merge-conflict-btn.merge-conflict-both"
+      )
+    )
+
   def conflict_count(self) -> int:
     return len(self.driver.find_elements(*self.MERGE_CONFLICT))
 

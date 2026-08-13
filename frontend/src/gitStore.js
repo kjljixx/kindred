@@ -1309,9 +1309,34 @@ const VOLUME = "kindred";
     return (marks || []).filter((m) => isExclusiveMarkType(m.type));
   }
 
+  function markMaps(marks, length) {
+    const ortho = Object.create(null);
+    for (const type of ORTHOGONAL_MARK_TYPES) {
+      ortho[type] = markPresence(marks, type, length);
+    }
+    const exclusive = Object.create(null);
+    for (const type of EXCLUSIVE_MARK_TYPES) {
+      exclusive[type] = markExclusiveValues(marks, type, length);
+    }
+    return { ortho, exclusive };
+  }
+
+  function oursTheirsMarksDiffer(i, oursMaps, theirsMaps) {
+    for (const type of ORTHOGONAL_MARK_TYPES) {
+      if (oursMaps.ortho[type][i] !== theirsMaps.ortho[type][i]) return true;
+    }
+    for (const type of EXCLUSIVE_MARK_TYPES) {
+      if (oursMaps.exclusive[type][i] !== theirsMaps.exclusive[type][i]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /**
-   * Equal plain text → clean text segments and format-only conflicts for exclusive clashes.
-   * Orthogonal marks always auto-union onto both clean and conflict sides.
+   * Equal plain text → clean text segments and format-only conflicts.
+   * Live merge: exclusive both-changed clashes; orthogonal always auto-union.
+   * Review: any ours≠theirs mark (orthogonal or exclusive) is a format conflict.
    */
   function equalPlainMergeSegments(
     plain,
@@ -1319,7 +1344,8 @@ const VOLUME = "kindred";
     oursMarks,
     theirsMarks,
     labelOurs,
-    labelTheirs
+    labelTheirs,
+    review = false
   ) {
     const length = plain.length;
     if (!length) return { cleanMerge: true, segments: [] };
@@ -1332,7 +1358,6 @@ const VOLUME = "kindred";
     );
     const exclusiveAuto = Object.create(null);
     const exclusiveConflict = Object.create(null);
-    let anyConflict = false;
     for (const type of EXCLUSIVE_MARK_TYPES) {
       const resolved = resolveExclusivePerChar(
         markExclusiveValues(baseMarks, type, length),
@@ -1342,13 +1367,10 @@ const VOLUME = "kindred";
       );
       exclusiveAuto[type] = resolved.auto;
       exclusiveConflict[type] = resolved.conflict;
-      for (let i = 0; i < length; i++) {
-        if (resolved.conflict[i]) {
-          anyConflict = true;
-          break;
-        }
-      }
     }
+
+    const oursMaps = review ? markMaps(oursMarks, length) : null;
+    const theirsMaps = review ? markMaps(theirsMarks, length) : null;
 
     function charHasExclusiveConflict(i) {
       for (const type of EXCLUSIVE_MARK_TYPES) {
@@ -1357,12 +1379,18 @@ const VOLUME = "kindred";
       return false;
     }
 
+    function charHasConflict(i) {
+      if (review) return oursTheirsMarksDiffer(i, oursMaps, theirsMaps);
+      return charHasExclusiveConflict(i);
+    }
+
     const segments = [];
+    let anyConflict = false;
     let i = 0;
     while (i < length) {
-      const isConflict = charHasExclusiveConflict(i);
+      const isConflict = charHasConflict(i);
       let j = i + 1;
-      while (j < length && charHasExclusiveConflict(j) === isConflict) j++;
+      while (j < length && charHasConflict(j) === isConflict) j++;
       const slicePlain = plain.slice(i, j);
       const orthoSlice = clipMarks(ortho, i, j);
 
@@ -1375,19 +1403,24 @@ const VOLUME = "kindred";
         }
         segments.push({ type: "text", plain: slicePlain, marks });
       } else {
+        anyConflict = true;
         segments.push({
           type: "conflict",
           labelOurs,
           labelTheirs,
           ours: {
             plain: slicePlain,
-            marks: orthoSlice.concat(exclusiveMarksOnly(clipMarks(oursMarks, i, j))),
+            marks: review
+              ? clipMarks(oursMarks, i, j)
+              : orthoSlice.concat(exclusiveMarksOnly(clipMarks(oursMarks, i, j))),
           },
           theirs: {
             plain: slicePlain,
-            marks: orthoSlice.concat(
-              exclusiveMarksOnly(clipMarks(theirsMarks, i, j))
-            ),
+            marks: review
+              ? clipMarks(theirsMarks, i, j)
+              : orthoSlice.concat(
+                  exclusiveMarksOnly(clipMarks(theirsMarks, i, j))
+                ),
           },
         });
       }
@@ -1600,6 +1633,92 @@ const VOLUME = "kindred";
       html += chunk;
     }
     return html;
+  }
+
+  function marksDifferPair(bI, cI, baseMaps, curMaps) {
+    for (const type of ORTHOGONAL_MARK_TYPES) {
+      if (baseMaps.ortho[type][bI] !== curMaps.ortho[type][cI]) return true;
+    }
+    for (const type of EXCLUSIVE_MARK_TYPES) {
+      if (baseMaps.exclusive[type][bI] !== curMaps.exclusive[type][cI]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * After a plain DIFF (0=eq, 1=ins, -1=del), find equal-text runs whose marks
+   * differ. Offsets are in current-plain (same as overlay getText).
+   */
+  function formatHunksFromDiff(baseHtml, currentHtml, parts) {
+    const DIFF_EQUAL = 0;
+    const DIFF_INSERT = 1;
+    const DIFF_DELETE = -1;
+    const baseDoc = htmlToPlainAndMarks(baseHtml);
+    const curDoc = htmlToPlainAndMarks(currentHtml);
+    let ops = parts;
+    if (!ops || !ops.length) {
+      if (baseDoc.plain && baseDoc.plain === curDoc.plain) {
+        ops = [[DIFF_EQUAL, curDoc.plain]];
+      } else {
+        return [];
+      }
+    }
+    const baseMaps = markMaps(baseDoc.marks, baseDoc.plain.length);
+    const curMaps = markMaps(curDoc.marks, curDoc.plain.length);
+    const hunks = [];
+    let bPos = 0;
+    let cPos = 0;
+    for (const part of ops) {
+      const op = part[0];
+      const text = String(part[1] ?? "");
+      const n = text.length;
+      if (op === DIFF_EQUAL) {
+        if (
+          text.trim() &&
+          baseDoc.plain.slice(bPos, bPos + n) === text &&
+          curDoc.plain.slice(cPos, cPos + n) === text
+        ) {
+          let i = 0;
+          while (i < n) {
+            const differ = marksDifferPair(
+              bPos + i,
+              cPos + i,
+              baseMaps,
+              curMaps
+            );
+            let j = i + 1;
+            while (
+              j < n &&
+              marksDifferPair(bPos + j, cPos + j, baseMaps, curMaps) === differ
+            ) {
+              j++;
+            }
+            if (differ && text.slice(i, j).trim()) {
+              hunks.push({
+                from: cPos + i,
+                to: cPos + j,
+                oldHtml: renderPlainSlice(
+                  baseDoc.plain,
+                  baseDoc.marks,
+                  bPos + i,
+                  bPos + j
+                ),
+              });
+            }
+            i = j;
+          }
+        }
+        bPos += n;
+        cPos += n;
+      } else if (op === DIFF_INSERT) {
+        cPos += n;
+      } else if (op === DIFF_DELETE) {
+        bPos += n;
+      }
+    }
+    return hunks;
   }
 
   function plainAndMarksToHtml(plain, marks) {
@@ -2053,7 +2172,8 @@ const VOLUME = "kindred";
     baseLo,
     baseHi,
     labelOurs,
-    labelTheirs
+    labelTheirs,
+    review = false
   ) {
     const [c0, c1] = tokenCharRange(baseTok, baseLo, baseHi);
     const len = c1 - c0;
@@ -2075,7 +2195,8 @@ const VOLUME = "kindred";
       oursMarks,
       theirsMarks,
       labelOurs,
-      labelTheirs
+      labelTheirs,
+      review
     );
   }
 
@@ -2221,7 +2342,8 @@ const VOLUME = "kindred";
         oursDoc.marks,
         theirsDoc.marks,
         labelOurs,
-        labelTheirs
+        labelTheirs,
+        review
       );
       return finishMergeWithAlign(
         baseDoc,
@@ -2344,7 +2466,8 @@ const VOLUME = "kindred";
             pos,
             upto,
             labelOurs,
-            labelTheirs
+            labelTheirs,
+            review
           )
         );
         pos = upto;
@@ -2467,7 +2590,8 @@ const VOLUME = "kindred";
               clusterLo,
               clusterHi,
               labelOurs,
-              labelTheirs
+              labelTheirs,
+              review
             )
           );
         } else {
@@ -2498,7 +2622,8 @@ const VOLUME = "kindred";
               aSlice.plain === plain ? aSlice.marks : [],
               bSlice.plain === plain ? bSlice.marks : [],
               labelOurs,
-              labelTheirs
+              labelTheirs,
+              review
             )
           );
         }
@@ -2576,7 +2701,8 @@ const VOLUME = "kindred";
           pos,
           baseTok.tokens.length,
           labelOurs,
-          labelTheirs
+          labelTheirs,
+          review
         )
       );
     }
@@ -2792,6 +2918,7 @@ const KindredGitStore = {
   nextSequentialName,
   titleFromText,
   htmlToPlain: tipTapHtmlToPlain,
+  formatHunksFromDiff,
   reviewWorkingTree,
   dumpFsTree,
   DEFAULT_CHAT_TITLE,

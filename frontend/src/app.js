@@ -76,6 +76,7 @@ import DOMPurify from "dompurify";
 
   /** History overlay baseline (previous commit plain); not analysis. */
   let baseline = "";
+  let baselineHtml = "";
   let currentText = "";
   let currentHtml = "";
   /** Working-tree body for auto-title + counts (not history / review markup). */
@@ -137,15 +138,25 @@ import DOMPurify from "dompurify";
           highlight: null,
           markedHtml: marked,
           conflictMode,
+          formatHunks: [],
         });
       } else if (dirtyViewMode === "Diff") {
         // Dirty: vs HEAD. History: vs previous commit (baseline set by loadSnapshotState).
+        const basePlain = viewing ? baseline : headPlain;
+        const baseHtml = viewing ? baselineHtml : headHtml;
+        const parts = diffs(basePlain, currentText);
+        const formatHunks = store.formatHunksFromDiff(
+          baseHtml,
+          currentHtml,
+          parts
+        );
         refreshOverlay(tipTap, {
-          baseline: viewing ? baseline : headPlain,
+          baseline: basePlain,
           currentPlain: currentText,
           highlight: null,
           markedHtml: "",
           conflictMode,
+          formatHunks,
         });
       } else {
         refreshOverlay(tipTap, {
@@ -155,6 +166,7 @@ import DOMPurify from "dompurify";
           showDiffs: false,
           markedHtml: "",
           conflictMode,
+          formatHunks: [],
         });
       }
     } finally {
@@ -168,12 +180,6 @@ import DOMPurify from "dompurify";
     return snap.html || snap.text || "";
   }
 
-  async function plainAtCommitOid(oid) {
-    if (!oid || !activeDraftId || !store) return "";
-    const snap = await store.readAtCommit(activeDraftId, oid);
-    return store.htmlToPlain(snap.html || snap.text || "");
-  }
-
   async function refreshHeadPlain() {
     if (!headOid) {
       headPlain = "";
@@ -184,10 +190,11 @@ import DOMPurify from "dompurify";
     headPlain = store.htmlToPlain(headHtml);
   }
 
-  /** Plain text of the commit before `index` (oldest→newest), or "" if none. */
-  async function previousCommitPlain(index) {
-    if (index <= 0 || !commits.length) return "";
-    return plainAtCommitOid(commits[index - 1].oid);
+  /** Snapshot of the commit before `index` (oldest→newest), or empty if none. */
+  async function previousCommitSnap(index) {
+    if (index <= 0 || !commits.length) return { plain: "", html: "" };
+    const html = await htmlAtCommitOid(commits[index - 1].oid);
+    return { html, plain: store.htmlToPlain(html) };
   }
 
   function pullFromEditor() {
@@ -940,9 +947,10 @@ import DOMPurify from "dompurify";
     }
   }
 
-  function loadSnapshotState(snap, { historical = false, historyBaseline = undefined } = {}) {
+  function loadSnapshotState(snap, { historical = false, historyBaseline = undefined, historyBaselineHtml = undefined } = {}) {
     // Past commits / tip-after-commit: diff against previous commit when provided.
     baseline = historyBaseline !== undefined ? historyBaseline : "";
+    baselineHtml = historyBaselineHtml !== undefined ? historyBaselineHtml : "";
     currentHtml = snap.html || snap.text || "";
     if (!currentHtml) currentHtml = "<p></p>";
     currentText = ""; // filled by applyRevisionToEditor via getPlain
@@ -972,6 +980,7 @@ import DOMPurify from "dompurify";
 
   function resetEditorState({ text = "", keepHistory = false } = {}) {
     baseline = "";
+    baselineHtml = "";
     currentHtml = text ? plainToHtml(text) : "<p></p>";
     currentText = "";
     clearChatState();
@@ -2350,11 +2359,15 @@ import DOMPurify from "dompurify";
     if (idx < 0) return;
     viewingOid = oid;
     activeCommitIndex = idx;
-    const [snap, prevPlain] = await Promise.all([
+    const [snap, prev] = await Promise.all([
       store.readAtCommit(activeDraftId, oid),
-      previousCommitPlain(idx),
+      previousCommitSnap(idx),
     ]);
-    loadSnapshotState(snap, { historical: true, historyBaseline: prevPlain });
+    loadSnapshotState(snap, {
+      historical: true,
+      historyBaseline: prev.plain,
+      historyBaselineHtml: prev.html,
+    });
     renderGitPane();
     updateCommitBtn();
   }

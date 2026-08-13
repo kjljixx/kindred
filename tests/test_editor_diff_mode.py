@@ -111,7 +111,10 @@ def test_d9_format_only_bold_does_not_invent_text_moves(kindred: KindredPage) ->
   kindred.toolbar_click("bold")
   kindred.enter_dirty_diff()
   ins = "".join(kindred.diff_ins_texts())
-  assert "sameletters" not in ins
+  deleted = "".join(kindred.diff_del_texts())
+  assert "sameletters" in ins
+  assert "sameletters" in deleted
+  assert kindred.editor_body_text() == "sameletters"
 
 
 def test_d10_align_change_keeps_text(kindred: KindredPage) -> None:
@@ -174,3 +177,28 @@ def test_d15_less_than_in_diff(kindred: KindredPage) -> None:
   ins = "".join(kindred.diff_ins_texts())
   deleted = "".join(kindred.diff_del_texts())
   assert "&lt;" not in ins and "&lt;" not in deleted
+
+
+def _commit_then_bold(kindred: KindredPage) -> None:
+  kindred.paste_text("hello")
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+  kindred.select_all_in_editor()
+  kindred.toolbar_click("bold")
+  kindred.wait.until(
+    lambda d: kindred.editor_has_tag("strong") or kindred.editor_has_tag("b")
+  )
+  kindred.driver.find_element(*KindredPage.CHAT_TAB).click()
+  kindred.switch_to_git()
+  kindred.wait.until(lambda d: kindred.dirty_mode_enabled("review"))
+
+
+def test_d_format_only_bold_paints_chrome(kindred: KindredPage) -> None:
+  """Bold-only dirty → Diff green current + red HEAD widget."""
+  _commit_then_bold(kindred)
+  kindred.enter_dirty_diff()
+  ins = "".join(kindred.diff_ins_texts())
+  deleted = "".join(kindred.diff_del_texts())
+  assert "hello" in ins
+  assert "hello" in deleted

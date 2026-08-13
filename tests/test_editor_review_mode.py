@@ -102,11 +102,11 @@ def test_r10_format_only_review_or_clean(kindred: KindredPage) -> None:
   kindred.commit()
   kindred.select_all_in_editor()
   kindred.toolbar_click("bold")
-  if not kindred.dirty_mode_enabled("review"):
-    assert "format" in kindred.editor_text()
-    return
-  kindred.enter_dirty_review(expect_conflicts=False)
-  # Format-only may clean-merge (no widgets) or show mark conflict.
+  kindred.driver.find_element(*KindredPage.CHAT_TAB).click()
+  kindred.switch_to_git()
+  kindred.wait.until(lambda d: kindred.dirty_mode_enabled("review"))
+  kindred.enter_dirty_review()
+  assert kindred.conflict_count() == 1
   kindred.enter_dirty_text()
   assert kindred.editor_body_text() == "format"
 
@@ -140,3 +140,46 @@ def test_r13_review_then_commit_keeps_dirty(kindred: KindredPage) -> None:
   assert kindred.editor_body_text() == "new"
   assert not kindred.dirty_mode_enabled("review")
   assert kindred.dirty_mode_enabled("diff")
+
+
+def _commit_then_bold(kindred: KindredPage) -> None:
+  kindred.paste_text("hello")
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+  kindred.select_all_in_editor()
+  kindred.toolbar_click("bold")
+  kindred.wait.until(
+    lambda d: kindred.editor_has_tag("strong") or kindred.editor_has_tag("b")
+  )
+  kindred.driver.find_element(*KindredPage.CHAT_TAB).click()
+  kindred.switch_to_git()
+  kindred.wait.until(lambda d: kindred.dirty_mode_enabled("review"))
+
+
+def test_r_format_only_bold_conflict(kindred: KindredPage) -> None:
+  """Bold-only dirty → Review format conflict (orange/blue, no Keep Both)."""
+  _commit_then_bold(kindred)
+  kindred.enter_dirty_review()
+  assert kindred.conflict_count() == 1
+  ours, theirs = kindred.conflict_button_texts()
+  assert "hello" in ours
+  assert "hello" in theirs
+  _, theirs_html = kindred.conflict_button_html()
+  assert "strong" in theirs_html.lower() or "b>" in theirs_html.lower()
+  assert not kindred.has_keep_both_button()
+  kindred.click_conflict_keep_theirs()
+  kindred.enter_dirty_text()
+  assert kindred.editor_has_tag("strong") or kindred.editor_has_tag("b")
+
+
+def test_r_format_only_bold_keep_head(kindred: KindredPage) -> None:
+  """Keep HEAD on a bold-only Review hunk restores plain text."""
+  _commit_then_bold(kindred)
+  kindred.enter_dirty_review()
+  kindred.click_conflict_keep_ours()
+  kindred.enter_dirty_text()
+  assert not kindred.editor_has_tag("strong")
+  assert not kindred.editor_has_tag("b")
+  assert "hello" in kindred.editor_body_text()
+

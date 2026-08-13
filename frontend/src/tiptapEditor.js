@@ -509,13 +509,19 @@ function pmPosForPlain(map, offset) {
   return map.plainToPm[o] ?? map.plainToPm[map.plainLen] ?? 1;
 }
 
-function createDeleteWidget(text) {
+function createDeleteWidget(text, html = "") {
   return (view, getPos) => {
     const span = document.createElement("span");
     span.className = "diff-del";
-    span.textContent = text;
     span.contentEditable = "false";
     span.setAttribute("data-diff-del", "1");
+    if (html) {
+      const preview = conflictPreviewHtml(html);
+      if (preview) span.innerHTML = preview;
+      else span.textContent = text || stripHtml(html);
+    } else {
+      span.textContent = text;
+    }
     return span;
   };
 }
@@ -724,7 +730,9 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
   const currentPlain = meta.currentPlain || "";
   const hl = meta.highlight;
   const showDiffs = meta.showDiffs !== false;
-  if (!diffsFn) {
+  const formatHunks = meta.formatHunks || [];
+  const hasFormat = showDiffs && formatHunks.length > 0;
+  if (!diffsFn && !hasFormat) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
       : DecorationSet.empty;
@@ -736,12 +744,12 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
       : DecorationSet.empty;
   }
   // Empty baseline + content => whole doc is an insert (e.g. first commit).
-  if (!baseline && !currentPlain && !hl) {
+  if (!baseline && !currentPlain && !hl && !hasFormat) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
       : DecorationSet.empty;
   }
-  if (baseline && baseline === currentPlain && !hl) {
+  if (baseline && baseline === currentPlain && !hl && !hasFormat) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
       : DecorationSet.empty;
@@ -756,7 +764,9 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
       ? currentPlain
         ? [[DIFF_EQUAL, currentPlain]]
         : []
-      : diffsFn(baseline, currentPlain);
+      : typeof diffsFn === "function"
+        ? diffsFn(baseline, currentPlain)
+        : [];
 
   let basePos = 0;
   let curPos = 0;
@@ -811,6 +821,22 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     }
   }
 
+  if (hasFormat) {
+    for (const hunk of formatHunks) {
+      const from = hunk.from || 0;
+      const to = hunk.to || 0;
+      if (to <= from) continue;
+      addInline(from, to, "diff-ins");
+      decorations.push(
+        Decoration.widget(
+          pmPosForPlain(map, from),
+          createDeleteWidget("", hunk.oldHtml || ""),
+          { side: -1, key: `fmt-${from}-${to}` }
+        )
+      );
+    }
+  }
+
   return DecorationSet.create(doc, decorations);
 }
 
@@ -833,6 +859,7 @@ const KindredOverlay = Extension.create({
       showDiffs: true,
       conflicts: null,
       markedHtml: "",
+      formatHunks: [],
     };
   },
 
@@ -867,6 +894,7 @@ const KindredOverlay = Extension.create({
               markedHtml: "",
               conflictMode: "merge",
               alignPreview: null,
+              formatHunks: [],
               decorations: DecorationSet.empty,
             };
           },
@@ -883,6 +911,7 @@ const KindredOverlay = Extension.create({
                 conflicts: next.conflicts,
                 markedHtml: next.markedHtml,
                 conflictMode: next.conflictMode,
+                formatHunks: next.formatHunks,
               });
             }
             if (meta?.type === "alignPreview") {
@@ -899,6 +928,7 @@ const KindredOverlay = Extension.create({
                   conflicts: next.conflicts,
                   conflictMode: next.conflictMode,
                   alignPreview: next.alignPreview,
+                  formatHunks: next.formatHunks,
                   onConflictAction: extension.options.onConflictAction,
                   onAlignConflictAction: extension.options.onAlignConflictAction,
                 },
@@ -1317,6 +1347,7 @@ export function refreshOverlay(editor, {
   showDiffs = true,
   markedHtml = "",
   conflictMode = "merge",
+  formatHunks = [],
 } = {}) {
   if (!editor) return;
   const conflicts = parseConflictSegments(markedHtml);
@@ -1328,5 +1359,6 @@ export function refreshOverlay(editor, {
     conflicts,
     markedHtml: conflicts ? markedHtml : "",
     conflictMode: conflictMode === "review" ? "review" : "merge",
+    formatHunks: conflicts ? [] : formatHunks,
   });
 }
