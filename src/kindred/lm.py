@@ -110,6 +110,10 @@ def complete_chat(
       kwargs["reasoning"] = {"effort": resolved, "summary": "auto"}
       request_summary = "auto"
 
+  kwargs["tools"] = [{
+    "type": "web_search_preview"
+  }]
+
   response = litellm.responses(**kwargs)
   _log_full_response(
     purpose=purpose,
@@ -281,6 +285,10 @@ def reflect_chat(
     else:
       kwargs["reasoning"] = {"effort": resolved, "summary": "auto"}
       request_summary = "auto"
+
+  kwargs["tools"] = [{
+    "type": "web_search_preview"
+  }]
 
   response = litellm.responses(**kwargs)
   _log_full_response(

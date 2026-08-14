@@ -65,7 +65,7 @@ function latinCatalog() {
     .slice(0, TOP_GOOGLE_COUNT);
   const top = [...PINNED_TOP, ...popularGoogle];
   const topSet = new Set(top);
-  const rest = all.filter((name) => !topSet.has(name));
+  const rest = all.filter((name) => !topSet.has(name)).sort();
   return { top, rest };
 }
 
