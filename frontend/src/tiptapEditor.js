@@ -1214,7 +1214,6 @@ export function bindToolbar(editor, toolbarEl) {
     else if (cmd === "alignCenter") chain.setTextAlign("center").run();
     else if (cmd === "alignRight") chain.setTextAlign("right").run();
     else if (cmd === "alignJustify") chain.setTextAlign("justify").run();
-    else if (cmd === "unsetColor") chain.unsetColor().run();
     if (formatLock) {
       rememberCurrentFormatting();
     }

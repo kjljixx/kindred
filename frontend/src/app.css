@@ -782,8 +782,8 @@ button.pane-title {
 }
 
 .editor-toolbar .toolbar-font-size {
-  width: 3.75rem;
-  max-width: 3.75rem;
+  width: 2.75rem;
+  max-width: 2.75rem;
   text-align: center;
   cursor: text;
   -moz-appearance: textfield;
