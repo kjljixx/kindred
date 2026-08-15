@@ -102,6 +102,126 @@ export function htmlBodyFragment(html) {
     .trim() || "<p></p>";
 }
 
+const IMAGE_MIME_EXTENSIONS = {
+  "image/avif": "avif",
+  "image/bmp": "bmp",
+  "image/gif": "gif",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/svg+xml": "svg",
+  "image/tiff": "tif",
+  "image/vnd.microsoft.icon": "ico",
+  "image/webp": "webp",
+  "image/x-icon": "ico",
+};
+
+function imageMimeType(filename, fallback = "") {
+  const ext = String(filename || "").split(".").pop().toLowerCase();
+  const byExtension = {
+    avif: "image/avif", bmp: "image/bmp", gif: "image/gif", ico: "image/x-icon",
+    jpeg: "image/jpeg", jpg: "image/jpeg", png: "image/png", svg: "image/svg+xml",
+    tif: "image/tiff", tiff: "image/tiff", webp: "image/webp",
+  };
+  return /^image\//i.test(fallback) ? fallback : byExtension[ext] || "";
+}
+
+function imageDataUri(blob, filename) {
+  const mime = imageMimeType(filename, blob.type);
+  if (!mime) throw new Error(`Unsupported imported image type: ${filename}`);
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`Failed to read imported image: ${filename}`));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(new Blob([blob], { type: mime }));
+  });
+}
+
+function importedMediaByPath(files) {
+  const media = new Map();
+  const mediaByName = new Map();
+  for (const [path, blob] of Object.entries(files || {})) {
+    if (!(blob instanceof Blob) || !imageMimeType(path, blob.type)) continue;
+    const normalized = path.replace(/^\.\//, "");
+    const item = { blob, path };
+    media.set(normalized, item);
+    media.set(decodeURIComponent(normalized), item);
+    const name = normalized.split("/").pop();
+    if (name) mediaByName.set(name, (mediaByName.get(name) || []).concat(item));
+  }
+  return { media, mediaByName };
+}
+
+async function embedImportedImages(html, files) {
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  const root = doc.body.firstElementChild;
+  if (!root) return html;
+  const { media, mediaByName } = importedMediaByPath(files);
+  for (const image of root.querySelectorAll("img[src]")) {
+    const src = image.getAttribute("src") || "";
+    if (/^(https?:|data:image\/)/i.test(src)) continue;
+    const key = src.replace(/^\.\//, "").split(/[?#]/, 1)[0];
+    const nameMatches = mediaByName.get(key.split("/").pop()) || [];
+    const match = media.get(key) || media.get(decodeURIComponent(key)) ||
+      (nameMatches.length === 1 ? nameMatches[0] : null);
+    if (!match) {
+      throw new Error(`Cannot import local image reference: ${src}`);
+    }
+    image.setAttribute("src", await imageDataUri(match.blob, match.path));
+  }
+  return root.innerHTML;
+}
+
+function decodeImageDataUri(value) {
+  const match = /^data:(image\/[a-z0-9.+-]+)((?:;[^,]*)?),([\s\S]*)$/i.exec(String(value || ""));
+  if (!match) throw new Error("Invalid embedded image data URI");
+  const mime = match[1].toLowerCase();
+  const extension = IMAGE_MIME_EXTENSIONS[mime];
+  if (!extension) throw new Error(`Unsupported embedded image type: ${mime}`);
+  try {
+    const encoded = match[2].toLowerCase().includes(";base64");
+    const payload = encoded ? atob(match[3].replace(/\s/g, "")) : decodeURIComponent(match[3]);
+    const bytes = encoded
+      ? Uint8Array.from(payload, (char) => char.charCodeAt(0))
+      : new TextEncoder().encode(payload);
+    return { blob: new Blob([bytes], { type: mime }), extension };
+  } catch {
+    throw new Error("Invalid embedded image data URI");
+  }
+}
+
+function replaceImagePaths(text, media) {
+  let output = String(text || "");
+  for (const { path, dataUri } of media) {
+    output = output.split(`./${path}`).join(dataUri);
+    output = output.split(path).join(dataUri);
+  }
+  return output;
+}
+
+function materializeEmbeddedImages(html) {
+  const doc = new DOMParser().parseFromString(`<div>${html || ""}</div>`, "text/html");
+  const root = doc.body.firstElementChild;
+  const files = {};
+  const media = [];
+  const pathsByDataUri = new Map();
+  if (!root) return { html, files, media };
+  for (const image of root.querySelectorAll("img[src]")) {
+    const dataUri = image.getAttribute("src") || "";
+    if (!/^data:/i.test(dataUri)) continue;
+    let path = pathsByDataUri.get(dataUri);
+    if (!path) {
+      const { blob, extension } = decodeImageDataUri(dataUri);
+      // pandoc-wasm accepts files at the virtual filesystem root only.
+      path = `kindred-image-${media.length + 1}.${extension}`;
+      files[path] = blob;
+      media.push({ path, dataUri });
+      pathsByDataUri.set(dataUri, path);
+    }
+    image.setAttribute("src", path);
+  }
+  return { html: root.innerHTML, files, media };
+}
+
 /**
  * @param {string} s
  * @returns {string}
@@ -192,14 +312,17 @@ export async function importFileToHtml(file, filename) {
   // WASI-safe key: original names with spaces/unicode can break path lookup.
   const safeName = `import.${(name.split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]+/g, "") || "bin"}`;
   const result = await convert(
-    { from, to: "html", "input-files": [safeName] },
+    { from, to: "html", "input-files": [safeName], "extract-media": "media" },
     null,
     { [safeName]: blob },
   );
   if (result.stderr) {
     console.warn("pandoc import stderr:", result.stderr);
   }
-  const html = htmlBodyFragment(result.stdout || "");
+  const html = await embedImportedImages(
+    htmlBodyFragment(result.stdout || ""),
+    result.files,
+  );
   if (!html || html === "<p></p>") {
     const errHint = (result.stderr || "").trim();
     throw new Error(errHint || `Import produced no content (from=${from})`);
@@ -345,13 +468,13 @@ export async function htmlToExportBlob(html, formatId = "docx") {
   // WASI-safe output key; caller picks the download filename separately.
   const outName = `export.${format.ext}`;
   const { convert } = await ensurePandoc();
-  const src = html || "<p></p>";
+  const { html: src, files, media } = materializeEmbeddedImages(html || "<p></p>");
   const alignments =
     format.pandoc === "docx" ? extractParagraphAlignments(src) : [];
   const result = await convert(
     { from: "html", to: format.pandoc, "output-file": outName },
     src,
-    {},
+    files,
   );
   if (result.stderr) {
     console.warn("pandoc export stderr:", result.stderr);
@@ -366,6 +489,10 @@ export async function htmlToExportBlob(html, formatId = "docx") {
   if (!(out instanceof Blob) || out.size === 0) {
     const errHint = (result.stderr || "").trim();
     throw new Error(errHint || `Export produced empty ${format.label}`);
+  }
+  if (media.length && (format.pandoc === "html" || format.pandoc === "markdown")) {
+    const restored = replaceImagePaths(await out.text(), media);
+    out = new Blob([restored], { type: format.mime });
   }
   if (format.pandoc === "docx") {
     out = await patchDocxParagraphAlignments(out, alignments);
