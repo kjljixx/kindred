@@ -12,11 +12,6 @@ TODO
 - Setting for the Model - Low
 - Whether branches sort by last commit time or last access time
 
-Feedback
-TODO
-- Allow chat model to see diff
-- Find better way for chat model to highlight text
-
 Git
 TODO
 - Make Ctrl+Y/Z work in merge conflict resolution
@@ -26,7 +21,7 @@ TODO
 
 Keyboard Shortcuts
 TODO
-- VSCode like keybinds for editor - Ctrl + L to copy sentence, Alt Up/Down to move sentence, etc.
+- VSCode like keybinds for editor - Ctrl + L to copy sentence, Alt Up/Down to move sentence, Ctrl + D to highlight next occurrence, auto syntax highlighting
 
 Import/Export
 TODO

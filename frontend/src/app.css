@@ -665,6 +665,7 @@ button.pane-title {
   flex: 1;
   overflow: auto;
   padding: var(--space-4);
+  padding-left: var(--space-6);
   font-family: var(--font-content);
   font-size: var(--font-size-2);
   line-height: var(--line-height-3);
