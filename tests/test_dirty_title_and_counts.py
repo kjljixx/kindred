@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from selenium.webdriver.common.keys import Keys
+
 from pages.kindred import KindredPage
 
 # Distinct committed vs dirty strings so history cannot accidentally match.
@@ -82,3 +84,16 @@ def test_dirty_review_keeps_dirty_title_and_counts(kindred: KindredPage) -> None
   assert kindred.has_merge_conflict_ui()
   assert kindred.header_title() == REVIEW_DIRTY
   assert kindred.word_char_counts() == (dirty_words, dirty_chars)
+
+
+def test_document_counts_ignore_empty_blocks_and_normalize_nonbreaking_spaces(
+  kindred: KindredPage,
+) -> None:
+  kindred.wait_until_word_char_counts(0, 0)
+  kindred.paste_text("Alpha\u00a0bravo.")
+  kindred.wait_until_draft_active()
+  kindred.press_keys(Keys.END, Keys.ENTER)
+  kindred.type_text("Charlie!")
+  kindred.wait_until_word_char_counts(3, len("Alpha bravo.\n\nCharlie!"))
+  assert "2 sentences" in kindred.status_text()
+  assert "2 paragraphs" in kindred.status_text()

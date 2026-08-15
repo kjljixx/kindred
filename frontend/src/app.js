@@ -145,7 +145,9 @@ import DOMPurify from "dompurify";
         // Dirty: vs HEAD. History: vs previous commit (baseline set by loadSnapshotState).
         const basePlain = viewing ? baseline : headPlain;
         const baseHtml = viewing ? baselineHtml : headHtml;
-        const parts = diffs(basePlain, currentText);
+        const baseDoc = htmlToDoc(baseHtml || "<p></p>");
+        const currentDoc = normalizeDoc(tipTap.getJSON());
+        const parts = diffs(basePlain, currentText, baseDoc, currentDoc);
         const formatHunks = store.formatHunksFromDiff(
           baseHtml,
           currentHtml,
@@ -398,10 +400,41 @@ import DOMPurify from "dompurify";
     refreshStatusLeft();
   }
 
-  function countStats(text) {
-    const raw = text || "";
+  function statsBlocksOf(doc) {
+    return (doc.content || [])
+      .map((node) => {
+        if (node.type === "paragraph") return nodePlainText(node).replace(/\u00a0/g, " ");
+        if (node.type === "bulletList" || node.type === "orderedList" || node.type === "table") {
+          return textblocksOf(node)
+            .map((block) => block.trim())
+            .filter(Boolean)
+            .join(" ");
+        }
+        return textblocksOf(node)
+          .map((block) => block.trim())
+          .filter(Boolean)
+          .join(" ");
+      })
+      .filter((block) => block.trim());
+  }
+
+  function statsCharacterBlocksOf(doc) {
+    return (doc.content || [])
+      .map((node) => {
+        if (node.type === "paragraph") return nodePlainText(node).replace(/\u00a0/g, " ");
+        return textblocksOf(node)
+          .map((block) => block.trim())
+          .filter(Boolean)
+          .join("");
+      })
+      .filter((block) => block.trim());
+  }
+
+  function countStats(html) {
+    const doc = htmlToDoc(html || "<p></p>");
+    const raw = statsBlocksOf(doc).join("\n\n");
     const trimmed = raw.trim();
-    const chars = raw.length;
+    const chars = statsCharacterBlocksOf(doc).join("\n\n").length;
     const words = trimmed ? trimmed.split(/\s+/).filter(Boolean).length : 0;
     let sentences = 0;
     let paragraphs = 0;
@@ -497,7 +530,7 @@ import DOMPurify from "dompurify";
   }
 
   function refreshStatusLeft() {
-    const { words, chars, sentences, paragraphs } = countStats(dirtyText);
+    const { words, chars, sentences, paragraphs } = countStats(dirtyHtml);
     const counts = [
       pluralize(words, "word"),
       pluralize(chars, "char"),
@@ -1583,22 +1616,14 @@ import DOMPurify from "dompurify";
     return parts;
   }
 
-  function diffs(baselineText, current) {
+  function diffs(baselineText, current, baseDoc, currentDoc) {
     const key = baselineText + "\0" + current;
     if (diffsCacheKey === key) return diffsCacheParts;
 
     let parts;
-    // Dirty Diff: structure from PM JSON aligner; history still uses plain HtmlDiff.
-    if (
-      !isViewingHistory() &&
-      tipTap &&
-      headHtml &&
-      baselineText === headPlain
-    ) {
+    if (baseDoc && currentDoc) {
       try {
-        const headDoc = htmlToDoc(headHtml);
-        const dirtyDoc = normalizeDoc(tipTap.getJSON());
-        const ops = alignTwoWay(headDoc, dirtyDoc);
+        const ops = alignTwoWay(baseDoc, currentDoc);
         parts = diffsFromAstOps(ops);
         // Guard: if AST projection disagrees with plain equality, fall back.
         const projected = parts

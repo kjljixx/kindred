@@ -1,12 +1,10 @@
 Editor
 TODO
-- Format Lock; everything you type stays in the same format even if you move your cursor
-- Add highlighting text
-- Add Links
-- Image support
+- Add highlighting text - improve
+- Add Links - improve
+- Image support - improve
 - AI generated titles - show1 titles at top of editor/make sure they are not just one letter
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
-TO REVIEW
 - Lists & Tables
 
 Settings

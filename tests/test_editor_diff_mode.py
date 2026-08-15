@@ -102,6 +102,23 @@ def test_d8_edits_in_two_paragraphs_scope_paint(kindred: KindredPage) -> None:
   assert "Bravo" not in ins
 
 
+def test_d8a_history_diff_scopes_an_edited_paragraph(kindred: KindredPage) -> None:
+  kindred.paste_text("Alpha one\n\nBravo two")
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  kindred.replace_editor_text("Alpha changed\n\nBravo two")
+  kindred.commit()
+  kindred.view_commit_at(0)
+  kindred.enter_dirty_diff()
+
+  assert "changed" in "".join(kindred.diff_ins_texts())
+  assert "one" in "".join(kindred.diff_del_texts())
+  assert "Bravo" not in "".join(kindred.diff_ins_texts())
+  assert "Bravo" not in "".join(kindred.diff_del_texts())
+
+
 def test_d9_format_only_bold_does_not_invent_text_moves(kindred: KindredPage) -> None:
   kindred.paste_text("sameletters")
   kindred.wait_until_draft_active()
