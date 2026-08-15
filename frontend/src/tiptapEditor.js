@@ -13,6 +13,7 @@ import {
   loadGoogleFont,
   mountFontFamilyPicker,
 } from "./fontCatalog.js";
+import { SelectionUnits } from "./selectionUnits.js";
 
 const keptSelectionKey = new PluginKey("keptSelection");
 
@@ -1496,6 +1497,7 @@ export function createKindredEditor({
       ...kindredContentExtensions(),
       ConflictParagraph,
       KeptSelection,
+      SelectionUnits,
       Placeholder.configure({ placeholder }),
       KindredOverlay.configure({ diffsFn, onConflictAction, onAlignConflictAction }),
     ],
