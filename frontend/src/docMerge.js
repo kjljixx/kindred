@@ -72,6 +72,10 @@ function mergeDocs(
     );
   }
 
+  function isAtomicBlock(node) {
+    return node?.type === "image";
+  }
+
   for (const op of ops) {
     if (op.type === "equal") {
       parts.push(blockToHtml(op.node));
@@ -83,7 +87,9 @@ function mergeDocs(
       const oursHtml = blockToHtml(op.ours);
       const theirsHtml = blockToHtml(op.theirs);
       // Same family paragraph → leaf mark/text merge.
-      if (
+      if (isAtomicBlock(op.ours) || isAtomicBlock(op.theirs) || isAtomicBlock(op.base)) {
+        parts.push(conflictBlock(op.ours, op.theirs));
+      } else if (
         op.ours?.type === "paragraph" &&
         op.theirs?.type === "paragraph" &&
         (!op.base || op.base.type === "paragraph")
@@ -99,6 +105,8 @@ function mergeDocs(
       if (op.side === "both") {
         if (sameHtml(op.ours, op.theirs)) {
           parts.push(blockToHtml(op.node || op.ours));
+        } else if (isAtomicBlock(op.ours) || isAtomicBlock(op.theirs)) {
+          parts.push(conflictBlock(op.ours, op.theirs));
         } else {
           parts.push(leaf("<p></p>", blockToHtml(op.ours), blockToHtml(op.theirs)));
         }
@@ -106,7 +114,9 @@ function mergeDocs(
       }
       if (op.side === "ours") {
         if (review) {
-          parts.push(leaf("<p></p>", blockToHtml(op.node), "<p></p>"));
+          parts.push(isAtomicBlock(op.node)
+            ? conflictBlock(op.node, null)
+            : leaf("<p></p>", blockToHtml(op.node), "<p></p>"));
         } else {
           parts.push(blockToHtml(op.node));
         }
@@ -114,7 +124,9 @@ function mergeDocs(
       }
       // theirs insert
       if (review) {
-        parts.push(leaf("<p></p>", "<p></p>", blockToHtml(op.node)));
+        parts.push(isAtomicBlock(op.node)
+          ? conflictBlock(null, op.node)
+          : leaf("<p></p>", "<p></p>", blockToHtml(op.node)));
       } else {
         parts.push(blockToHtml(op.node));
       }
@@ -126,13 +138,14 @@ function mergeDocs(
       if (op.side === "theirs") {
         // ours still has it, theirs deleted
         if (review) {
-          parts.push(
+          parts.push(isAtomicBlock(op.ours || op.base)
+            ? conflictBlock(op.ours || op.base, null)
+            :
             leaf(
               blockToHtml(op.base),
               blockToHtml(op.ours || op.base),
               "<p></p>"
-            )
-          );
+            ));
         } else if (nodesMatchBase(op.ours, op.base)) {
           continue;
         } else {
@@ -148,13 +161,14 @@ function mergeDocs(
       }
       // ours deleted, theirs still has it
       if (review) {
-        parts.push(
+        parts.push(isAtomicBlock(op.theirs || op.base)
+          ? conflictBlock(null, op.theirs || op.base)
+          :
           leaf(
             blockToHtml(op.base),
             "<p></p>",
             blockToHtml(op.theirs || op.base)
-          )
-        );
+          ));
       } else if (nodesMatchBase(op.theirs, op.base)) {
         continue;
       } else {

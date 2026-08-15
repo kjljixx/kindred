@@ -1,5 +1,6 @@
 - Right-Clicking a draft in the "Drafts" pane allows you to rename that draft without entering it
 - Similarly, right-clicking a head commit and right-clicking a branch name allows you to rename it
+- Ctrl-click a link in the editor to open and switch to it in a new tab
 
 Working Changes Viewing Modes
 - Text: Just your average text editor. Type, delete, copy, paste, etc. Use for normal writing and editing text.

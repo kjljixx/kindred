@@ -2,7 +2,7 @@
  * Shared TipTap content schema + HTML ↔ PM JSON bridge (DocIR).
  * Used by the live editor, headless merge/review, and Diff — one schema only.
  */
-import { Extension, generateHTML, generateJSON } from "@tiptap/core";
+import { Extension, Mark, Node as TiptapNode, generateHTML, generateJSON } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Paragraph from "@tiptap/extension-paragraph";
 import Underline from "@tiptap/extension-underline";
@@ -10,6 +10,105 @@ import TextAlign from "@tiptap/extension-text-align";
 import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import FontFamily from "@tiptap/extension-font-family";
+
+function safeLinkHref(value) {
+  const href = String(value || "").trim();
+  return /^(https?:|mailto:|#|\/)/i.test(href) ? href : null;
+}
+
+function safeImageSrc(value) {
+  const src = String(value || "").trim();
+  return /^(https?:|data:image\/)/i.test(src) ? src : null;
+}
+
+const Highlight = Mark.create({
+  name: "highlight",
+  parseHTML() {
+    return [{ tag: "mark" }];
+  },
+  renderHTML() {
+    return ["mark", 0];
+  },
+  addCommands() {
+    return {
+      toggleHighlight: () => ({ commands }) => commands.toggleMark(this.name),
+    };
+  },
+});
+
+const Link = Mark.create({
+  name: "link",
+  inclusive: false,
+  addAttributes() {
+    return {
+      href: {},
+      target: { default: "_blank" },
+      rel: { default: "noopener noreferrer nofollow" },
+    };
+  },
+  parseHTML() {
+    return [{
+      tag: "a[href]",
+      getAttrs: (element) => {
+        const href = safeLinkHref(element.getAttribute("href"));
+        return href
+          ? {
+              href,
+              target: element.getAttribute("target") || "_blank",
+              rel: element.getAttribute("rel") || "noopener noreferrer nofollow",
+            }
+          : false;
+      },
+    }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["a", HTMLAttributes, 0];
+  },
+  addCommands() {
+    return {
+      setLink: (attrs) => ({ commands }) => commands.setMark(this.name, attrs),
+      unsetLink: () => ({ commands }) => commands.unsetMark(this.name),
+    };
+  },
+});
+
+const Image = TiptapNode.create({
+  name: "image",
+  group: "block",
+  atom: true,
+  draggable: true,
+  selectable: true,
+  addAttributes() {
+    return {
+      src: { default: null },
+      alt: { default: "" },
+      title: { default: null },
+    };
+  },
+  parseHTML() {
+    return [{
+      tag: "img[src]",
+      getAttrs: (element) => {
+        const src = safeImageSrc(element.getAttribute("src"));
+        return src
+          ? {
+              src,
+              alt: element.getAttribute("alt") || "",
+              title: element.getAttribute("title"),
+            }
+          : false;
+      },
+    }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["img", HTMLAttributes];
+  },
+  addCommands() {
+    return {
+      setImage: (attrs) => ({ commands }) => commands.insertContent({ type: this.name, attrs }),
+    };
+  },
+});
 
 /** TipTap v2 has no official FontSize package; mirror Color on textStyle. */
 const FontSize = Extension.create({
@@ -187,6 +286,9 @@ export function kindredContentExtensions() {
     }),
     KindredParagraph,
     Underline,
+    Highlight,
+    Link,
+    Image,
     TextStyle,
     Color,
     FontSize,

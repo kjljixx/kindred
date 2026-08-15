@@ -9,8 +9,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:ital,wght@0,100..900;1,100..900&family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/static/assets/index-CAnaUMep.js"></script>
-  <link rel="stylesheet" crossorigin href="/static/assets/index-Dga5Z2dB.css">
+  <script type="module" crossorigin src="/static/assets/index-DFeBfS-L.js"></script>
+  <link rel="stylesheet" crossorigin href="/static/assets/index-By07K0Wp.css">
 </head>
 
 <body>
@@ -49,11 +49,18 @@
           </div>
         </header>
         <div id="editor-toolbar" class="editor-toolbar" role="toolbar" aria-label="Formatting">
+          <button type="button" data-cmd="link" title="Add or edit link" aria-label="Add or edit link"><svg aria-hidden="true" viewBox="0 0 640 640"><path d="M451.5 160C434.9 160 418.8 164.5 404.7 172.7C388.9 156.7 370.5 143.3 350.2 133.2C378.4 109.2 414.3 96 451.5 96C537.9 96 608 166 608 252.5C608 294 591.5 333.8 562.2 363.1L491.1 434.2C461.8 463.5 422 480 380.5 480C294.1 480 224 410 224 323.5C224 322 224 320.5 224.1 319C224.6 301.3 239.3 287.4 257 287.9C274.7 288.4 288.6 303.1 288.1 320.8C288.1 321.7 288.1 322.6 288.1 323.4C288.1 374.5 329.5 415.9 380.6 415.9C405.1 415.9 428.6 406.2 446 388.8L517.1 317.7C534.4 300.4 544.2 276.8 544.2 252.3C544.2 201.2 502.8 159.8 451.7 159.8zM307.2 237.3C305.3 236.5 303.4 235.4 301.7 234.2C289.1 227.7 274.7 224 259.6 224C235.1 224 211.6 233.7 194.2 251.1L123.1 322.2C105.8 339.5 96 363.1 96 387.6C96 438.7 137.4 480.1 188.5 480.1C205 480.1 221.1 475.7 235.2 467.5C251 483.5 269.4 496.9 289.8 507C261.6 530.9 225.8 544.2 188.5 544.2C102.1 544.2 32 474.2 32 387.7C32 346.2 48.5 306.4 77.8 277.1L148.9 206C178.2 176.7 218 160.2 259.5 160.2C346.1 160.2 416 230.8 416 317.1C416 318.4 416 319.7 416 321C415.6 338.7 400.9 352.6 383.2 352.2C365.5 351.8 351.6 337.1 352 319.4C352 318.6 352 317.9 352 317.1C352 283.4 334 253.8 307.2 237.5z"/></svg></button>
+          <button type="button" data-cmd="image" title="Insert image" aria-label="Insert image"><svg aria-hidden="true" viewBox="0 0 640 640"><path d="M160 144C151.2 144 144 151.2 144 160L144 480C144 488.8 151.2 496 160 496L480 496C488.8 496 496 488.8 496 480L496 160C496 151.2 488.8 144 480 144L160 144zM96 160C96 124.7 124.7 96 160 96L480 96C515.3 96 544 124.7 544 160L544 480C544 515.3 515.3 544 480 544L160 544C124.7 544 96 515.3 96 480L96 160zM224 192C241.7 192 256 206.3 256 224C256 241.7 241.7 256 224 256C206.3 256 192 241.7 192 224C192 206.3 206.3 192 224 192zM360 264C368.5 264 376.4 268.5 380.7 275.8L460.7 411.8C465.1 419.2 465.1 428.4 460.8 435.9C456.5 443.4 448.6 448 440 448L200 448C191.1 448 182.8 443 178.7 435.1C174.6 427.2 175.2 417.6 180.3 410.3L236.3 330.3C240.8 323.9 248.1 320.1 256 320.1C263.9 320.1 271.2 323.9 275.7 330.3L292.9 354.9L339.4 275.9C343.7 268.6 351.6 264.1 360.1 264.1z"/></svg></button>
+          <input type="file" data-image-input accept="image/*" hidden aria-label="Choose image" />
+          <span class="toolbar-sep" aria-hidden="true"></span>
+          <button type="button" data-format-lock aria-pressed="false" title="Lock formatting" aria-label="Format lock"><svg aria-hidden="true" viewBox="0 0 640 640"><path d="M256 160L256 224L384 224L384 160C384 124.7 355.3 96 320 96C284.7 96 256 124.7 256 160zM192 224L192 160C192 89.3 249.3 32 320 32C390.7 32 448 89.3 448 160L448 224C483.3 224 512 252.7 512 288L512 512C512 547.3 483.3 576 448 576L192 576C156.7 576 128 547.3 128 512L128 288C128 252.7 156.7 224 192 224z"/></svg></button>
+          <span class="toolbar-sep" aria-hidden="true"></span>
           <button type="button" data-cmd="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
           <button type="button" data-cmd="italic" title="Italic" aria-label="Italic"><em>I</em></button>
           <button type="button" data-cmd="underline" title="Underline" aria-label="Underline"><span
               class="tb-u">U</span></button>
           <button type="button" data-cmd="strike" title="Strikethrough" aria-label="Strikethrough"><s>S</s></button>
+          <button type="button" data-cmd="highlight" title="Highlight" aria-label="Highlight text"><mark>H</mark></button>
           <span class="toolbar-sep" aria-hidden="true"></span>
           <select class="toolbar-select" data-font-family title="Font family" aria-label="Font family">
             <option value="'Noto Sans', sans-serif" selected>Noto Sans</option>

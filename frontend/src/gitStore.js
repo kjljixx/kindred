@@ -1036,7 +1036,7 @@ const VOLUME = "kindred";
   }
 
   /** Boolean marks that stack (bold∪underline). */
-  const ORTHOGONAL_MARK_TYPES = ["bold", "italic", "underline", "strike"];
+  const ORTHOGONAL_MARK_TYPES = ["bold", "italic", "underline", "strike", "highlight"];
   const MARK_FROM_TAG = {
     STRONG: "bold",
     B: "bold",
@@ -1045,12 +1045,14 @@ const VOLUME = "kindred";
     U: "underline",
     S: "strike",
     STRIKE: "strike",
+    MARK: "highlight",
   };
   const MARK_TO_TAG = {
     bold: "strong",
     italic: "em",
     underline: "u",
     strike: "s",
+    highlight: "mark",
   };
 
   /**
@@ -1128,6 +1130,20 @@ const VOLUME = "kindred";
       },
       parseFromOpenTag(chunk) {
         const attr = /\bface\s*=\s*(["'])(.*?)\1/i.exec(chunk);
+        return attr ? attr[2].trim() : null;
+      },
+    },
+    link: {
+      normalize(value) {
+        const href = String(value || "").trim();
+        return /^(https?:|mailto:|#|\/)/i.test(href) ? href : null;
+      },
+      wrapHtml(inner, value) {
+        const href = String(value || "").replace(/"/g, "&quot;");
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer nofollow">${inner}</a>`;
+      },
+      parseFromOpenTag(chunk) {
+        const attr = /\bhref\s*=\s*(["'])(.*?)\1/i.exec(chunk);
         return attr ? attr[2].trim() : null;
       },
     },
@@ -1525,6 +1541,10 @@ const VOLUME = "kindred";
           for (let k = opened.length - 1; k >= 0; k--) closeExclusive(opened[k]);
           continue;
         }
+        if (name === "A") {
+          closeExclusive("link");
+          continue;
+        }
         const mt = MARK_FROM_TAG[name];
         if (mt) closeMark(mt);
         continue;
@@ -1553,6 +1573,10 @@ const VOLUME = "kindred";
           opened.push(attr.type);
         }
         spanExclusiveOpened.push(opened);
+        continue;
+      }
+      if (name === "A" && !/\/>$/.test(chunk)) {
+        openExclusive("link", EXCLUSIVE_MARKS.link.parseFromOpenTag(chunk));
         continue;
       }
       const mt = MARK_FROM_TAG[name];
