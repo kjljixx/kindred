@@ -34,10 +34,6 @@ TODO
 - From HTML of a website
 - Allow raw imports (e.g. import html as raw)
 
-Status bar
-TODO
-- the ui here is a bit of a mess, should prob be STATUS | word/char count | git branch/commit hash --------------- model, model cost
-
 Syncing
 TODO
 - Sync to central server
