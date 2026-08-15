@@ -16,7 +16,8 @@ TODO
 
 Feedback
 TODO
-- Allow chat model to "mention" some text and to suggest edits
+- Allow chat model to see diff
+- Find better way for chat model to highlight text
 
 Git
 TODO
