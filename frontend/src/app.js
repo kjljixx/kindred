@@ -576,13 +576,8 @@ import DOMPurify from "dompurify";
           ? "status-danger"
           : statusLevel === "warn" || hasConflict
             ? "status-warn"
-            : "";
+            : "status-progress";
       statusParts.push(statusSpan(statusMessage, cls));
-    }
-    if (activeDraftId) {
-      if (currentBranchName) statusParts.push(currentBranchName);
-      const oid = viewingOid || headOid;
-      if (oid) statusParts.push(shortOid(oid));
     }
 
     statusEl.replaceChildren();
@@ -600,7 +595,18 @@ import DOMPurify from "dompurify";
   }
 
   function updateMeta() {
-    metaEl.textContent = `${currentModel} · ${formatCost(draftCost)} total`;
+    if (activeDraftId) {
+      let statusParts = [];
+      if (currentBranchName) statusParts.push(currentBranchName);
+      const oid = viewingOid || headOid;
+      if (oid) statusParts.push(shortOid(oid));
+      console.log("hi");
+      metaEl.textContent = `${statusParts.join(" · ")}\u2003|\u2003${currentModel} · ${formatCost(draftCost)} total`;
+    }
+    else {
+      console.log("bye");
+      metaEl.textContent = "";
+    }
   }
 
   function escapeHtml(s) {

@@ -1181,6 +1181,10 @@ button.pane-title {
   text-align: left;
 }
 
+.status-progress {
+  color: var(--color-accent-soft);
+}
+
 .status-warn {
   color: var(--accent-warn-500);
 }
