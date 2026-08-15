@@ -431,20 +431,32 @@ export const EXPORT_FORMATS = [
     mime: "text/plain;charset=utf-8",
   },
   {
-    id: "odt",
-    label: "ODT",
-    ext: "odt",
-    pandoc: "odt",
-    mime: "application/vnd.oasis.opendocument.text",
-  },
-  {
-    id: "rtf",
-    label: "RTF",
-    ext: "rtf",
-    pandoc: "rtf",
-    mime: "application/rtf",
-  },
+    id: "pdf",
+    label: "PDF",
+    ext: "pdf",
+    pandoc: "pdf",
+    mime: "application/pdf;charset=utf-8",
+  }
 ];
+
+import html2pdf from "html2pdf.js";
+
+export async function htmlToPdfBlob(html) {
+  const container = document.createElement("div");
+  container.innerHTML = html;
+  container.style.color = "#000000";
+  const style = document.createElement("style");
+  style.textContent = `
+    mark { color: inherit; }
+  `;
+  container.prepend(style);
+  const options = {
+    margin: [15, 15, 15, 15], // [top, right, bottom, left] in millimeters
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+  };
+  return html2pdf().set(options).from(container).outputPdf("blob");
+}
 
 /**
  * @param {string} [formatId]
@@ -469,6 +481,10 @@ export async function htmlToExportBlob(html, formatId = "docx") {
   const outName = `export.${format.ext}`;
   const { convert } = await ensurePandoc();
   const { html: src, files, media } = materializeEmbeddedImages(html || "<p></p>");
+  if (format.id === "pdf") {
+    const blob = await htmlToPdfBlob(html);
+    return { blob, format };
+  }
   const alignments =
     format.pandoc === "docx" ? extractParagraphAlignments(src) : [];
   const result = await convert(

@@ -607,11 +607,9 @@ import DOMPurify from "dompurify";
       if (currentBranchName) statusParts.push(currentBranchName);
       const oid = viewingOid || headOid;
       if (oid) statusParts.push(shortOid(oid));
-      console.log("hi");
       metaEl.textContent = `${statusParts.join(" · ")}\u2003|\u2003${currentModel} · ${formatCost(draftCost)} total`;
     }
     else {
-      console.log("bye");
       metaEl.textContent = "";
     }
   }

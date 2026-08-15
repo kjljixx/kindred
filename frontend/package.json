@@ -24,6 +24,7 @@
     "buffer": "^6.0.3",
     "dompurify": "^3.2.4",
     "fflate": "^0.8.2",
+    "html2pdf.js": "^0.14.0",
     "isomorphic-git": "^1.27.1",
     "marked": "^15.0.7",
     "pandoc-wasm": "^1.1.0"
