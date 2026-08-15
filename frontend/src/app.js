@@ -329,6 +329,7 @@ import DOMPurify from "dompurify";
       setStatus(String(err.message || err), "danger");
     }
   });
+  tipTap.on("selectionUpdate", refreshStatusLeft);
   bindToolbar(tipTap, toolbarEl);
   resetEditorState({ text: "" });
   requestAnimationFrame(() => tipTap?.commands.focus());
@@ -510,8 +511,12 @@ import DOMPurify from "dompurify";
   function countStats(html) {
     const doc = htmlToDoc(html || "<p></p>");
     const raw = statsBlocksOf(doc).join("\n\n");
-    const trimmed = raw.trim();
     const chars = statsCharacterBlocksOf(doc).join("\n\n").length;
+    return countStatsText(raw, chars);
+  }
+
+  function countStatsText(raw, chars = raw.length) {
+    const trimmed = raw.trim();
     const words = trimmed ? trimmed.split(/\s+/).filter(Boolean).length : 0;
     let sentences = 0;
     let paragraphs = 0;
@@ -524,6 +529,19 @@ import DOMPurify from "dompurify";
 
   function pluralize(n, singular) {
     return `${n} ${singular}${n === 1 ? "" : "s"}`;
+  }
+
+  function selectionStats() {
+    if (!tipTap || tipTap.state.selection.empty) return null;
+    const { from, to } = tipTap.state.selection;
+    return countStatsText(
+      tipTap.state.doc.textBetween(from, to, "\n\n").replace(/\u00a0/g, " ")
+    );
+  }
+
+  function formatStat(selected, total, singular) {
+    const prefix = selected == null ? "" : `${selected}/`;
+    return `${prefix}${pluralize(total, singular)}`;
   }
 
   function statusSpan(text, cls) {
@@ -608,11 +626,12 @@ import DOMPurify from "dompurify";
 
   function refreshStatusLeft() {
     const { words, chars, sentences, paragraphs } = countStats(dirtyHtml);
+    const selected = selectionStats();
     const counts = [
-      pluralize(words, "word"),
-      pluralize(chars, "char"),
-      pluralize(sentences, "sentence"),
-      pluralize(paragraphs, "paragraph"),
+      formatStat(selected?.words, words, "word"),
+      formatStat(selected?.chars, chars, "char"),
+      formatStat(selected?.sentences, sentences, "sentence"),
+      formatStat(selected?.paragraphs, paragraphs, "paragraph"),
     ].join(" · ");
 
     const statusParts = [];

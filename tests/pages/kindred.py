@@ -144,6 +144,39 @@ class KindredPage:
   def wait_until_word_char_counts(self, words: int, chars: int) -> None:
     self.wait.until(lambda d: self.word_char_counts() == (words, chars))
 
+  def select_editor_text(self, start: int, end: int) -> None:
+    """Select a plain-text range in the editor."""
+    self.driver.execute_script(
+      """
+      const [start, end] = arguments;
+      const editor = document.querySelector('#editor .ProseMirror');
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      const nodes = [];
+      let node;
+      while ((node = walker.nextNode())) nodes.push(node);
+
+      const pointAt = (offset) => {
+        let remaining = offset;
+        for (const textNode of nodes) {
+          if (remaining <= textNode.length) return [textNode, remaining];
+          remaining -= textNode.length;
+        }
+        throw new Error(`text offset ${offset} is outside the editor`);
+      };
+      const range = document.createRange();
+      const [startNode, startOffset] = pointAt(start);
+      const [endNode, endOffset] = pointAt(end);
+      range.setStart(startNode, startOffset);
+      range.setEnd(endNode, endOffset);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.dispatchEvent(new Event('selectionchange', { bubbles: true }));
+      """,
+      start,
+      end,
+    )
+
   def wait_until_header_title(self, title: str) -> None:
     self.wait.until(lambda d: self.header_title() == title)
 

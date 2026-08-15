@@ -1107,7 +1107,7 @@ function normalizeToolbarFontSize(value) {
   return m ? `${m[1]}${m[3]}` : raw.replace(/\s+/g, "");
 }
 
-function fontSizeToToolbarNumber(value, fallback = 14) {
+function fontSizeToToolbarNumber(value, fallback = 16) {
   const normalized = normalizeToolbarFontSize(value);
   const m = /^(\d+(\.\d+)?)/.exec(normalized);
   if (!m) return fallback;
@@ -1180,7 +1180,7 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
   }
   const fontSizeInput = toolbarEl.querySelector("[data-font-size]");
   if (fontSizeInput && document.activeElement !== fontSizeInput) {
-    const next = String(fontSizeToToolbarNumber(attrs.fontSize, 14));
+    const next = String(fontSizeToToolbarNumber(attrs.fontSize, 16));
     if (fontSizeInput.value !== next) fontSizeInput.value = next;
   }
   const fontFamilySelect = toolbarEl.querySelector("[data-font-family]");
@@ -1340,7 +1340,7 @@ export function bindToolbar(editor, toolbarEl) {
       chain.setTextSelection(stashedSelection);
     }
     if (!Number.isFinite(n) || n <= 0) {
-      fontSizeInput.value = "14";
+      fontSizeInput.value = "16";
       chain.unsetFontSize().run();
       if (formatLock) {
         rememberCurrentFormatting();
@@ -1354,7 +1354,7 @@ export function bindToolbar(editor, toolbarEl) {
     }
     const clamped = Math.min(96, Math.max(8, Math.round(n)));
     if (String(clamped) !== fontSizeInput.value) fontSizeInput.value = String(clamped);
-    if (clamped === 14) chain.unsetFontSize().run();
+    if (clamped === 16) chain.unsetFontSize().run();
     else chain.setFontSize(`${clamped}px`).run();
     if (formatLock) {
       rememberCurrentFormatting();

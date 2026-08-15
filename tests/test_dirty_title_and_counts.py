@@ -97,3 +97,13 @@ def test_document_counts_ignore_empty_blocks_and_normalize_nonbreaking_spaces(
   kindred.wait_until_word_char_counts(3, len("Alpha bravo.\n\nCharlie!"))
   assert "2 sentences" in kindred.status_text()
   assert "2 paragraphs" in kindred.status_text()
+
+
+def test_selection_counts_show_selected_over_total(kindred: KindredPage) -> None:
+  text = "Alpha bravo. Charlie!"
+  kindred.paste_text(text)
+  kindred.wait_until_draft_active()
+  kindred.select_editor_text(0, len("Alpha bravo."))
+  kindred.wait_until_status_contains(
+    "2/3 words · 12/20 chars · 1/2 sentences · 1/1 paragraph"
+  )
