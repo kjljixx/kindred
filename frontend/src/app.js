@@ -400,6 +400,13 @@ import DOMPurify from "dompurify";
     refreshStatusLeft();
   }
 
+  function textblocksOf(node) {
+    if (node?.type === "paragraph") return [nodePlainText(node)];
+    const children = node?.content || [];
+    if (!children.length) return [nodePlainText(node)];
+    return children.flatMap(textblocksOf);
+  }
+
   function statsBlocksOf(doc) {
     return (doc.content || [])
       .map((node) => {
