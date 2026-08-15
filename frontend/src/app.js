@@ -67,7 +67,7 @@ import DOMPurify from "dompurify";
   const draftPane = document.getElementById("draft-pane");
   const divider = document.getElementById("divider");
 
-  const DEFAULT_MODEL = "openai/gpt-5.6-terra";
+  const DEFAULT_MODEL = "openai/gpt-5.6-luna";
   // HtmlDiff treats "<...>" as tags; shield raw "<" in plain text.
   const HTMLDIFF_LT = "\uE000";
   const HTMLDIFF_ACTION = { equal: 0, delete: 1, insert: 2, none: 3, replace: 4 };

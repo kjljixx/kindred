@@ -11,7 +11,7 @@ const VOLUME = "kindred";
   const TITLE_FILE = "title.txt";
   const BRANCH_ACCESS_FILE = "branch-access.json";
   const CHATS_FILE = "draft-chats.json";
-  const DEFAULT_MODEL = "openai/gpt-5.6-terra";
+  const DEFAULT_MODEL = "openai/gpt-5.6-luna";
   const DEFAULT_CHAT_TITLE = "New Chat";
 
   const fs = new LightningFS(VOLUME);
