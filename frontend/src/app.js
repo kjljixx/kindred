@@ -18,7 +18,7 @@ import {
   mergeCleanEditsIntoMarked,
   stripKindredProtocol,
 } from "./tiptapEditor.js";
-import { importFileToHtml, htmlToExportBlob, EXPORT_FORMATS } from "./pandocConvert.js";
+import { preloadPandoc, importFileToHtml, htmlToExportBlob, EXPORT_FORMATS } from "./pandocConvert.js";
 import { KindredGitStore } from "./gitStore.js";
 import { alignTwoWay } from "./docAlign.js";
 import { htmlToDoc, nodePlainText, normalizeDoc } from "./kindredSchema.js";
@@ -2455,10 +2455,15 @@ import DOMPurify from "dompurify";
         activeDraftDisplayTitle() ||
           store.titleFromText(exportHtml || dirtyHtml || dirtyText || ""),
       );
+      let slowTimer = setTimeout(() => {
+        setStatus("exporting... please be patient, pandoc may be downloading...");
+      }, 3000);
       const { blob, format } = await htmlToExportBlob(
         exportHtml,
         formatId || "docx",
       );
+      clearTimeout(slowTimer);
+      setStatus("exporting...");
       downloadBlob(blob, `${base}.${format.ext}`);
       setStatus("");
     } catch (err) {
@@ -3207,6 +3212,7 @@ import DOMPurify from "dompurify";
       updateMeta();
       resetEditorState({ text: "" });
       setStatus("");
+      preloadPandoc();
     } catch (err) {
       console.error(err);
       setStatus(String(err.message || err), "danger");

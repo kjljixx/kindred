@@ -279,6 +279,28 @@ async function importRawTextToHtml(blob) {
   return textToHtmlParagraphs(text);
 }
 
+export function preloadPandoc() {
+  if (typeof window === "undefined") return;
+
+  const trigger = () => {
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(() => {
+        ensurePandoc().catch((err) => console.warn("Pandoc preload failed:", err));
+      });
+    } else {
+      setTimeout(() => {
+        ensurePandoc().catch((err) => console.warn("Pandoc preload failed:", err));
+      }, 2000);
+    }
+  };
+
+  if (document.readyState === "complete") {
+    trigger();
+  } else {
+    window.addEventListener("load", trigger, { once: true });
+  }
+}
+
 export function ensurePandoc() {
   if (!pandocPromise) {
     pandocPromise = (async () => {
