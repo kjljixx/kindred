@@ -5,26 +5,35 @@ CHAT_SYSTEM = (
   "Prioritize scannability when formatting your response. "
   "The draft may include <caret> (collapsed cursor) or <selection>…</selection> "
   "markers showing where the user was focused; treat those as context, not as "
-  "literal text to quote back. When relevant, you may make a text mention with "
-  "[[mention:start:end]] or offer an exact replacement with "
-  "[[suggest:start:end=>replacement text]]. "
-  "start and end are zero-based "
-  "character offsets in the supplied draft; end is exclusive. Offset labels "
-  "such as <offset>50</offset> are inserted every 50 characters and after "
-  "commas, periods, question marks, and exclamation points as guides, and are "
-  "not part of the draft. "
+  "literal text to quote back. When relevant, use a JSON text anchor inside "
+  "[[mention:...]] or [[suggest:...]]. An anchor must include zero-based "
+  "start (inclusive) and end (exclusive) offsets plus the exact original text, "
+  "the exact 20 characters immediately before it as prefix (or fewer at the "
+  "start of the draft), and the exact 20 characters immediately after it as "
+  "suffix (or fewer at the end). Suggestions also include replacement. For "
+  "example: [[suggest:{\"start\":7,\"end\":11,\"original\":\"late\",\"prefix\":\"We are \",\"suffix\":\".\",\"replacement\":\"behind schedule\"}]]. "
+  "Use valid compact JSON with double-quoted keys and values. Do not use the "
+  "old colon-only annotation format. The app verifies anchors, so quote every "
+  "field exactly from the supplied draft. "
   "Ensure replacements fit into their surrounding text without missing spaces. "
-  "Use mentions and suggestions liberally when referring to or rewriting draft text.\n\n"
-  "Examples:\n"
-  "- For the draft 'We are late.', [[mention:0:6]] refers to 'We are'.\n"
-  "- For the same draft, [[suggest:7:11=>behind schedule]] replaces 'late'.\n"
-  "- For a grammar issue, mention the affected range before explaining it.\n"
-  "- When offering synonyms, provide one suggestion per replacement option."
+  "Use mentions and suggestions ALWAYS when referring to or rewriting draft text.\n\n"
+  "When to use mentions and suggestions:\n"
+  "- For the draft 'We are late.', a mention of 'We are' includes its exact "
+  "original text and neighbouring context.\n"
+  "- SUGGESTION always include original, prefix, suffix, and replacement.\n"
+  "- WHENEVER you want to say the word \"replace\" or \"change\" or \"fix\" or \"correct\" or \"improve\", you MUST use SUGGEST.\n"
+  "- For a grammar issue, MENTION the affected range before explaining it.\n"
+  "- When offering synonyms, provide one SUGGESTION per replacement option.\n"
+  "- When fixing typos, SUGGEST the corrections for each typo.\n"
+  "- When asked to provide overall feedback, ground your feedback with MENTIONS and SUGGESTIONS.\n"
+  "- Whenever you want to quote draft text, you MUST use mention, even if the user has not asked for it.\n"
+  "- Whenever you want to suggest a word change, or a sentence change, you MUST use suggest, even if the user has not asked for it."
+  "- Even if the user asks for just an explanation, you MUST use mention and suggest wherever relevant."
 )
 
 
 def annotate_draft(draft_text: str, selection_from: int, selection_to: int) -> str:
-  """Escape draft text and add focus plus 50-character offset markers."""
+  """Escape draft text and add focus markers for the anchoring protocol."""
   text = str(draft_text or "")
   n = len(text)
   start = max(0, min(int(selection_from), n))
@@ -39,8 +48,6 @@ def annotate_draft(draft_text: str, selection_from: int, selection_to: int) -> s
   for offset in range(n + 1):
     if start != end and offset == end:
       parts.append("</selection>")
-    if offset and offset % 50 == 0:
-      parts.append(f"<offset>{offset}</offset>")
     if start == end and offset == start:
       parts.append("<caret>")
     elif start != end and offset == start:
@@ -48,9 +55,6 @@ def annotate_draft(draft_text: str, selection_from: int, selection_to: int) -> s
     if offset < n:
       char = text[offset]
       parts.append(esc(char))
-      next_offset = offset + 1
-      if char in ",.!?" and next_offset % 50:
-        parts.append(f"<offset>{next_offset}</offset>")
   return "".join(parts)
 
 

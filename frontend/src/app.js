@@ -1798,9 +1798,11 @@ import DOMPurify from "dompurify";
               : role === "assistant"
                 ? renderCoachReply(m.content || "", index)
                 : escapeHtml(m.content || "");
-            const actions = role === "assistant"
+            const actions = editing
+              ? `<div class="chat-msg-actions"><button type="button" class="btn btn-tertiary" data-chat-action="save-edit" data-index="${index}">Send</button><button type="button" class="btn btn-tertiary" data-chat-action="cancel-edit">Cancel</button></div>`
+              : role === "assistant"
                 ? `<div class="chat-msg-actions"><button type="button" class="btn btn-tertiary" data-chat-action="retry" data-index="${index}">Retry</button></div>`
-                : "";
+                : `<div class="chat-msg-actions"><button type="button" class="btn btn-tertiary" data-chat-action="edit" data-index="${index}">Edit</button></div>`;
             return (
               `<div class="chat-msg ${role}" aria-label="${label}">` +
               `<div class="chat-msg-body">${body}</div>${actions}` +
@@ -1877,7 +1879,49 @@ import DOMPurify from "dompurify";
     tipTap.commands.setTextSelection(range);
   }
 
-  function applyChatSuggestion(start, end, replacement) {
+  function resolveTextAnchor(anchor) {
+    if (!anchor || typeof anchor !== "object") return null;
+    const original = typeof anchor.original === "string" ? anchor.original : null;
+    const prefix = typeof anchor.prefix === "string" ? anchor.prefix : null;
+    const suffix = typeof anchor.suffix === "string" ? anchor.suffix : null;
+    if (!original || prefix == null || suffix == null) return null;
+  
+    const matchesContext = (start) =>
+      currentText.slice(start, start + original.length) === original &&
+      currentText.slice(Math.max(0, start - prefix.length), start) === prefix &&
+      currentText.slice(start + original.length, start + original.length + suffix.length) === suffix;
+  
+    const declaredStart = Number(anchor.start);
+    const hasDeclaredStart = Number.isInteger(declaredStart);
+  
+    if (hasDeclaredStart && matchesContext(declaredStart)) {
+      return { start: declaredStart, end: declaredStart + original.length, original };
+    }
+  
+    const matches = [];
+    for (let start = currentText.indexOf(original); start !== -1; start = currentText.indexOf(original, start + 1)) {
+      if (matchesContext(start)) matches.push(start);
+    }
+  
+    if (matches.length === 0) return null;
+    if (matches.length === 1) {
+      return { start: matches[0], end: matches[0] + original.length, original };
+    }
+  
+    if (!hasDeclaredStart) return null;
+  
+    const closestStart = matches.reduce((best, curr) =>
+      Math.abs(curr - declaredStart) < Math.abs(best - declaredStart) ? curr : best
+    );
+  
+    return { start: closestStart, end: closestStart + original.length, original };
+  }
+
+  function applyChatSuggestion(start, end, replacement, expectedText) {
+    if (currentText.slice(Number(start), Number(end)) !== expectedText) {
+      setStatus("Suggestion could not be safely located in the current draft.", "warn");
+      return false;
+    }
     const range = draftRange(start, end);
     if (!range) {
       return false;
@@ -1909,19 +1953,64 @@ import DOMPurify from "dompurify";
     syncOverlayFromState();
   }
 
-  function markSuggestionReplaced(chatIndex, start, end, current, replacement) {
+  function markSuggestionReplaced(chatIndex, start, end, current, replacement, token = "") {
     const message = activeChat()?.messages?.[chatIndex];
     if (!message || message.role !== "assistant") return;
+    const source = token || "[[suggest:" + start + ":" + end + "=>" + replacement + "]]";
     message.content = message.content.replace(
-      `[[suggest:${start}:${end}=>${replacement}]]`,
-      `[[replaced:${start}:${end}:${current}=>${replacement}]]`
+      source,
+      "[[replaced:" + current + "=>" + replacement + "]]"
     );
     renderChatThread();
     void persistChatsNow();
   }
 
+  function parseTextAnchor(payload) {
+    try {
+      const anchor = JSON.parse(payload);
+      return anchor && typeof anchor === "object" ? anchor : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function renderVerifiedTextAnchor(anchor, action, chatIndex, token) {
+    const location = resolveTextAnchor(anchor);
+    if (!location) {
+      return '<span class="suggestion-static">Suggestion location could not be verified: ' + escapeHtml(JSON.stringify(anchor)) + '</span>';
+    }
+    const attributes =
+      'data-start="' + location.start + '" data-end="' + location.end +
+      '" data-anchor="' + encodeURIComponent(JSON.stringify(anchor)) +
+      '" data-suggestion-token="' + encodeURIComponent(token) + '"';
+    if (action === "mention") {
+      return '<span class="chat-mention"><button type="button" class="btn btn-tertiary" ' +
+        'data-chat-action="mention" data-preview="current" ' + attributes + '>' +
+        escapeHtml(location.original) + '</button></span>';
+    }
+    return '<span class="chat-suggestion">' +
+      '<button type="button" class="btn btn-tertiary suggestion-current" ' +
+      'data-chat-action="current" data-preview="current" ' + attributes + '>' +
+      escapeHtml(location.original) + '</button>' +
+      '<button type="button" class="btn btn-tertiary" data-chat-action="suggest" ' +
+      'data-preview="replacement" data-chat-index="' + chatIndex + '" ' +
+      'data-replacement="' + escapeHtml(anchor.replacement) + '" ' + attributes + '>' +
+      escapeHtml(anchor.replacement) + '</button></span>';
+  }
+
   function renderCoachReply(content, chatIndex) {
-    return renderMarkdown(content).replace(/\[\[mention:(\d+):(\d+)\]\]/g, (_, start, end) =>
+    const anchored = String(content || "")
+      .replace(/\[\[mention:(\{[\s\S]*?\})\]\]/g, (token, payload) => {
+        const anchor = parseTextAnchor(payload);
+        return anchor ? renderVerifiedTextAnchor(anchor, "mention", chatIndex, token) : token;
+      })
+      .replace(/\[\[suggest:(\{[\s\S]*?\})\]\]/g, (token, payload) => {
+        const anchor = parseTextAnchor(payload);
+        return anchor && typeof anchor.replacement === "string"
+          ? renderVerifiedTextAnchor(anchor, "suggest", chatIndex, token)
+          : token;
+      });
+    return renderMarkdown(anchored).replace(/\[\[mention:(\d+):(\d+)\]\]/g, (_, start, end) =>
       `<span class="chat-mention">` +
       `<button type="button" class="btn btn-tertiary" data-chat-action="mention" data-preview="current" data-start="${start}" data-end="${end}">${escapeHtml(currentText.slice(Number(start), Number(end)))}</button>` +
       `</span>`
@@ -1930,6 +2019,11 @@ import DOMPurify from "dompurify";
       `<button type="button" class="btn btn-tertiary suggestion-current" data-chat-action="current" data-preview="current" data-start="${start}" data-end="${end}">${escapeHtml(currentText.slice(Number(start), Number(end)))}</button>` +
       `<button type="button" class="btn btn-tertiary" data-chat-action="suggest" data-preview="replacement" data-chat-index="${chatIndex}" data-start="${start}" data-end="${end}" data-replacement="${escapeHtml(replacement)}">${escapeHtml(replacement)}</button>` +
       `</span>`
+    ).replace(/\[\[replaced:(?!\d+:\d+:)([^\]]*?)=(?:>|&gt;)([\s\S]*?)\]\]/g, (_, current, replacement) =>
+      '<span class="chat-suggestion chat-suggestion-replaced">' +
+      '<span class="suggestion-static suggestion-current">' + escapeHtml(current) + '</span>' +
+      '<span class="suggestion-static suggestion-replacement">' + escapeHtml(replacement) + '</span>' +
+      '</span>'
     ).replace(/\[\[replaced:(\d+):(\d+):([\s\S]*?)=(?:>|&gt;)([\s\S]*?)\]\]/g, (_, _start, _end, current, replacement) =>
       `<span class="chat-suggestion chat-suggestion-replaced">` +
       `<span class="suggestion-static suggestion-current">${escapeHtml(current)}</span>` +
@@ -2888,29 +2982,45 @@ import DOMPurify from "dompurify";
     if (!button || !feedbackEl.contains(button) || chatBusy) return;
     const action = button.dataset.chatAction;
     const index = Number(button.dataset.index);
-    if (action === "mention") {
-      mentionDraftRange(button.dataset.start, button.dataset.end);
-    } else if (action === "current") {
-      mentionDraftRange(button.dataset.start, button.dataset.end);
+    const anchor = button.dataset.anchor
+      ? parseTextAnchor(decodeURIComponent(button.dataset.anchor))
+      : null;
+    const location = anchor ? resolveTextAnchor(anchor) : null;
+    if (["mention", "current", "suggest"].includes(action) && !location) {
+      setStatus("Suggestion could not be safely located in the current draft.", "warn");
+      return;
+    }
+    if (action === "mention" || action === "current") {
+      mentionDraftRange(location.start, location.end);
     } else if (action === "suggest") {
-      const current = currentText.slice(
-        Number(button.dataset.start),
-        Number(button.dataset.end)
-      );
+      const current = location.original;
+      const replacement = button.dataset.replacement || "";
       const replaced = applyChatSuggestion(
-        button.dataset.start,
-        button.dataset.end,
-        button.dataset.replacement || ""
+        location.start,
+        location.end,
+        replacement,
+        location.original
       );
       if (replaced) {
         markSuggestionReplaced(
           Number(button.dataset.chatIndex),
-          button.dataset.start,
-          button.dataset.end,
+          location.start,
+          location.end,
           current,
-          button.dataset.replacement || ""
+          replacement,
+          decodeURIComponent(button.dataset.suggestionToken || "")
         );
       }
+    } else if (action === "edit" && Number.isInteger(index)) {
+      editingChatMessage = index;
+      renderChatThread();
+    } else if (action === "cancel-edit") {
+      editingChatMessage = null;
+      renderChatThread();
+    } else if (action === "save-edit" && Number.isInteger(index)) {
+      const input = feedbackEl.querySelector('[data-chat-edit="' + index + '"]');
+      const value = String(input?.textContent || "").trim();
+      if (value) void sendChat({ retryUserIndex: index, overrideText: value });
     } else if (action === "retry" && Number.isInteger(index)) {
       const messages = activeChat()?.messages || [];
       for (let i = index - 1; i >= 0; i--) {

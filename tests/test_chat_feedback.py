@@ -50,18 +50,11 @@ def test_stream_prompt_includes_conflicts_and_action_protocol(monkeypatch):
     conflict_context="Conflict 1: Current: A; Incoming: B",
   )) == ["[[mention:0:8]]"]
   prompt = captured["prompt"]
-  assert "[[mention:start:end]]" in prompt[0]["content"]
+  assert "JSON text anchor" in prompt[0]["content"]
   assert "Unresolved merge-conflict context" in prompt[-1]["content"]
 
 
-def test_draft_annotation_includes_every_50_character_offset():
-  annotated = annotate_draft("x" * 101, 0, 0)
-  assert "<offset>50</offset>" in annotated
-  assert "<offset>100</offset>" in annotated
-
-
-def test_draft_annotation_adds_offset_after_punctuation():
+def test_draft_annotation_only_adds_focus_markers():
   assert annotate_draft("Hello, world!", 0, 0) == (
-    "<caret>Hello,<offset>6</offset> world!<offset>13</offset>"
+    "<caret>Hello, world!"
   )
-  assert "<offset>6</offset>" not in annotate_draft("Hello; world", 0, 0)
