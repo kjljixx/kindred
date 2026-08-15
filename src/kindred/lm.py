@@ -309,6 +309,64 @@ def reflect_chat(
   return _responses_output_text(response)
 
 
+def reflect_chat_stream(
+  *,
+  model: str,
+  prompt: str | list[dict[str, Any]],
+  temperature: float | None = None,
+  max_tokens: int = 40000,
+  purpose: str = "reflection",
+) -> Any:
+  """Yield text deltas from a LiteLLM Responses request.
+
+  Kept separate from ``reflect_chat`` so callers that need a single reply keep
+  the existing cost/tracing behaviour.  Responses providers expose deltas with
+  slightly different object shapes; ``_response_stream_delta`` intentionally
+  accepts the common variants.
+  """
+  if is_human_model(model):
+    yield _prompt_human(_format_prompt_payload(prompt), role="chat")
+    return
+
+  configure_tracing()
+  instructions, input_payload = _prompt_to_responses_io(prompt)
+  kwargs: dict[str, Any] = {
+    "model": model,
+    "input": input_payload,
+    "max_output_tokens": max_tokens,
+    "stream": True,
+    "metadata": litellm_metadata(
+      generation_name=f"kindred.{purpose}", tags=["kindred", purpose]
+    ),
+    "tools": [{"type": "web_search_preview"}],
+  }
+  if instructions:
+    kwargs["instructions"] = instructions
+  if temperature is not None:
+    kwargs["temperature"] = temperature
+  for event in litellm.responses(**kwargs):
+    delta = _response_stream_delta(event)
+    if delta:
+      yield delta
+
+
+def _response_stream_delta(event: Any) -> str:
+  """Return a text delta from a LiteLLM/OpenAI Responses stream event."""
+  if isinstance(event, dict):
+    kind = event.get("type", "")
+    delta = event.get("delta", "")
+  else:
+    kind = getattr(event, "type", "")
+    delta = getattr(event, "delta", "")
+  if kind not in ("response.output_text.delta", "output_text.delta", ""):
+    return ""
+  if isinstance(delta, str):
+    return delta
+  if isinstance(delta, dict):
+    return str(delta.get("text", "") or "")
+  return ""
+
+
 def _message_content_as_text(content: Any) -> str:
   if isinstance(content, str):
     return content

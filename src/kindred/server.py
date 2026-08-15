@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from kindred.chat import DEFAULT_MODEL, chat_draft
+from kindred.chat import DEFAULT_MODEL, chat_draft_stream
 from kindred.tracing import configure_tracing
 
 STATIC_DIR = Path(__file__).resolve().parent / "static" / "dist"
@@ -39,6 +39,7 @@ class ChatRequest(BaseModel):
   message: str
   draft_text: str = ""
   selection: SelectionOffsets | None = None
+  conflict_context: str = ""
 
 
 @app.post("/api/chat")
@@ -68,14 +69,18 @@ async def api_chat(body: ChatRequest) -> StreamingResponse:
       sel = None
       if body.selection is not None:
         sel = {"from": body.selection.from_, "to": body.selection.to}
-      reply, cost = chat_draft(
+      reply = ""
+      for delta in chat_draft_stream(
         draft_text=body.draft_text,
         message=message,
         messages=prior,
         selection=sel,
+        conflict_context=body.conflict_context,
         model=body.model,
-      )
-      emit({"type": "done", "reply": reply, "cost": cost})
+      ):
+        reply += delta
+        emit({"type": "delta", "delta": delta})
+      emit({"type": "done", "reply": reply, "cost": 0.0})
     except Exception as exc:  # noqa: BLE001 — surface LM/runtime errors to UI
       emit({"type": "error", "detail": str(exc)})
 

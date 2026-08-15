@@ -16,11 +16,7 @@ TODO
 
 Feedback
 TODO
-- Auto-title chats from first message
-- Streaming chat replies - Low
-- Allow chat to see merge conflict context
 - Allow chat model to "mention" some text and to suggest edits
-- Editing/Retry
 
 Git
 TODO

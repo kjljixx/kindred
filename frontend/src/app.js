@@ -67,7 +67,7 @@ import DOMPurify from "dompurify";
   const draftPane = document.getElementById("draft-pane");
   const divider = document.getElementById("divider");
 
-  const DEFAULT_MODEL = "openai/gpt-5.6-luna";
+  const DEFAULT_MODEL = "openai/gpt-5.6-terra";
   // HtmlDiff treats "<...>" as tags; shield raw "<" in plain text.
   const HTMLDIFF_LT = "\uE000";
   const HTMLDIFF_ACTION = { equal: 0, delete: 1, insert: 2, none: 3, replace: 4 };
@@ -90,6 +90,7 @@ import DOMPurify from "dompurify";
   let chatBusy = false;
   let composerDraft = "";
   let renamingChatId = null;
+  let editingChatMessage = null;
   let rendering = false;
   let converting = false;
   let applyingHistory = false;
@@ -692,6 +693,7 @@ import DOMPurify from "dompurify";
     chatBusy = false;
     composerDraft = "";
     renamingChatId = null;
+    editingChatMessage = null;
     draftCost = 0;
   }
 
@@ -1757,21 +1759,26 @@ import DOMPurify from "dompurify";
     const scrollTop = feedbackEl.scrollTop;
     const wasAtBottom = scrollAreaAtBottom(feedbackEl);
     if (!msgs.length) {
-      feedbackEl.innerHTML = `<p class="muted">Ask anything about the draft.</p>`;
+      feedbackEl.innerHTML = `<p class="chat-thread-empty">Ask anything about the draft.</p>`;
     } else {
       feedbackEl.innerHTML =
         `<div class="chat-thread" role="log" aria-live="polite">` +
         msgs
-          .map((m) => {
+          .map((m, index) => {
             const role = m.role === "assistant" ? "assistant" : "user";
             const label = role === "assistant" ? "Coach" : "You";
-            const body =
-              role === "assistant"
-                ? renderMarkdown(m.content || "")
+            const editing = editingChatMessage === index && role === "user";
+            const body = editing
+              ? `<div class="chat-message-edit" data-chat-edit="${index}" contenteditable="true" role="textbox" aria-label="Edit message">${escapeHtml(m.content || "")}</div>`
+              : role === "assistant"
+                ? renderCoachReply(m.content || "", index)
                 : escapeHtml(m.content || "");
+            const actions = role === "assistant"
+                ? `<div class="chat-msg-actions"><button type="button" class="btn btn-tertiary" data-chat-action="retry" data-index="${index}">Retry</button></div>`
+                : "";
             return (
               `<div class="chat-msg ${role}" aria-label="${label}">` +
-              `<div class="chat-msg-body">${body}</div>` +
+              `<div class="chat-msg-body">${body}</div>${actions}` +
               `</div>`
             );
           })
@@ -1786,7 +1793,130 @@ import DOMPurify from "dompurify";
       }
       bindComposerScrollWatch(feedbackEl);
       syncComposerSeparators();
+      const edit = feedbackEl.querySelector(".chat-message-edit");
+      if (edit) {
+        edit.focus();
+        const range = document.createRange();
+        range.selectNodeContents(edit);
+        range.collapse(false);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
     });
+  }
+
+  function mergeConflictContext() {
+    if (!currentHtml || unresolvedMergeConflictCount(currentHtml) === 0) return "";
+    const segments = parseConflictSegments(currentHtml) || [];
+    const textConflicts = segments
+      .filter((segment) => segment.type === "conflict")
+      .map((segment, index) =>
+        `Conflict ${index + 1} (${segment.oursLabel || "current"} / ${segment.theirsLabel || "incoming"}):\n` +
+        `Current: ${stripHtml(segment.ours)}\nIncoming: ${stripHtml(segment.theirs)}`
+      );
+    const doc = new DOMParser().parseFromString(currentHtml, "text/html");
+    const alignmentConflicts = [...doc.querySelectorAll("[data-kindred-align-ours]")].map((el, index) =>
+      `Alignment conflict ${index + 1}: ${el.textContent || "paragraph"} ` +
+      `(${el.getAttribute("data-kindred-align-ours")} / ${el.getAttribute("data-kindred-align-theirs")})`
+    );
+    return [...textConflicts, ...alignmentConflicts].join("\n\n");
+  }
+
+  function plainOffsetToDocPosition(offset) {
+    if (!tipTap) return null;
+    const target = Math.max(0, Math.min(Number(offset) || 0, currentText.length));
+    const doc = tipTap.state.doc;
+    for (let pos = 0; pos <= doc.content.size; pos++) {
+      if (doc.textBetween(0, pos, "\n\n", "\n").length >= target) return pos;
+    }
+    return doc.content.size;
+  }
+
+  function draftRange(start, end) {
+    const from = plainOffsetToDocPosition(start);
+    const to = plainOffsetToDocPosition(end);
+    if (from == null || to == null || to < from) {
+      setStatus("The requested character range is invalid.", "warn");
+      return null;
+    }
+    return { from, to };
+  }
+
+  function mentionDraftRange(start, end) {
+    const range = draftRange(start, end);
+    if (!range) {
+      return;
+    }
+    tipTap.commands.focus();
+    tipTap.commands.setTextSelection(range);
+  }
+
+  function applyChatSuggestion(start, end, replacement) {
+    const range = draftRange(start, end);
+    if (!range) {
+      return false;
+    }
+    tipTap.commands.focus();
+    tipTap.view.dispatch(tipTap.state.tr.insertText(replacement, range.from, range.to));
+    pullFromEditor();
+    tipTap.commands.setTextSelection({
+      from: range.from,
+      to: range.from + replacement.length,
+    });
+    workingDirty = true;
+    persistActiveDraftSoon();
+    setStatus("Suggestion applied.");
+    return true;
+  }
+
+  function showSuggestionPreview(start, end, replacement = null) {
+    if (!tipTap) return;
+    refreshOverlay(tipTap, {
+      baseline: currentText,
+      currentPlain: currentText,
+      highlight: { start: Number(start), end: Number(end), replacement },
+      showDiffs: false,
+    });
+  }
+
+  function clearSuggestionPreview() {
+    syncOverlayFromState();
+  }
+
+  function markSuggestionReplaced(chatIndex, start, end, current, replacement) {
+    const message = activeChat()?.messages?.[chatIndex];
+    if (!message || message.role !== "assistant") return;
+    message.content = message.content.replace(
+      `[[suggest:${start}:${end}=>${replacement}]]`,
+      `[[replaced:${start}:${end}:${current}=>${replacement}]]`
+    );
+    renderChatThread();
+    void persistChatsNow();
+  }
+
+  function renderCoachReply(content, chatIndex) {
+    return renderMarkdown(content).replace(/\[\[mention:(\d+):(\d+)\]\]/g, (_, start, end) =>
+      `<span class="chat-mention">` +
+      `<button type="button" class="btn btn-tertiary" data-chat-action="mention" data-preview="current" data-start="${start}" data-end="${end}">${escapeHtml(currentText.slice(Number(start), Number(end)))}</button>` +
+      `</span>`
+    ).replace(/\[\[suggest:(\d+):(\d+)=(?:>|&gt;)([\s\S]*?)\]\]/g, (_, start, end, replacement) =>
+      `<span class="chat-suggestion">` +
+      `<button type="button" class="btn btn-tertiary suggestion-current" data-chat-action="current" data-preview="current" data-start="${start}" data-end="${end}">${escapeHtml(currentText.slice(Number(start), Number(end)))}</button>` +
+      `<button type="button" class="btn btn-tertiary" data-chat-action="suggest" data-preview="replacement" data-chat-index="${chatIndex}" data-start="${start}" data-end="${end}" data-replacement="${escapeHtml(replacement)}">${escapeHtml(replacement)}</button>` +
+      `</span>`
+    ).replace(/\[\[replaced:(\d+):(\d+):([\s\S]*?)=(?:>|&gt;)([\s\S]*?)\]\]/g, (_, _start, _end, current, replacement) =>
+      `<span class="chat-suggestion chat-suggestion-replaced">` +
+      `<span class="suggestion-static suggestion-current">${escapeHtml(current)}</span>` +
+      `<span class="suggestion-static suggestion-replacement">${escapeHtml(replacement)}</span>` +
+      `</span>`
+    );
+  }
+
+  function chatTitleFromMessage(text) {
+    const clean = String(text || "").replace(/\s+/g, " ").trim();
+    if (!clean) return store.DEFAULT_CHAT_TITLE || "New Chat";
+    return clean.length > 56 ? `${clean.slice(0, 56).trimEnd()}...` : clean;
   }
 
   async function createChat() {
@@ -1810,7 +1940,7 @@ import DOMPurify from "dompurify";
     composerDraft = "";
     await persistChatsNow();
     syncRightPane();
-    tipTap?.commands.focus();
+    if (!chatInput.disabled) chatInput.focus();
   }
 
   async function openChat(id) {
@@ -2511,7 +2641,7 @@ import DOMPurify from "dompurify";
     }, 0);
   });
 
-  async function readChatStream(res) {
+  async function readChatStream(res, onDelta = null) {
     if (!res.body) {
       throw new Error(res.statusText || "Chat failed");
     }
@@ -2533,7 +2663,9 @@ import DOMPurify from "dompurify";
         } catch {
           throw new Error("Invalid chat event from server");
         }
-        if (event.type === "done") {
+        if (event.type === "delta") {
+          if (typeof onDelta === "function") onDelta(String(event.delta || ""));
+        } else if (event.type === "done") {
           doneEvent = event;
         } else if (event.type === "error") {
           throw new Error(event.detail || "Chat failed");
@@ -2568,27 +2700,41 @@ import DOMPurify from "dompurify";
       });
   }
 
-  async function sendChat() {
+  async function sendChat({ retryUserIndex = null, overrideText = null } = {}) {
     if (!canUseComposer()) return;
     const chat = activeChat();
     if (!chat) return;
-    const text = (chatInput?.value || composerDraft || "").trim();
+    const retrying = Number.isInteger(retryUserIndex);
+    const source = retrying ? chat.messages?.[retryUserIndex] : null;
+    if (retrying && (!source || source.role !== "user")) return;
+    const text = String(retrying ? (overrideText ?? source.content) : (chatInput?.value || composerDraft || "")).trim();
     if (!text) return;
 
     pullFromEditor();
-    const draftText = tipTap ? getPlain(tipTap) : currentText || "";
-    const selection = caretSelectionOffsets();
-    const prior = Array.isArray(chat.messages) ? chat.messages.slice() : [];
+    const draftText = retrying
+      ? String(source.draftText ?? "")
+      : tipTap ? getPlain(tipTap) : currentText || "";
+    const selection = retrying
+      ? source.selection || { from: 0, to: 0 }
+      : caretSelectionOffsets();
+    const prior = retrying
+      ? chat.messages.slice(0, retryUserIndex)
+      : Array.isArray(chat.messages) ? chat.messages.slice() : [];
     const userMsg = {
       role: "user",
       content: text,
       draftText,
       selection,
     };
-    chat.messages = [...prior, userMsg];
+    if (!chat.messages.some((m) => m.role === "user") &&
+        (!chat.title || chat.title === (store.DEFAULT_CHAT_TITLE || "New Chat"))) {
+      chat.title = chatTitleFromMessage(text);
+    }
+    chat.messages = [...prior, userMsg, { role: "assistant", content: "" }];
     chat.lastBranch = currentBranchName || chat.lastBranch || "main";
     chat.updatedAt = Date.now();
     composerDraft = "";
+    editingChatMessage = null;
     if (chatInput) {
       chatInput.value = "";
       resizeTextarea(chatInput);
@@ -2609,6 +2755,7 @@ import DOMPurify from "dompurify";
           message: text,
           draft_text: draftText,
           selection,
+          conflict_context: mergeConflictContext(),
         }),
       });
       if (!res.ok) {
@@ -2618,13 +2765,14 @@ import DOMPurify from "dompurify";
           typeof detail === "string" ? detail : res.statusText || "Chat failed"
         );
       }
-      const data = await readChatStream(res);
+      const pendingReply = chat.messages[chat.messages.length - 1];
+      const data = await readChatStream(res, (delta) => {
+        pendingReply.content += delta;
+        renderChatThread({ stickBottom: true });
+      });
       const reply = String(data.reply || "");
       const cost = Number(data.cost) || 0;
-      chat.messages = [
-        ...(Array.isArray(chat.messages) ? chat.messages : prior),
-        { role: "assistant", content: reply },
-      ];
+      pendingReply.content = reply || pendingReply.content;
       chat.lastBranch = currentBranchName || chat.lastBranch || "main";
       chat.updatedAt = Date.now();
       draftCost += cost;
@@ -2708,6 +2856,89 @@ import DOMPurify from "dompurify";
   chatComposer.addEventListener("submit", (e) => {
     e.preventDefault();
     void sendChat();
+  });
+
+  feedbackEl.addEventListener("click", (e) => {
+    const button = e.target.closest("[data-chat-action]");
+    if (!button || !feedbackEl.contains(button) || chatBusy) return;
+    const action = button.dataset.chatAction;
+    const index = Number(button.dataset.index);
+    if (action === "mention") {
+      mentionDraftRange(button.dataset.start, button.dataset.end);
+    } else if (action === "current") {
+      mentionDraftRange(button.dataset.start, button.dataset.end);
+    } else if (action === "suggest") {
+      const current = currentText.slice(
+        Number(button.dataset.start),
+        Number(button.dataset.end)
+      );
+      const replaced = applyChatSuggestion(
+        button.dataset.start,
+        button.dataset.end,
+        button.dataset.replacement || ""
+      );
+      if (replaced) {
+        markSuggestionReplaced(
+          Number(button.dataset.chatIndex),
+          button.dataset.start,
+          button.dataset.end,
+          current,
+          button.dataset.replacement || ""
+        );
+      }
+    } else if (action === "retry" && Number.isInteger(index)) {
+      const messages = activeChat()?.messages || [];
+      for (let i = index - 1; i >= 0; i--) {
+        if (messages[i]?.role === "user") {
+          void sendChat({ retryUserIndex: i });
+          break;
+        }
+      }
+    }
+  });
+
+  feedbackEl.addEventListener("pointerover", (e) => {
+    const button = e.target.closest("[data-preview]");
+    if (!button || !feedbackEl.contains(button) || chatBusy) return;
+    showSuggestionPreview(
+      button.dataset.start,
+      button.dataset.end,
+      button.dataset.preview === "replacement" ? button.dataset.replacement || "" : null
+    );
+  });
+
+  feedbackEl.addEventListener("pointerout", (e) => {
+    const button = e.target.closest("[data-preview]");
+    if (!button || !feedbackEl.contains(button) || button.contains(e.relatedTarget)) return;
+    clearSuggestionPreview();
+  });
+
+  feedbackEl.addEventListener("contextmenu", (e) => {
+    const message = e.target.closest(".chat-msg.user");
+    if (!message || !feedbackEl.contains(message) || chatBusy) return;
+    const messages = [...feedbackEl.querySelectorAll(".chat-msg")];
+    const index = messages.indexOf(message);
+    if (index < 0) return;
+    e.preventDefault();
+    editingChatMessage = index;
+    renderChatThread();
+  });
+
+  feedbackEl.addEventListener("keydown", (e) => {
+    const edit = e.target.closest(".chat-message-edit");
+    if (!edit || !feedbackEl.contains(edit) || chatBusy) return;
+    const index = Number(edit.dataset.chatEdit);
+    if (e.key === "Escape") {
+      e.preventDefault();
+      editingChatMessage = null;
+      renderChatThread();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const value = String(edit.textContent || "").trim();
+      if (value && Number.isInteger(index)) {
+        void sendChat({ retryUserIndex: index, overrideText: value });
+      }
+    }
   });
 
   chatInput.addEventListener("input", () => {

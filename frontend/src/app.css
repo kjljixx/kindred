@@ -412,6 +412,12 @@ button.pane-title {
   font-size: var(--font-size-3);
 }
 
+.chat-thread-empty {
+  color: var(--color-text-muted);
+  margin: 0 var(--space-3);
+  font-size: var(--font-size-3);
+}
+
 .draft-item {
   position: relative;
   display: flex;
@@ -1351,6 +1357,34 @@ button.pane-title {
 .chat-msg.assistant .chat-msg-body a {
   color: var(--color-accent-soft);
 }
+
+.chat-msg-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  opacity: 0;
+}
+
+.chat-msg:hover .chat-msg-actions,
+.chat-msg:focus-within .chat-msg-actions { opacity: 1; }
+.chat-msg-actions .btn { padding: var(--space-1) var(--space-3); font-size: var(--font-size-1); }
+.chat-message-edit { outline: none; white-space: pre-wrap; }
+.chat-message-edit:focus { box-shadow: inset 0 0 0 1px var(--color-accent); }
+.chat-mention { display: inline-flex; max-width: 100%; margin: 0 var(--space-1); padding: var(--space-1); border-radius: var(--radius-1); background: var(--color-bg-inset); }
+.chat-mention .btn { min-width: 0; max-width: 100%; padding: var(--space-1) var(--space-2); overflow-wrap: anywhere; white-space: normal; color: var(--primary-500); text-align: left; }
+.chat-mention .btn:hover { color: var(--primary-300); }
+.chat-suggestion { display: inline-flex; max-width: 100%; flex-wrap: wrap; align-items: stretch; gap: var(--space-1); margin: 0 var(--space-1); padding: var(--space-1); border-radius: var(--radius-1); background: var(--color-bg-inset); color: var(--color-text-muted); }
+.chat-suggestion .btn { flex: 1 1 12rem; min-width: 0; max-width: 100%; padding: var(--space-1) var(--space-2); overflow-wrap: anywhere; white-space: normal; text-align: left; }
+.chat-suggestion .suggestion-current { color: hsl(32, 100%, 42%); }
+.chat-suggestion .suggestion-current:hover { background: transparent; color: hsl(32, 100%, 70%); }
+.chat-suggestion .btn:not(.suggestion-current) { color: var(--accent-success-500); }
+.chat-suggestion .btn:not(.suggestion-current):hover { color: var(--accent-success-300); }
+.chat-suggestion-replaced { pointer-events: none; }
+.suggestion-static { flex: 1 1 12rem; min-width: 0; padding: var(--space-1) var(--space-2); overflow-wrap: anywhere; white-space: normal; text-align: left; }
+.chat-suggestion-replaced .suggestion-static { background: transparent; border: 0; border-radius: var(--btn-radius); color: var(--color-text-muted); font: inherit; line-height: inherit; }
+.suggestion-replacement { color: var(--accent-success-500); }
+.suggest-preview-original { display: none; }
+.suggest-preview-replacement { background: var(--color-success-bg); color: var(--accent-success-300); }
 
 .chat-composer {
   flex-shrink: 0;

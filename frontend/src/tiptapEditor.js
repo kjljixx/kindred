@@ -780,6 +780,25 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     }
   }
 
+  if (hl?.replacement != null) {
+    const fromPlain = Math.max(0, hl.start || 0);
+    const toPlain = Math.max(fromPlain, hl.end || fromPlain);
+    const from = pmPosForPlain(map, fromPlain);
+    const to = pmPosForPlain(map, toPlain);
+    if (to > from) {
+      decorations.push(
+        Decoration.inline(from, to, { class: "suggest-preview-original" })
+      );
+    }
+    const preview = document.createElement("span");
+    preview.className = "suggest-preview-replacement";
+    preview.textContent = String(hl.replacement);
+    decorations.push(
+      Decoration.widget(from, preview, { side: -1, key: "suggestion-preview" })
+    );
+    return DecorationSet.create(doc, decorations);
+  }
+
   function paintEqual(text, baseStart) {
     if (!hl || !text) return;
     const absEnd = baseStart + text.length;
