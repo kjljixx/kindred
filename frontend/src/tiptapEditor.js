@@ -254,16 +254,50 @@ function conflictPreviewHtml(html) {
   return out.innerHTML;
 }
 
+function conflictFileNames(html) {
+  const root = document.createElement("div");
+  root.innerHTML = String(html || "");
+  const names = new Set();
+
+  root.querySelectorAll("img[src]").forEach((image) => {
+    const alt = (image.getAttribute("alt") || "").trim();
+    const src = image.getAttribute("src") || "";
+    const sourceName = src.startsWith("data:image/")
+      ? ""
+      : decodeURIComponent(src.split(/[?#]/, 1)[0].split("/").pop() || "");
+    const name = alt || sourceName;
+    if (name && name !== "Image") names.add(name);
+  });
+
+  return [...names];
+}
+
+function appendConflictFileNames(button, fileNames) {
+  for (const name of fileNames) {
+    const label = document.createElement("span");
+    label.className = "merge-conflict-file-name";
+    label.textContent = name;
+    button.appendChild(label);
+  }
+}
+
 function fillConflictBtn(btn, html) {
   const preview = conflictPreviewHtml(html);
   const plainIn = stripHtml(html);
   const plainOut = stripHtml(preview);
-  if (preview && plainOut) {
+  const fileNames = conflictFileNames(html);
+  if (preview && (plainOut || fileNames.length)) {
     btn.innerHTML = preview;
+    appendConflictFileNames(btn, fileNames);
     return;
   }
   if (plainIn) {
     btn.textContent = plainIn;
+    appendConflictFileNames(btn, fileNames);
+    return;
+  }
+  if (fileNames.length) {
+    appendConflictFileNames(btn, fileNames);
     return;
   }
   btn.textContent = "\u00a0";
@@ -554,6 +588,51 @@ function createDeleteWidget(text, html = "") {
   };
 }
 
+function imageKey(image) {
+  return `${image?.src || ""}\u0000${image?.alt || ""}\u0000${image?.title || ""}`;
+}
+
+function createDeletedImageWidget(image) {
+  return () => {
+    const wrap = document.createElement("span");
+    wrap.className = "diff-image-del";
+    wrap.contentEditable = "false";
+    const preview = document.createElement("img");
+    preview.src = image.src;
+    preview.alt = image.alt || "Deleted image";
+    if (image.title) preview.title = image.title;
+    wrap.appendChild(preview);
+    return wrap;
+  };
+}
+
+function appendImageDiffDecorations(doc, decorations, imageDiffs) {
+  if (!imageDiffs) return;
+  const added = new Map();
+  for (const image of imageDiffs.added || []) {
+    const key = imageKey(image);
+    added.set(key, (added.get(key) || 0) + 1);
+  }
+  doc.descendants((node, pos) => {
+    if (node.type.name !== "image") return;
+    const key = imageKey(node.attrs);
+    const count = added.get(key) || 0;
+    if (!count) return;
+    decorations.push(
+      Decoration.node(pos, pos + node.nodeSize, { class: "diff-image-ins" })
+    );
+    added.set(key, count - 1);
+  });
+  for (const [index, image] of (imageDiffs.deleted || []).entries()) {
+    decorations.push(
+      Decoration.widget(0, createDeletedImageWidget(image), {
+        side: -1,
+        key: `deleted-image-${index}-${imageKey(image)}`,
+      })
+    );
+  }
+}
+
 function createConflictWidget(seg, index, onAction, conflictMode = "merge") {
   return () => {
     const wrap = document.createElement("span");
@@ -759,8 +838,12 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
   const hl = meta.highlight;
   const showDiffs = meta.showDiffs !== false;
   const formatHunks = meta.formatHunks || [];
+  const imageDiffs = meta.imageDiffs || null;
   const hasFormat = showDiffs && formatHunks.length > 0;
-  if (!diffsFn && !hasFormat) {
+  const hasImageDiffs =
+    showDiffs &&
+    ((imageDiffs?.added?.length || 0) + (imageDiffs?.deleted?.length || 0) > 0);
+  if (!diffsFn && !hasFormat && !hasImageDiffs) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
       : DecorationSet.empty;
@@ -772,12 +855,12 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
       : DecorationSet.empty;
   }
   // Empty baseline + content => whole doc is an insert (e.g. first commit).
-  if (!baseline && !currentPlain && !hl && !hasFormat) {
+  if (!baseline && !currentPlain && !hl && !hasFormat && !hasImageDiffs) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
       : DecorationSet.empty;
   }
-  if (baseline && baseline === currentPlain && !hl && !hasFormat) {
+  if (baseline && baseline === currentPlain && !hl && !hasFormat && !hasImageDiffs) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
       : DecorationSet.empty;
@@ -884,6 +967,8 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     }
   }
 
+  if (showDiffs) appendImageDiffDecorations(doc, decorations, imageDiffs);
+
   return DecorationSet.create(doc, decorations);
 }
 
@@ -907,6 +992,7 @@ const KindredOverlay = Extension.create({
       conflicts: null,
       markedHtml: "",
       formatHunks: [],
+      imageDiffs: null,
     };
   },
 
@@ -942,6 +1028,7 @@ const KindredOverlay = Extension.create({
               conflictMode: "merge",
               alignPreview: null,
               formatHunks: [],
+              imageDiffs: null,
               decorations: DecorationSet.empty,
             };
           },
@@ -959,6 +1046,7 @@ const KindredOverlay = Extension.create({
                 markedHtml: next.markedHtml,
                 conflictMode: next.conflictMode,
                 formatHunks: next.formatHunks,
+                imageDiffs: next.imageDiffs,
               });
             }
             if (meta?.type === "alignPreview") {
@@ -976,6 +1064,7 @@ const KindredOverlay = Extension.create({
                   conflictMode: next.conflictMode,
                   alignPreview: next.alignPreview,
                   formatHunks: next.formatHunks,
+                  imageDiffs: next.imageDiffs,
                   onConflictAction: extension.options.onConflictAction,
                   onAlignConflictAction: extension.options.onAlignConflictAction,
                 },
@@ -1222,12 +1311,8 @@ export function bindToolbar(editor, toolbarEl) {
   const onImage = () => {
     const file = imageInput?.files?.[0];
     if (!file?.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      editor.chain().focus().setImage({ src: String(reader.result), alt: file.name }).run();
-      imageInput.value = "";
-    };
-    reader.readAsDataURL(file);
+    imageInput.value = "";
+    editor.emit("kindredImage", { file });
   };
   const onColor = (e) => {
     const value = e.target.value;
@@ -1481,6 +1566,7 @@ export function refreshOverlay(editor, {
   markedHtml = "",
   conflictMode = "merge",
   formatHunks = [],
+  imageDiffs = null,
 } = {}) {
   if (!editor) return;
   const conflicts = parseConflictSegments(markedHtml);
@@ -1493,5 +1579,6 @@ export function refreshOverlay(editor, {
     markedHtml: conflicts ? markedHtml : "",
     conflictMode: conflictMode === "review" ? "review" : "merge",
     formatHunks: conflicts ? [] : formatHunks,
+    imageDiffs: conflicts ? null : imageDiffs,
   });
 }

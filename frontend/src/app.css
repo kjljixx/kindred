@@ -766,6 +766,16 @@ button.pane-title {
   object-fit: contain;
 }
 
+.merge-conflict-file-name {
+  display: block;
+  max-width: 12rem;
+  margin-top: var(--space-1);
+  overflow: hidden;
+  font-size: var(--font-size-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .editor-toolbar .toolbar-select,
 .editor-toolbar .toolbar-input {
   height: 2.25rem;
@@ -1043,6 +1053,26 @@ button.pane-title {
   color: var(--accent-danger-300);
   text-decoration: line-through;
   user-select: none;
+}
+
+.ProseMirror img.diff-image-ins,
+.diff-image-del img {
+  display: block;
+  max-width: 100%;
+  outline: 3px solid var(--accent-success-300);
+  outline-offset: 2px;
+  filter: sepia(1) saturate(2.5) hue-rotate(85deg);
+}
+
+.diff-image-del {
+  display: block;
+  margin: var(--space-2) 0;
+  opacity: 0.72;
+}
+
+.diff-image-del img {
+  outline-color: var(--accent-danger-300);
+  filter: sepia(1) saturate(3) hue-rotate(300deg);
 }
 
 /* Inline mark styles (color/font-size/font-family) beat .diff-del color. */

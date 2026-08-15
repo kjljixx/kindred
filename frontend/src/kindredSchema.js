@@ -18,7 +18,7 @@ function safeLinkHref(value) {
 
 function safeImageSrc(value) {
   const src = String(value || "").trim();
-  return /^(https?:|data:image\/)/i.test(src) ? src : null;
+  return /^(https?:|data:image\/|kindred-image:assets\/)/i.test(src) ? src : null;
 }
 
 const Highlight = Mark.create({
@@ -205,7 +205,7 @@ export function prettyPrintHtml(html) {
   if (!compact) return "";
   return compact
     .replace(
-      /><(p|h[1-6]|ul|ol|li|blockquote|pre|hr|div|table|tr|td|th)(\s[^>]*)?>/gi,
+      /><(p|h[1-6]|ul|ol|li|blockquote|pre|hr|div|table|tr|td|th|img)(\s[^>]*)?>/gi,
       ">\n<$1$2>"
     )
     .trim();

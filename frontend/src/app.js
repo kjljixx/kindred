@@ -140,6 +140,7 @@ import DOMPurify from "dompurify";
           markedHtml: marked,
           conflictMode,
           formatHunks: [],
+          imageDiffs: null,
         });
       } else if (dirtyViewMode === "Diff") {
         // Dirty: vs HEAD. History: vs previous commit (baseline set by loadSnapshotState).
@@ -147,6 +148,7 @@ import DOMPurify from "dompurify";
         const baseHtml = viewing ? baselineHtml : headHtml;
         const baseDoc = htmlToDoc(baseHtml || "<p></p>");
         const currentDoc = normalizeDoc(tipTap.getJSON());
+        const ops = alignTwoWay(baseDoc, currentDoc);
         const parts = diffs(basePlain, currentText, baseDoc, currentDoc);
         const formatHunks = store.formatHunksFromDiff(
           baseHtml,
@@ -160,6 +162,7 @@ import DOMPurify from "dompurify";
           markedHtml: "",
           conflictMode,
           formatHunks,
+          imageDiffs: imageDiffsFromOps(ops),
         });
       } else {
         refreshOverlay(tipTap, {
@@ -170,11 +173,43 @@ import DOMPurify from "dompurify";
           markedHtml: "",
           conflictMode,
           formatHunks: [],
+          imageDiffs: null,
         });
       }
     } finally {
       suppressEditorUpdate = wasSuppressed;
     }
+  }
+
+  function imageInfo(node) {
+    if (node?.type !== "image" || !node.attrs?.src) return null;
+    return {
+      src: node.attrs.src,
+      alt: node.attrs.alt || "",
+      title: node.attrs.title || "",
+    };
+  }
+
+  function sameImage(a, b) {
+    return a?.src === b?.src && a?.alt === b?.alt && a?.title === b?.title;
+  }
+
+  function imageDiffsFromOps(ops) {
+    const added = [];
+    const deleted = [];
+    for (const op of ops) {
+      const base = imageInfo(op.base);
+      const current = imageInfo(op.theirs || op.node);
+      if (op.type === "insert" && op.side === "theirs" && current) {
+        added.push(current);
+      } else if (op.type === "delete" && op.side === "theirs" && base) {
+        deleted.push(base);
+      } else if (op.type === "replace" && !sameImage(base, current)) {
+        if (base) deleted.push(base);
+        if (current) added.push(current);
+      }
+    }
+    return added.length || deleted.length ? { added, deleted } : null;
   }
 
   async function htmlAtCommitOid(oid) {
@@ -231,6 +266,7 @@ import DOMPurify from "dompurify";
         return;
       }
       pullFromEditor();
+      void store.hydrateImageElements(activeDraftId, editor, viewingOid);
       syncDirtyBodyFromCurrent();
       if (pendingMerge || hasConflict || htmlHasAlignConflict(currentHtml)) syncMergeStatus();
       refreshStatusLeft();
@@ -245,6 +281,16 @@ import DOMPurify from "dompurify";
       persistActiveDraftSoon();
     },
     placeholder: editor.dataset.placeholder || "Paste or type your text here. Double-click to import.",
+  });
+  tipTap.on("kindredImage", async ({ file }) => {
+    try {
+      if (!activeDraftId) await createDraft("");
+      const src = await store.addImage(activeDraftId, file);
+      tipTap.chain().focus().setImage({ src, alt: file.name }).run();
+      await store.hydrateImageElements(activeDraftId, editor);
+    } catch (err) {
+      setStatus(String(err.message || err), "danger");
+    }
   });
   bindToolbar(tipTap, toolbarEl);
 
@@ -402,31 +448,13 @@ import DOMPurify from "dompurify";
 
   function statsBlocksOf(doc) {
     return (doc.content || [])
-      .map((node) => {
-        if (node.type === "paragraph") return nodePlainText(node).replace(/\u00a0/g, " ");
-        if (node.type === "bulletList" || node.type === "orderedList" || node.type === "table") {
-          return textblocksOf(node)
-            .map((block) => block.trim())
-            .filter(Boolean)
-            .join(" ");
-        }
-        return textblocksOf(node)
-          .map((block) => block.trim())
-          .filter(Boolean)
-          .join(" ");
-      })
+      .map((node) => nodePlainText(node).replace(/\u00a0/g, " "))
       .filter((block) => block.trim());
   }
 
   function statsCharacterBlocksOf(doc) {
     return (doc.content || [])
-      .map((node) => {
-        if (node.type === "paragraph") return nodePlainText(node).replace(/\u00a0/g, " ");
-        return textblocksOf(node)
-          .map((block) => block.trim())
-          .filter(Boolean)
-          .join("");
-      })
+      .map((node) => nodePlainText(node).replace(/\u00a0/g, " "))
       .filter((block) => block.trim());
   }
 
@@ -962,6 +990,7 @@ import DOMPurify from "dompurify";
           currentPlain: "",
           highlight: null,
           markedHtml: "",
+          imageDiffs: null,
         });
       }
       if (unresolved) {
@@ -975,6 +1004,7 @@ import DOMPurify from "dompurify";
         setHtml(tipTap, currentHtml || "<p></p>", { emitUpdate: false });
       }
       currentText = getPlain(tipTap);
+      void store.hydrateImageElements(activeDraftId, editor, viewingOid);
       syncOverlayFromState();
     } finally {
       rendering = false;

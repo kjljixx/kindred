@@ -7,6 +7,7 @@ const VOLUME = "kindred";
   const ROOT = "/texts";
   const AUTHOR = { name: "kindred", email: "kindred@local" };
   const TEXT_FILE = "text.html";
+  const ASSETS_DIR = "assets";
   const TRACKED = [TEXT_FILE, "meta.json"];
   const TITLE_FILE = "title.txt";
   const BRANCH_ACCESS_FILE = "branch-access.json";
@@ -226,6 +227,84 @@ const VOLUME = "kindred";
 
   async function writeText(path, text) {
     await pfs.writeFile(path, text ?? "", "utf8");
+  }
+
+  function assetPathFromReference(reference) {
+    const match = /^kindred-image:(assets\/[a-f0-9]{64}\.[a-z0-9]+)$/i.exec(String(reference || ""));
+    return match ? match[1] : null;
+  }
+
+  function assetReferences(html) {
+    const refs = new Set();
+    const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
+    for (const image of doc.body.querySelectorAll("img[src]")) {
+      const path = assetPathFromReference(image.getAttribute("src"));
+      if (path) refs.add(path);
+    }
+    return [...refs];
+  }
+
+  function imageExtension(file) {
+    const fromType = {
+      "image/avif": "avif",
+      "image/gif": "gif",
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/svg+xml": "svg",
+      "image/webp": "webp",
+    }[String(file?.type || "").toLowerCase()];
+    if (fromType) return fromType;
+    const match = /\.([a-z0-9]+)$/i.exec(String(file?.name || ""));
+    return match ? match[1].toLowerCase() : "png";
+  }
+
+  async function addImage(id, file) {
+    if (!file || !String(file.type || "").startsWith("image/")) {
+      throw new Error("Choose an image file");
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const dir = textDir(id);
+    const path = `${ASSETS_DIR}/${hash}.${imageExtension(file)}`;
+    await ensureDir(`${dir}/${ASSETS_DIR}`);
+    if (!(await pathExists(`${dir}/${path}`))) {
+      await pfs.writeFile(`${dir}/${path}`, bytes);
+      await flush();
+    }
+    return `kindred-image:${path}`;
+  }
+
+  async function hydrateImageElements(id, root, oid = null) {
+    if (!id || !root) return;
+    const dir = textDir(id);
+    const images = [...root.querySelectorAll("img[src^='kindred-image:']")];
+    await Promise.all(images.map(async (image) => {
+      const path = assetPathFromReference(image.getAttribute("src"));
+      if (!path || image.dataset.kindredAssetLoaded === path) return;
+      try {
+        let bytes;
+        if (oid) ({ blob: bytes } = await git.readBlob({ fs, dir, oid, filepath: path }));
+        else bytes = await pfs.readFile(`${dir}/${path}`);
+        image.src = URL.createObjectURL(new Blob([bytes]));
+        image.dataset.kindredAssetLoaded = path;
+      } catch (err) {
+        console.warn("kindred: image asset unavailable", path, err);
+      }
+    }));
+  }
+
+  async function copyAssetsFromOid(dir, oid, html) {
+    for (const path of assetReferences(html)) {
+      if (await pathExists(`${dir}/${path}`)) continue;
+      try {
+        const { blob } = await git.readBlob({ fs, dir, oid, filepath: path });
+        await ensureDir(`${dir}/${ASSETS_DIR}`);
+        await pfs.writeFile(`${dir}/${path}`, blob);
+      } catch {
+        // Asset may live on another merge side, or be a malformed legacy reference.
+      }
+    }
   }
 
   async function readText(path, fallback = "") {
@@ -483,6 +562,12 @@ const VOLUME = "kindred";
       } catch (err) {
         console.warn("kindred: git add failed", filepath, err);
       }
+    }
+    try {
+      const assets = await pfs.readdir(`${dir}/${ASSETS_DIR}`);
+      for (const name of assets.sort()) await git.add({ fs, dir, filepath: `${ASSETS_DIR}/${name}` });
+    } catch {
+      // Draft has no images yet.
     }
   }
 
@@ -805,6 +890,7 @@ const VOLUME = "kindred";
     const snap = await readFilesAtOid(dir, oid);
     const prev = await readWorkingFiles(id);
     const body = textHtmlFromEditor(snap.html || snap.text || "");
+    await copyAssetsFromOid(dir, oid, body);
     await writeWorkingFiles(dir, {
       ...prev,
       html: body,
@@ -2789,6 +2875,9 @@ const VOLUME = "kindred";
       theirsBranch
     );
 
+    await copyAssetsFromOid(dir, oursOid, text.mergedText);
+    await copyAssetsFromOid(dir, theirsOid, text.mergedText);
+
     const prev = await readWorkingFiles(id);
     const mergedState = {
       ...prev,
@@ -2945,6 +3034,8 @@ const KindredGitStore = {
   formatHunksFromDiff,
   reviewWorkingTree,
   dumpFsTree,
+  addImage,
+  hydrateImageElements,
   DEFAULT_CHAT_TITLE,
 };
 
