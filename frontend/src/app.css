@@ -736,6 +736,10 @@ button.pane-title {
   background: #75720c;
 }
 
+.editor-toolbar button:not(.is-active) mark {
+  color: var(--color-text);
+}
+
 .editor .ProseMirror a {
   color: hsl(207 90% 70%);
   text-decoration: underline;
