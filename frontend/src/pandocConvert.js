@@ -1,8 +1,6 @@
-// Prefer vendored wasm under /static; CDN hosts are fallbacks only.
+// Pandoc is loaded on demand from the application bundle only.
 const WASM_CANDIDATES = [
-  "/static/pandoc.wasm",
-  "https://unpkg.com/pandoc-wasm@1.1.0/src/pandoc.wasm",
-  "https://pandoc.org/app/pandoc.wasm",
+  "/static/pandoc.wasm?v=1.1.0",
 ];
 
 /** @type {Promise<{ convert: Function }> | null} */
@@ -27,7 +25,7 @@ async function fetchWasmBinary() {
   }
   throw new Error(
     `Failed to load pandoc.wasm (${errors.join("; ")}). ` +
-      "Place a copy at /static/pandoc.wasm or check network access to unpkg.",
+      "Place a copy at /static/pandoc.wasm.",
   );
 }
 

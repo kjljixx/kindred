@@ -316,6 +316,7 @@ def reflect_chat_stream(
   temperature: float | None = None,
   max_tokens: int = 40000,
   purpose: str = "reflection",
+  _cost_out: dict[str, float] | None = None,
 ) -> Any:
   """Yield text deltas from a LiteLLM Responses request.
 
@@ -325,6 +326,8 @@ def reflect_chat_stream(
   accepts the common variants.
   """
   if is_human_model(model):
+    if _cost_out is not None:
+      _cost_out["cost"] = 0.0
     yield _prompt_human(_format_prompt_payload(prompt), role="chat")
     return
 
@@ -344,10 +347,27 @@ def reflect_chat_stream(
     kwargs["instructions"] = instructions
   if temperature is not None:
     kwargs["temperature"] = temperature
+  final_response: Any = None
   for event in litellm.responses(**kwargs):
+    if isinstance(event, dict):
+      if event.get("type") in ("response.completed", "response.done") or "response" in event:
+        final_response = event.get("response") or event
+    else:
+      event_type = getattr(event, "type", "")
+      if event_type in ("response.completed", "response.done") or hasattr(event, "response"):
+        final_response = getattr(event, "response", None) or event
     delta = _response_stream_delta(event)
     if delta:
       yield delta
+
+  if _cost_out is not None:
+    cost = 0.0
+    if final_response is not None:
+      try:
+        cost = float(litellm.completion_cost(completion_response=final_response) or 0.0)
+      except Exception:
+        cost = 0.0
+    _cost_out["cost"] = cost
 
 
 def _response_stream_delta(event: Any) -> str:

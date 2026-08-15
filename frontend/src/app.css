@@ -983,36 +983,36 @@ button.pane-title {
 }
 
 .clr-picker {
-  border-top-left-radius: var(--radius-2);
-  border-top-right-radius: var(--radius-2);
-  border-bottom-left-radius: var(--radius-2);
-  border-bottom-right-radius: var(--radius-2);
-  background-color: var(--color-bg-raised);
+  border-top-left-radius: var(--radius-2) !important;
+  border-top-right-radius: var(--radius-2) !important;
+  border-bottom-left-radius: var(--radius-2) !important;
+  border-bottom-right-radius: var(--radius-2) !important;
+  background-color: var(--color-bg-raised) !important;
 }
 
 .clr-close {
-  background: var(--color-accent);
-  color: var(--color-on-accent);
-  border: none;
-  border-radius: var(--radius-1);
-  padding: var(--space-3) var(--space-5);
-  margin-right: 10px;
-  margin-bottom: 10px;
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-size-2);
-  margin-left: 0;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
+  background: var(--color-accent) !important;
+  color: var(--color-on-accent) !important;
+  border: none !important;
+  border-radius: var(--radius-1) !important;
+  padding: var(--space-3) var(--space-5) !important;
+  margin-right: 10px !important;
+  margin-bottom: 10px !important;
+  cursor: pointer !important;
+  font: inherit !important;
+  font-size: var(--font-size-2) !important;
+  margin-left: 0 !important;
+  flex-shrink: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
 }
 
 .clr-dark input.clr-color {
-  background-color: var(--color-bg);
-  border-radius: var(--radius-2);
-  border-color: var(--color-border-strong);
+  background-color: var(--color-bg) !important;
+  border-radius: var(--radius-2) !important;
+  border-color: var(--color-border-strong) !important;
 }
 
 .editor .tiptap,

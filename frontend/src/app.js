@@ -18,8 +18,8 @@ import {
   mergeCleanEditsIntoMarked,
   stripKindredProtocol,
 } from "./tiptapEditor.js";
-import { preloadPandoc, importFileToHtml, htmlToExportBlob, EXPORT_FORMATS } from "./pandocConvert.js";
-import { KindredGitStore } from "./gitStore.js";
+import { loadColoris, loadHtmlDiff } from "./optionalAssets.js";
+import { warmPopularGoogleFonts } from "./fontCatalog.js";
 import { alignTwoWay } from "./docAlign.js";
 import { htmlToDoc, nodePlainText, normalizeDoc } from "./kindredSchema.js";
 import { marked } from "marked";
@@ -30,7 +30,44 @@ import DOMPurify from "dompurify";
   const DIFF_INSERT = 1;
   const DIFF_DELETE = -1;
   const SAVE_DEBOUNCE_MS = 250;
-  const store = KindredGitStore;
+  let store = null;
+  const storeReady = import("./gitStore.js").then(async ({ KindredGitStore }) => {
+    store = KindredGitStore;
+    await store.init();
+    return store;
+  });
+  const EXPORT_FORMATS = [
+    { id: "docx", label: "DOCX" },
+    { id: "md", label: "Markdown" },
+    { id: "html", label: "HTML" },
+    { id: "txt", label: "Plain text" },
+    { id: "pdf", label: "PDF" },
+  ];
+  let pandocModulePromise = null;
+
+  function loadPandocModule() {
+    if (!pandocModulePromise) pandocModulePromise = import("./pandocConvert.js");
+    return pandocModulePromise;
+  }
+
+  function warmPandocAfterStartup() {
+    const warm = () => {
+      if ("requestIdleCallback" in window) {
+        window.requestIdleCallback(() => {
+          void loadPandocModule().then(({ preloadPandoc }) => preloadPandoc());
+        });
+      } else {
+        void loadPandocModule().then(({ preloadPandoc }) => preloadPandoc());
+      }
+    };
+    window.setTimeout(warm, 3000);
+  }
+
+  function warmPopularFontsAfterIdle() {
+    const warm = () => warmPopularGoogleFonts();
+    if ("requestIdleCallback" in window) window.requestIdleCallback(warm, { timeout: 5000 });
+    else window.setTimeout(warm, 1000);
+  }
 
   const editor = document.getElementById("editor");
   const toolbarEl = document.getElementById("editor-toolbar");
@@ -266,7 +303,7 @@ import DOMPurify from "dompurify";
         return;
       }
       pullFromEditor();
-      void store.hydrateImageElements(activeDraftId, editor, viewingOid);
+      if (store) void store.hydrateImageElements(activeDraftId, editor, viewingOid);
       syncDirtyBodyFromCurrent();
       if (pendingMerge || hasConflict || htmlHasAlignConflict(currentHtml)) syncMergeStatus();
       refreshStatusLeft();
@@ -293,6 +330,11 @@ import DOMPurify from "dompurify";
     }
   });
   bindToolbar(tipTap, toolbarEl);
+  resetEditorState({ text: "" });
+  requestAnimationFrame(() => tipTap?.commands.focus());
+  toolbarEl.querySelector(".toolbar-color")?.addEventListener("pointerdown", () => {
+    void loadColoris().catch((error) => console.warn("Color picker failed to load:", error));
+  }, { once: true });
 
   const stashChatKeptSelection = () => {
     if (!tipTap) return;
@@ -557,11 +599,11 @@ import DOMPurify from "dompurify";
       // Dirty review → working tree (theirs). Live merge → base branch (ours).
       html = dirtyReviewing ? htmlTakingTheirs(html) : htmlTakingOurs(html);
       dirtyHtml = html;
-      dirtyText = store.htmlToPlain(html);
+      dirtyText = store ? store.htmlToPlain(html) : stripHtml(html);
       return;
     }
     dirtyHtml = html;
-    dirtyText = currentText || store.htmlToPlain(html);
+    dirtyText = currentText || (store ? store.htmlToPlain(html) : stripHtml(html));
   }
 
   function refreshStatusLeft() {
@@ -833,6 +875,7 @@ import DOMPurify from "dompurify";
       return findDraft(activeDraftId);
     }
     if (!(text || "").length) return null;
+    await storeReady;
     const draft = await createDraft(text);
     syncRightPane();
     updateCommitBtn();
@@ -1299,6 +1342,7 @@ import DOMPurify from "dompurify";
 
   async function setDirtyEditView(mode) {
     if (mode !== "Text" && mode !== "Diff") return;
+    if (mode === "Diff") await loadHtmlDiff();
     // Leaving Review must win over the pending-merge lock: review hunks look like
     // unresolved conflicts but are not a live merge conflict.
     if (dirtyReviewing) {
@@ -2380,6 +2424,7 @@ import DOMPurify from "dompurify";
         dirtyReviewing = false;
         await refreshCommits();
       }
+      const { importFileToHtml } = await loadPandocModule();
       const html = stripKindredProtocol(await importFileToHtml(file));
       suppressEditorUpdate = true;
       try {
@@ -2458,6 +2503,7 @@ import DOMPurify from "dompurify";
       let slowTimer = setTimeout(() => {
         setStatus("exporting... please be patient, pandoc may be downloading...");
       }, 3000);
+      const { htmlToExportBlob } = await loadPandocModule();
       const { blob, format } = await htmlToExportBlob(
         exportHtml,
         formatId || "docx",
@@ -3205,14 +3251,13 @@ import DOMPurify from "dompurify";
 
   (async () => {
     try {
-      if (!store) throw new Error("gitStore failed to load");
       setStatus("Loading drafts...");
-      await store.init();
+      await storeReady;
       await refreshDraftList();
       updateMeta();
-      resetEditorState({ text: "" });
       setStatus("");
-      preloadPandoc();
+      warmPopularFontsAfterIdle();
+      warmPandocAfterStartup();
     } catch (err) {
       console.error(err);
       setStatus(String(err.message || err), "danger");

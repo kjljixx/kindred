@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +70,7 @@ async def api_chat(body: ChatRequest) -> StreamingResponse:
       sel = None
       if body.selection is not None:
         sel = {"from": body.selection.from_, "to": body.selection.to}
+      cost_out: dict[str, float] = {}
       reply = ""
       for delta in chat_draft_stream(
         draft_text=body.draft_text,
@@ -77,10 +79,12 @@ async def api_chat(body: ChatRequest) -> StreamingResponse:
         selection=sel,
         conflict_context=body.conflict_context,
         model=body.model,
+        _cost_out=cost_out,
       ):
         reply += delta
         emit({"type": "delta", "delta": delta})
-      emit({"type": "done", "reply": reply, "cost": 0.0})
+      cost = float(cost_out.get("cost", 0.0))
+      emit({"type": "done", "reply": reply, "cost": cost})
     except Exception as exc:  # noqa: BLE001 — surface LM/runtime errors to UI
       emit({"type": "error", "detail": str(exc)})
 
@@ -103,7 +107,12 @@ def index() -> FileResponse:
   index_path = STATIC_DIR / "index.html"
   if not index_path.is_file():
     raise HTTPException(status_code=404, detail="UI not found")
-  return FileResponse(index_path)
+  index_html = index_path.read_text(encoding="utf-8")
+  stylesheet = re.search(r'<link rel="stylesheet" crossorigin href="([^"]+\.css)">', index_html)
+  headers = {}
+  if stylesheet:
+    headers["Link"] = f'<{stylesheet.group(1)}>; rel=preload; as=style; fetchpriority=high'
+  return FileResponse(index_path, headers=headers)
 
 
 if STATIC_DIR.is_dir():

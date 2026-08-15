@@ -4,6 +4,24 @@ import { resolve } from "node:path";
 export default defineConfig({
   base: "/static/",
   publicDir: "public",
+  plugins: [
+    {
+      name: "stylesheet-before-entry-module",
+      transformIndexHtml: {
+        order: "post",
+        handler(html) {
+          const stylesheetFirst = html.replace(
+            /\s*(<script type="module" crossorigin src="[^"]+"><\/script>)\s*(<link rel="stylesheet" crossorigin href="[^"]+">)/,
+            "\n  $2\n  $1",
+          );
+          return stylesheetFirst.replace(
+            /(<link rel="stylesheet" crossorigin href="([^"]+\.css)">)/,
+            '<link rel="preload" href="$2" as="style" fetchpriority="high">\n  $1',
+          );
+        },
+      },
+    },
+  ],
   build: {
     outDir: resolve(__dirname, "../src/kindred/static/dist"),
     emptyOutDir: true,

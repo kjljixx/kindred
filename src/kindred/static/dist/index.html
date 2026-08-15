@@ -4,13 +4,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>kindred</title>
-  <link rel="stylesheet" href="/static/coloris.min.css" />
+  <meta name="color-scheme" content="dark" />
+  <title>kindred</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:ital,wght@0,100..900;1,100..900&family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/static/assets/index-BOfB6j-g.js"></script>
-  <link rel="stylesheet" crossorigin href="/static/assets/index-B_8Bu40j.css">
+  <link rel="preload" href="/static/assets/index-on1-GjjD.css" as="style" fetchpriority="high">
+  <link rel="stylesheet" crossorigin href="/static/assets/index-on1-GjjD.css">
+  <script type="module" crossorigin src="/static/assets/index-Csn5E9Ln.js"></script>
 </head>
 
 <body>
@@ -142,22 +143,7 @@
       <span id="status" class="status-left"></span>
       <span id="meta" class="status-right"></span>
     </footer>
-  </div>
-  <script src="/static/htmldiff.js"></script>
-  <script src="/static/coloris.min.js"></script>
-  <script>
-    Coloris({
-      el: "[data-color-input]",
-      wrap: false,
-      theme: "default",
-      themeMode: "dark",
-      alpha: false,
-      format: "hex",
-      focusInput: false,
-      closeButton: true,
-      closeLabel: "Done",
-    });
-  </script>
+  </div>
 </body>
 
 </html>

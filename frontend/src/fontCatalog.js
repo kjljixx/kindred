@@ -71,6 +71,10 @@ function latinCatalog() {
 
 export const TOP_FONTS = PINNED_TOP;
 
+export function warmPopularGoogleFonts() {
+  for (const name of latinCatalog().top) loadGoogleFont(name);
+}
+
 
 function makeOptionButton(name, { selected = false } = {}) {
   const btn = document.createElement("button");
@@ -227,9 +231,6 @@ export function mountFontFamilyPicker(selectEl) {
       trigger.focus();
     }
   };
-
-  // Prefetch faces for popular fonts so the top list previews correctly.
-  for (const name of top) loadGoogleFont(name);
 
   trigger.addEventListener("click", onTriggerClick);
   panel.addEventListener("click", onPanelClick);
