@@ -625,7 +625,7 @@ import DOMPurify from "dompurify";
   }
 
   function refreshStatusLeft() {
-    const { words, chars, sentences, paragraphs } = countStats(dirtyHtml);
+    const { words, chars, sentences, paragraphs } = countStats(isViewingHistory() ? currentHtml : dirtyHtml);
     const selected = selectionStats();
     const counts = [
       formatStat(selected?.words, words, "word"),
