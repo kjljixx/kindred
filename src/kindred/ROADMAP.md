@@ -10,7 +10,6 @@ TODO
 Chat
 - Fix long json string after a suggestion becomes invalidated
 - threads and side chats
-- Keyboard shortcut for chat box
 - Make streaming less laggy
 
 Settings

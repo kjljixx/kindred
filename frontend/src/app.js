@@ -511,7 +511,7 @@ import DOMPurify from "dompurify";
   function countStats(html) {
     const doc = htmlToDoc(html || "<p></p>");
     const raw = statsBlocksOf(doc).join("\n\n");
-    const chars = statsCharacterBlocksOf(doc).join("\n\n").length;
+    const chars = statsCharacterBlocksOf(doc).join("").length;
     return countStatsText(raw, chars);
   }
 
