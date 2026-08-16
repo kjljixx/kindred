@@ -2098,7 +2098,13 @@ import DOMPurify from "dompurify";
   function renderVerifiedTextAnchor(anchor, action, chatIndex, token) {
     const location = resolveTextAnchor(anchor);
     if (!location) {
-      return '<span class="suggestion-static">Suggestion location could not be verified: ' + escapeHtml(JSON.stringify(anchor)) + '</span>';
+      if (action === "suggest") {
+        return '<span class="chat-suggestion chat-suggestion-replaced">' +
+          '<span class="suggestion-static suggestion-current">' + escapeHtml(anchor.original || "") + '</span>' +
+          '<span class="suggestion-static suggestion-replacement">' + escapeHtml(anchor.replacement || "") + '</span>' +
+          '</span>';
+      }
+      return '<span class="chat-mention suggestion-static">' + escapeHtml(anchor.original || "") + '</span>';
     }
     const attributes =
       'data-start="' + location.start + '" data-end="' + location.end +
