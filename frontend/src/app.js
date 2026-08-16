@@ -835,6 +835,22 @@ import DOMPurify from "dompurify";
     return chatRecords.find((c) => c.id === activeChatId) || null;
   }
 
+  async function focusOrStartChat() {
+    if (!activeDraftId) return;
+  
+    if (paneMode !== "chat") {
+      setPaneMode("chat");
+    }
+  
+    if (chatView === "thread" && activeChatId) {
+      if (!chatInput.disabled) {
+        chatInput.focus();
+      }
+    } else {
+      await createChat();
+    }
+  }
+
   async function persistActiveDraftNow() {
     if (!activeDraftId || isViewingHistory()) return;
     try {
@@ -3272,6 +3288,57 @@ import DOMPurify from "dompurify";
   composerSepObserver.observe(feedbackEl);
   composerSepObserver.observe(chatComposer);
   window.addEventListener("resize", () => syncComposerSeparators());
+
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      if (e.altKey || e.shiftKey) return;
+  
+      const key = e.key.toLowerCase();
+
+      if (key === "[") {
+        if (activeDraftId) {
+          e.preventDefault();
+          e.stopPropagation();
+          setPaneMode("chat");
+        }
+      }
+      else if (key === "]") {
+        if (activeDraftId) {
+          e.preventDefault();
+          e.stopPropagation();
+          setPaneMode("git");
+        }
+      }
+      else if (key === "enter") {
+        if (activeDraftId && !gitBusy && !isViewingHistory() && hasExportableBody()) {
+          e.preventDefault();
+          e.stopPropagation();
+          void runGit(manualCommit);
+        }
+      }
+      else if (key === "/") {
+        e.preventDefault();
+        e.stopPropagation();
+        void focusOrStartChat();
+      }
+      else if (key === "i") {
+        e.preventDefault();
+        e.stopPropagation();
+        void runGit(() => setDirtyEditView("Text"));
+      } else if (key === "o") {
+        e.preventDefault();
+        e.stopPropagation();
+        void runGit(() => setDirtyEditView("Diff"));
+      } else if (key === "p") {
+        e.preventDefault();
+        e.stopPropagation();
+        void runGit(enterDirtyReview);
+      }
+    },
+    true
+  );
 
   (async () => {
     try {

@@ -6,12 +6,16 @@ TODO
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
 - Lists & Tables
 - Left margin for editor
+- Keyboard shortcut for switching viewing modes
 
 Chat
 - Fix long json string after a suggestion becomes invalidated
 - threads and side chats
 - Keyboard shortcut for chat box
 - Make streaming less laggy
+
+Keyboard Shortcuts
+- Ctrl+Enter for commit
 
 Settings
 TODO
