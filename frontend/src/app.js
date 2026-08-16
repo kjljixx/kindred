@@ -2024,18 +2024,67 @@ import DOMPurify from "dompurify";
       if (matchesContext(start)) matches.push(start);
     }
   
-    if (matches.length === 0) return null;
     if (matches.length === 1) {
       return { start: matches[0], end: matches[0] + original.length, original };
     }
-  
-    if (!hasDeclaredStart) return null;
-  
-    const closestStart = matches.reduce((best, curr) =>
-      Math.abs(curr - declaredStart) < Math.abs(best - declaredStart) ? curr : best
-    );
-  
-    return { start: closestStart, end: closestStart + original.length, original };
+
+    if (matches.length > 1 && hasDeclaredStart) {
+      const closestStart = matches.reduce((best, curr) =>
+        Math.abs(curr - declaredStart) < Math.abs(best - declaredStart) ? curr : best
+      );
+
+      return { start: closestStart, end: closestStart + original.length, original };
+    } 
+
+    const stripPunct = (s) => String(s || "")
+      .replace(/[^\p{L}\p{N}\s]/gu, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const cleanPrefix = stripPunct(prefix);
+    const cleanSuffix = stripPunct(suffix);
+
+    const matchesRelaxed = (start) => {
+      if (currentText.slice(start, start + original.length) !== original) return false;
+      const textBefore = stripPunct(currentText.slice(Math.max(0, start - prefix.length - 24), start));
+      const textAfter = stripPunct(currentText.slice(start + original.length, start + original.length + suffix.length + 24));
+      const prefixOk = !cleanPrefix || textBefore.endsWith(cleanPrefix) || cleanPrefix.endsWith(textBefore);
+      const suffixOk = !cleanSuffix || textAfter.startsWith(cleanSuffix) || cleanSuffix.startsWith(textAfter);
+      return prefixOk && suffixOk;
+    };
+
+    const fallbackMatches = [];
+    for (let start = currentText.indexOf(original); start !== -1; start = currentText.indexOf(original, start + 1)) {
+      if (matchesRelaxed(start)) fallbackMatches.push(start);
+    }
+
+    if (fallbackMatches.length === 1) {
+      return { start: fallbackMatches[0], end: fallbackMatches[0] + original.length, original };
+    }
+
+    if (fallbackMatches.length > 1) {
+      const closestStart = hasDeclaredStart
+        ? fallbackMatches.reduce((best, curr) => Math.abs(curr - declaredStart) < Math.abs(best - declaredStart) ? curr : best)
+        : fallbackMatches[0];
+      return { start: closestStart, end: closestStart + original.length, original };
+    }
+
+    const rawMatches = [];
+    for (let start = currentText.indexOf(original); start !== -1; start = currentText.indexOf(original, start + 1)) {
+      rawMatches.push(start);
+    }
+
+    if (rawMatches.length === 1) {
+      return { start: rawMatches[0], end: rawMatches[0] + original.length, original };
+    }
+
+    if (rawMatches.length > 1) {
+      const closestStart = hasDeclaredStart
+        ? rawMatches.reduce((best, curr) => Math.abs(curr - declaredStart) < Math.abs(best - declaredStart) ? curr : best)
+        : rawMatches[0];
+      return { start: closestStart, end: closestStart + original.length, original };
+    }
+
+    return null;
   }
 
   function applyChatSuggestion(start, end, replacement, expectedText) {
