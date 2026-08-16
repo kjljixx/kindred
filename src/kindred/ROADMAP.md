@@ -1,16 +1,17 @@
 Editor
 TODO
 - Add highlighting text - improve
-- Add Links - improve
+- Add Links - improve - make links auto-generate w/ regex when pasted
 - Image support - improve
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
 - Lists & Tables
-- Fix char count not reflecting past commits
+- Left margin for editor
 
 Chat
 - Fix long json string after a suggestion becomes invalidated
 - threads and side chats
 - Keyboard shortcut for chat box
+- Make streaming less laggy
 
 Settings
 TODO

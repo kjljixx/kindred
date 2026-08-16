@@ -880,6 +880,7 @@ import DOMPurify from "dompurify";
     branches = ["main"];
     hasConflict = false;
     pendingMerge = null;
+    dirtyViewMode = "Text";
     dirtyReviewing = false;
     workingDirty = !!(text || "").trim();
     paneMode = "chat";
@@ -2717,6 +2718,10 @@ import DOMPurify from "dompurify";
     await flushSaveTimer();
     const idx = commits.findIndex((c) => c.oid === oid);
     if (idx < 0) return;
+    if (!isViewingHistory()) {
+      await loadHtmlDiff();
+      dirtyViewMode = "Diff";
+    }
     viewingOid = oid;
     activeCommitIndex = idx;
     const [snap, prev] = await Promise.all([
