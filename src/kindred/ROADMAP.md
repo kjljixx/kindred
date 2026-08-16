@@ -8,7 +8,6 @@ TODO
 - Left margin for editor
 
 Chat
-- Fix long json string after a suggestion becomes invalidated
 - threads and side chats
 - Make streaming less laggy
 
