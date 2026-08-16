@@ -304,17 +304,6 @@ function fillConflictBtn(btn, html) {
   btn.textContent = "\u00a0";
 }
 
-/** Clipboard → plain text so tags stay literal (not TipTap structure). */
-function pasteTextFromClipboard(dataTransfer) {
-  if (!dataTransfer) return null;
-  const plain = dataTransfer.getData("text/plain");
-  if (plain) return plain;
-  const html = dataTransfer.getData("text/html");
-  if (!html) return null;
-  const body = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-  return (body ? body[1] : html).trim();
-}
-
 /**
  * Text body for TipTap is always getHTML() output.
  * Do not sniff clipboard/source HTML into the document schema.
@@ -1512,25 +1501,7 @@ export function createKindredEditor({
           return openModifiedClickLink(event);
         },
       },
-      handlePaste(view, event) {
-        const text = pasteTextFromClipboard(event.clipboardData);
-        if (text == null) return false;
-        const { state, dispatch } = view;
-        const { from, to } = state.selection;
-        dispatch(state.tr.insertText(text, from, to));
-        return true;
-      },
-      handleDrop(view, event, _slice, moved) {
-        if (moved) return false;
-        const text = pasteTextFromClipboard(event.dataTransfer);
-        if (text == null) return false;
-        const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
-        if (!coords) return false;
-        event.preventDefault();
-        const { state, dispatch } = view;
-        dispatch(state.tr.insertText(text, coords.pos));
-        return true;
-      },
+      // Remove handlePaste and handleDrop to let TipTap parse HTML & paragraphs natively
     },
     onUpdate: ({ editor: ed }) => {
       onUpdate?.(ed);

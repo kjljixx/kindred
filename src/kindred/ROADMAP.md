@@ -3,9 +3,14 @@ TODO
 - Add highlighting text - improve
 - Add Links - improve
 - Image support - improve
-- AI generated titles - show1 titles at top of editor/make sure they are not just one letter
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
 - Lists & Tables
+- Fix char count not reflecting past commits
+
+Chat
+- Fix long json string after a suggestion becomes invalidated
+- threads and side chats
+- Keyboard shortcut for chat box
 
 Settings
 TODO
@@ -19,10 +24,6 @@ TODO
 - Staging
 - Look at git-appraisal implementation for comments (or maybe tiptap comments are possible?)
 
-Keyboard Shortcuts
-TODO
-- VSCode like keybinds for editor - Ctrl + L to copy sentence, Alt Up/Down to move sentence, Ctrl + D to highlight next occurrence, auto syntax highlighting
-
 Import/Export
 TODO
 - From Google Drive
@@ -32,3 +33,6 @@ TODO
 Syncing
 TODO
 - Sync to central server
+
+Layout
+- Collapsible Sidebar
