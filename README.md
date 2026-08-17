@@ -1,6 +1,8 @@
 # Kindred
 
-Local writing GUI with draft-scoped AI chat. Edit drafts in the browser; chat calls an LLM via LiteLLM when a provider API key is set.
+Document editor in the browser that uses Git for version control and integrates AI. The goal is an app that is Google Docs mixed with VSCode mixed with Pastebin.
+
+See [HELP.md](https://github.com/kjljixx/kindred/edit/main/HELP.md) for general website usage instructions
 
 ## Install
 
@@ -38,8 +40,6 @@ kindred --gui
 Opens http://127.0.0.1:8765/ by default. Drafts and history live in the browser (IndexedDB).
 
 Useful flags: `--host`, `--port`, `--no-browser`.
-
-See HELP.md for general website usage instructions
 
 ## Notes
 
