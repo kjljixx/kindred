@@ -31,7 +31,8 @@
     "html2pdf.js": "^0.14.0",
     "isomorphic-git": "^1.27.1",
     "marked": "^15.0.7",
-    "pandoc-wasm": "^1.1.0"
+    "pandoc-wasm": "^1.1.0",
+    "docshift": "^0.0.73"
   },
   "devDependencies": {
     "vite": "^6.2.0"

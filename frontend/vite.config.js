@@ -37,7 +37,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ["pandoc-wasm"],
+    exclude: ["pandoc-wasm", "docshift"],
   },
   server: {
     proxy: {

@@ -3,6 +3,8 @@ const WASM_CANDIDATES = [
   "/static/pandoc.wasm?v=1.1.0",
 ];
 
+import { importDocxToHtml, htmlToDocxBlob as docshiftHtmlToDocxBlob } from './docshiftConvert.js';
+
 /** @type {Promise<{ convert: Function }> | null} */
 let pandocPromise = null;
 
@@ -328,6 +330,12 @@ export async function importFileToHtml(file, filename) {
   if (!from) {
     return importRawTextToHtml(blob);
   }
+  
+  // Use docshift for DOCX import (better client-side support)
+  if (from === "docx") {
+    return importDocxToHtml(file);
+  }
+  
   const { convert } = await ensurePandoc();
   // WASI-safe key: original names with spaces/unicode can break path lookup.
   const safeName = `import.${(name.split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]+/g, "") || "bin"}`;
@@ -497,6 +505,13 @@ export function exportFormatById(formatId) {
  */
 export async function htmlToExportBlob(html, formatId = "docx") {
   const format = exportFormatById(formatId);
+  
+  // Use docshift for DOCX export (better client-side support)
+  if (format.id === "docx") {
+    const blob = await docshiftHtmlToDocxBlob(html);
+    return { blob, format };
+  }
+  
   // WASI-safe output key; caller picks the download filename separately.
   const outName = `export.${format.ext}`;
   const { convert } = await ensurePandoc();
@@ -545,6 +560,5 @@ export async function htmlToExportBlob(html, formatId = "docx") {
  */
 export async function htmlToDocxBlob(html, filename = "export.docx") {
   void filename;
-  const { blob } = await htmlToExportBlob(html, "docx");
-  return blob;
+  return docshiftHtmlToDocxBlob(html);
 }
