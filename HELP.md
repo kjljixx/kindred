@@ -24,7 +24,7 @@ Editor Keyboard Shortcuts
 - Alt+[ and Alt+]: Shift the current selection left or right by one organizational unit. For example, if you have a sentence selected, Alt+[ will select the previous sentence, and Alt+] will select the next sentence. If you have a paragraph selected, Alt+[ will select the previous paragraph, and Alt+] will select the next paragraph.
 - Ctrl+[: Focus chat pane
 - Ctrl+]: Focus editor pane
-- Ctrl+I: Switch to Text view mode
-- Ctrl+O: Switch to Diff view mode
-- Ctrl+P: Switch to Review view mode
+- Ctrl+8: Switch to Text view mode
+- Ctrl+9: Switch to Diff view mode
+- Ctrl+0: Switch to Review view mode
 - Ctrl+/: Focus chat input box

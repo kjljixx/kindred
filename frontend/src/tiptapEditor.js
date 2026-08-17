@@ -1432,6 +1432,10 @@ export function bindToolbar(editor, toolbarEl) {
   editor.view.dom.addEventListener("pointerdown", onEditorPointerDown);
   editor.on("focus", onEditorFocus);
   document.addEventListener("pointerdown", onDocPointerDown);
+  const onTransaction = () => {
+    syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
+  };
+  editor.on("transaction", onTransaction);
   const onSel = () => {
     applyLockedFormatting();
     syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);

@@ -3608,15 +3608,15 @@ import DOMPurify from "dompurify";
         e.stopPropagation();
         void focusOrStartChat();
       }
-      else if (key === "i") {
+      else if (key === "8") {
         e.preventDefault();
         e.stopPropagation();
         void runGit(() => setDirtyEditView("Text"));
-      } else if (key === "o") {
+      } else if (key === "9") {
         e.preventDefault();
         e.stopPropagation();
         void runGit(() => setDirtyEditView("Diff"));
-      } else if (key === "p") {
+      } else if (key === "0") {
         e.preventDefault();
         e.stopPropagation();
         void runGit(enterDirtyReview);
