@@ -197,6 +197,13 @@ const KindredTable = Table.extend({
       },
     };
   },
+  addNodeView() {
+    return ({ node, getPos, editor }) => {
+      const View = this.options.View;
+      const safeGetPos = typeof getPos === "function" ? getPos : () => 0;
+      return new View(node, this.options.cellMinWidth, editor.view, safeGetPos);
+    };
+  },
 });
 
 /**
@@ -305,7 +312,8 @@ export function kindredContentExtensions() {
     }),
     Image,
     KindredTable.configure({
-      resizable: false,
+      resizable: true,
+      lastColumnResizable: false
     }),
     TableRow,
     TableCell,

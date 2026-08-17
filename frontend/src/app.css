@@ -1080,6 +1080,23 @@ button.pane-title {
   filter: sepia(1) saturate(3) hue-rotate(300deg);
 }
 
+/* Active column resize handle line */
+.editor .ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: var(--color-accent-soft);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Cursor when hovering over a column border */
+.editor .ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
 /* Base editor table styling (no header rows) */
 .editor .ProseMirror table {
   border-collapse: collapse;
