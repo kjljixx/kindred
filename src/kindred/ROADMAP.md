@@ -1,7 +1,6 @@
 Editor
 TODO
 - Add highlighting text - improve
-- Add Links - improve - make links auto-generate w/ regex when pasted
 - Image support - improve
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
 - Lists & Tables
