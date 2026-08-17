@@ -1,3 +1,9 @@
+Priorities
+- More highlight colors
+- Lists & Tables
+- Collapsible side bar and/or bottom bar for mobile and thin screen
+- Google Drive
+
 Editor
 TODO
 - Add highlighting text - improve
@@ -7,7 +13,8 @@ TODO
 - Left margin for editor
 
 Chat
-- threads and side chats
+- Thinking Summaries
+- RAG message stacks
 - Make streaming less laggy
 
 Settings

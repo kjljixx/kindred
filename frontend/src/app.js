@@ -582,9 +582,9 @@ import DOMPurify from "dompurify";
   function selectionStats() {
     if (!tipTap || tipTap.state.selection.empty) return null;
     const { from, to } = tipTap.state.selection;
-    return countStatsText(
-      tipTap.state.doc.textBetween(from, to, "\n\n").replace(/\u00a0/g, " ")
-    );
+    const raw = tipTap.state.doc.textBetween(from, to, "\n\n").replace(/\u00a0/g, " ");
+    const chars = raw.replace(/\t/g, "").replace(/\n/g, "").length;
+    return countStatsText(raw, chars);
   }
 
   function formatStat(selected, total, singular) {

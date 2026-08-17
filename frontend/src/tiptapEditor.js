@@ -25,6 +25,15 @@ function createKeptCaretWidget() {
   return el;
 }
 
+const TabIndent = Extension.create({
+  name: "tabIndent",
+  addKeyboardShortcuts() {
+    return {
+      Tab: () => this.editor.commands.insertContent("\t")
+    };
+  }
+});
+
 /** Fake selection/caret while toolbar or chat holds focus. */
 const KeptSelection = Extension.create({
   name: "keptSelection",
@@ -1484,6 +1493,7 @@ export function createKindredEditor({
     autofocus: true,
     extensions: [
       ...kindredContentExtensions(),
+      TabIndent,
       ConflictParagraph,
       KeptSelection,
       SelectionUnits,
