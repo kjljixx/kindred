@@ -2,7 +2,7 @@
 
 Document editor in the browser that uses Git for version control and integrates AI. The goal is an app that is Google Docs mixed with VSCode mixed with Pastebin.
 
-See [HELP.md](https://github.com/kjljixx/kindred/edit/main/HELP.md) for general website usage instructions
+See [HELP.md](https://github.com/kjljixx/kindred/main/HELP.md) for general website usage instructions
 
 ## Install
 
