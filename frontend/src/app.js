@@ -582,7 +582,7 @@ import DOMPurify from "dompurify";
 
   function statsCharacterBlocksOf(doc) {
     return (doc.content || [])
-      .map((node) => nodePlainText(node).replace(/\u00a0/g, " "))
+      .map((node) => nodePlainText(node).replace(/\u00a0/g, " ").replace(/\t/g, "").replace(/\r?\n/g, ""))
       .filter((block) => block.trim());
   }
 
@@ -600,7 +600,7 @@ import DOMPurify from "dompurify";
     let paragraphs = 0;
     if (trimmed) {
       paragraphs = trimmed.split(/\n\s*\n/).filter((p) => p.trim()).length || 1;
-      sentences = trimmed.split(/(?<=[.!?])\s+/).filter((s) => s.trim()).length;
+      sentences = trimmed.split(/(?<=[.!?])\s+|\n\s*\n/).filter((s) => s.trim()).length;
     }
     return { words, chars, sentences, paragraphs };
   }
