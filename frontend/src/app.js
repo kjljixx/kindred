@@ -488,6 +488,7 @@ import DOMPurify from "dompurify";
   }
 
   function updateCommitBtn() {
+    console.log("update commit btn", workingDirty);
     const unresolved = unresolvedMergeConflictCount(currentHtml) > 0;
     const finishMerge = !!(pendingMerge && !unresolved);
     // Dirty review: Commit stays enabled; unresolved hunks auto-keep Dirty on commit.
@@ -518,6 +519,9 @@ import DOMPurify from "dompurify";
       workingDirty = true;
     }
     updateCommitBtn();
+    if (paneMode === "git") {
+      renderGitPane();
+    }
   }
 
   function syncPaneModeTabs() {
@@ -905,7 +909,9 @@ import DOMPurify from "dompurify";
     try {
       await store.saveWorkingTree(activeDraftId, snapshotState());
       await refreshDraftList();
+      console.log("working dirty", workingDirty);
       await refreshWorkingDirty();
+      console.log("working dirty after refresh", workingDirty);
     } catch (err) {
       console.warn("kindred: failed to save draft", err);
     }
@@ -1033,6 +1039,7 @@ import DOMPurify from "dompurify";
   }
 
   function showGitPane() {
+    console.log("git pane update");
     draftsHeading.hidden = true;
     draftListEl.hidden = true;
     if (chatHeading) chatHeading.hidden = true;
@@ -2497,6 +2504,7 @@ import DOMPurify from "dompurify";
       const textActive = !dirtyReviewing && dirtyViewMode === "Text";
       const diffActive = !dirtyReviewing && dirtyViewMode === "Diff";
       const reviewActive = atDirty && dirtyReviewing;
+      console.log("renderGitPane", workingDirty);
       const reviewDisabled =
         modesLocked || !!viewingOid || (!workingDirty && !dirtyReviewing);
       const dirtyBtn = (label, action, active, disabled) =>

@@ -4,6 +4,10 @@
 - Ctrl-click a link in the editor to open and switch to it in a new tab
 
 Chat Pane:
+- There are 3 main constructs in the chat pane:
+- 1. Chats: These are, just like any other chat app, where you talk to an LLM. Right click in the chat lists page to rename chats
+- 2. Stacks: These are a collection of messages that are sent to the LLM within a chat. This is an organizational construct to keep messages within a chat organized. For example, if in a single chat, you're talking about several different ideas, after each idea you can start a new stack to keep the messages about that idea together. Right click Stack names to rename them
+- 3. Messages: These are the individual messages that you send to the LLM; LLM messages can contain Mentions and Suggestions within your document. You can Retry responses and Edit your previous messages.
 - Ctrl+Enter = Send message and finish stack
 
 Git Pane:

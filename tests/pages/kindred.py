@@ -199,6 +199,7 @@ class KindredPage:
 
   def enter_dirty_review(self, *, expect_conflicts: bool = True) -> None:
     self._click_dirty_mode("review")
+    self.wait.until(lambda d: self.dirty_mode_active("review"))
     if expect_conflicts:
       self.wait_for_conflicts()
     self._wait_git_idle()
