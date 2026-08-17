@@ -462,7 +462,8 @@ button.pane-title {
 }
 
 .draft-item-title-input,
-.git-row-title-input {
+.git-row-title-input,
+.stack-title-input {
   display: block;
   width: 80%;
   margin: 0;
@@ -1338,6 +1339,45 @@ button.pane-title {
   margin: var(--space-2) 0;
 }
 
+.feedback:has(.chat-stack-header) {
+  scroll-padding-top: var(--space-8);
+}
+
+.chat-stack-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-3) 0;
+  padding-left: var(--space-3);
+}
+
+.chat-stack-header {
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid transparent;
+  box-shadow: 0 -24px 0 0 var(--color-bg);
+}
+
+.chat-stack-header.is-stuck {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.chat-stack-header button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.chat-stack-header svg {
+  flex-shrink: 0;
+}
+
+.chat-stack.is-collapsed .chat-stack-header svg {
+  transform: rotate(-90deg);
+}
+
 .chat-thread {
   display: flex;
   flex-direction: column;
@@ -1514,7 +1554,7 @@ button.pane-title {
   resize: none;
   max-height: var(--size-composer-max);
   overflow-y: auto;
-  padding: var(--space-5) var(--space-6);
+  padding: var(--space-4) var(--space-5);
   border: none;
   background: var(--color-bg-inset);
   color: var(--color-text);

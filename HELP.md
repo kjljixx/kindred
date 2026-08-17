@@ -1,6 +1,13 @@
 - Right-Clicking a draft in the "Drafts" pane allows you to rename that draft without entering it
 - Similarly, right-clicking a head commit and right-clicking a branch name allows you to rename it
+- Actually, right-clicking basically anything that has a name allows you to rename it
 - Ctrl-click a link in the editor to open and switch to it in a new tab
+
+Chat Pane:
+- Ctrl+Enter = Send message and finish stack
+
+Git Pane:
+- Ctrl+Enter: Commit changes
 
 Working Changes Viewing Modes
 - Text: Just your average text editor. Type, delete, copy, paste, etc. Use for normal writing and editing text.
@@ -13,7 +20,6 @@ Editor Keyboard Shortcuts
 - Alt+[ and Alt+]: Shift the current selection left or right by one organizational unit. For example, if you have a sentence selected, Alt+[ will select the previous sentence, and Alt+] will select the next sentence. If you have a paragraph selected, Alt+[ will select the previous paragraph, and Alt+] will select the next paragraph.
 - Ctrl+[: Focus chat pane
 - Ctrl+]: Focus editor pane
-- Ctrl+Enter: Commit changes
 - Ctrl+I: Switch to Text view mode
 - Ctrl+O: Switch to Diff view mode
 - Ctrl+P: Switch to Review view mode

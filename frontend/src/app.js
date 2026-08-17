@@ -78,6 +78,7 @@ import DOMPurify from "dompurify";
   const chatBackBtn = document.getElementById("chat-back-btn");
   const chatHeading = document.getElementById("chat-heading");
   const newChatBtn = document.getElementById("new-chat-btn");
+  const finishStackBtn = document.getElementById("finish-stack-btn");
   const paneModeCluster = document.getElementById("pane-mode-cluster");
   const gitPane = document.getElementById("git-pane");
   const gitDirtySection = document.getElementById("git-dirty-section");
@@ -156,9 +157,56 @@ import DOMPurify from "dompurify";
   let renameSource = null; // "header" | "list"
   /** @type {{ kind: "commit"|"branch", key: string } | null} */
   let renamingGit = null;
+  let renamingStackIndex = null;
 
   let tipTap = null;
   let suppressEditorUpdate = false;
+
+  function getChatStacks(chat) {
+    if (!chat) return [];
+    if (!chat.stacks) {
+      chat.stacks = [
+        {
+          id: `stack-${Date.now()}`,
+          title: "Stack 1",
+          collapsed: false,
+          messages: Array.isArray(chat.messages) ? chat.messages : [],
+        },
+      ];
+    }
+    return chat.stacks;
+  }
+
+  function getActiveStack(chat) {
+    const stacks = getChatStacks(chat);
+    if (!stacks.length) {
+      const s = {
+        id: `stack-${Date.now()}`,
+        title: "Stack 1",
+        collapsed: false,
+        messages: [],
+      };
+      stacks.push(s);
+      return s;
+    }
+    return stacks[stacks.length - 1];
+  }
+
+  async function finishStackRename(stackIndex, value, { cancel = false } = {}) {
+    if (renamingStackIndex !== stackIndex) return;
+    renamingStackIndex = null;
+    const chat = activeChat();
+    if (chat) {
+      const stacks = getChatStacks(chat);
+      if (stacks && stacks[stackIndex] && !cancel) {
+        const trimmed = String(value ?? "").trim();
+        stacks[stackIndex].title = trimmed || `Stack ${stackIndex + 1}`;
+        chat.updatedAt = Date.now();
+        await persistChatsNow();
+      }
+    }
+    renderChatThread();
+  }
 
   function syncOverlayFromState() {
     if (!tipTap) return;
@@ -810,6 +858,7 @@ import DOMPurify from "dompurify";
         activeChatId = null;
         chatView = "list";
       }
+      chatRecords.forEach((c) => getChatStacks(c));
     } catch (err) {
       console.warn("kindred: failed to load chats", err);
       chatRecords = [];
@@ -1790,6 +1839,10 @@ import DOMPurify from "dompurify";
 
   function resizeTextarea(el) {
     if (!el) return;
+    if (!el.value) {
+      el.style.height = "";
+      return;
+    }
     const maxPx = Number.parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue("--size-composer-max"),
     ) || 128;
@@ -1818,6 +1871,11 @@ import DOMPurify from "dompurify";
     }
     chatInput.disabled = !enabled;
     chatSend.disabled = !enabled || !(chatInput.value || "").trim();
+    if (finishStackBtn) {
+      const active = activeChat();
+      const currentStack = active ? getActiveStack(active) : null;
+      finishStackBtn.disabled = !enabled || !currentStack?.messages?.length;
+    }
     chatComposer.setAttribute("aria-busy", chatBusy ? "true" : "false");
     requestAnimationFrame(() => syncComposerSeparators());
   }
@@ -1845,6 +1903,12 @@ import DOMPurify from "dompurify";
     } else {
       chatComposer.classList.remove("is-separated");
     }
+
+    const containerTop = feedbackEl.getBoundingClientRect().top;
+    feedbackEl.querySelectorAll(".chat-stack-header").forEach((header) => {
+      const headerTop = header.getBoundingClientRect().top;
+      header.classList.toggle("is-stuck", headerTop <= containerTop + 8);
+    });
   }
 
   function bindComposerScrollWatch(el) {
@@ -1895,40 +1959,102 @@ import DOMPurify from "dompurify";
     }
   }
 
+  async function finishCurrentStack() {
+    const chat = activeChat();
+    if (!chat || chatBusy) return;
+    const active = getActiveStack(chat);
+    if (!active.messages.length) return;
+    active.collapsed = true;
+    const nextNum = getChatStacks(chat).length + 1;
+    chat.stacks.push({
+      id: `stack-${Date.now()}`,
+      title: `Stack ${nextNum}`,
+      collapsed: false,
+      messages: [],
+    });
+    chat.updatedAt = Date.now();
+    renderChatThread({ stickBottom: true });
+    syncChatComposer();
+    await persistChatsNow();
+  }
+
   function renderChatThread({ stickBottom = false } = {}) {
     const chat = activeChat();
     if (!chat) {
       feedbackEl.innerHTML = `<p class="muted">Select or create a chat.</p>`;
       return;
     }
-    const msgs = Array.isArray(chat.messages) ? chat.messages : [];
+    const stacks = getChatStacks(chat);
     const scrollTop = feedbackEl.scrollTop;
     const wasAtBottom = scrollAreaAtBottom(feedbackEl);
-    if (!msgs.length) {
+    const hasAnyMessages = stacks.some((s) => s.messages && s.messages.length > 0);
+    if (!hasAnyMessages) {
       feedbackEl.innerHTML = `<p class="chat-thread-empty">Ask anything about the draft.</p>`;
     } else {
       feedbackEl.innerHTML =
         `<div class="chat-thread" role="log" aria-live="polite">` +
-        msgs
-          .map((m, index) => {
-            const role = m.role === "assistant" ? "assistant" : "user";
-            const label = role === "assistant" ? "Coach" : "You";
-            const editing = editingChatMessage === index && role === "user";
-            const body = editing
-              ? `<div class="chat-message-edit" data-chat-edit="${index}" contenteditable="true" role="textbox" aria-label="Edit message">${escapeHtml(m.content || "")}</div>`
-              : role === "assistant"
-                ? renderCoachReply(m.content || "", index)
-                : escapeHtml(m.content || "");
-            const actions = editing
-              ? `<div class="chat-msg-actions"><button type="button" class="btn btn-tertiary" data-chat-action="save-edit" data-index="${index}">Send</button><button type="button" class="btn btn-tertiary" data-chat-action="cancel-edit">Cancel</button></div>`
-              : role === "assistant"
-                ? `<div class="chat-msg-actions"><button type="button" class="btn btn-tertiary" data-chat-action="retry" data-index="${index}">Retry</button></div>`
-                : `<div class="chat-msg-actions"><button type="button" class="btn btn-tertiary" data-chat-action="edit" data-index="${index}">Edit</button></div>`;
-            return (
-              `<div class="chat-msg ${role}" aria-label="${label}">` +
-              `<div class="chat-msg-body">${body}</div>${actions}` +
-              `</div>`
-            );
+        stacks
+          .map((stack, stackIdx) => {
+            const msgs = stack.messages || [];
+            const chevronSvg = `
+              <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M 2.5 4.5 L 6 8 L 9.5 4.5"
+                />
+              </svg>
+            `.trim();
+
+            const isRenaming = renamingStackIndex === stackIdx;
+            const titleHtml = isRenaming
+              ? `<input class="stack-title-input" data-stack-index="${stackIdx}" value="${escapeHtml(stack.title || `Stack ${stackIdx + 1}`)}" aria-label="Stack title" />`
+              : `<span>${escapeHtml(stack.title || `Stack ${stackIdx + 1}`)}</span>`;
+            
+            const headerHtml =
+              `<div class="chat-stack-header" data-chat-action="toggle-stack" data-stack-index="${stackIdx}">` +
+              `<button type="button" class="btn btn-tertiary" data-chat-action="toggle-stack" data-stack-index="${stackIdx}">` +
+              `${chevronSvg}${titleHtml}</span>` +
+              `</button>` +
+              `</div>`;
+            // const headerHtml =
+            //   `<div class="chat-stack-header" data-chat-action="toggle-stack" data-stack-index="${stackIdx}">` +
+            //   `<button type="button" class="btn btn-tertiary" data-chat-action="toggle-stack" data-stack-index="${stackIdx}">` +
+            //   `${chevronSvg}<span>${escapeHtml(stack.title || `Current Stack`)}</span>` +
+            //   `</button>` +
+            //   `</div>`;
+            if (stack.collapsed) {
+              return `<div class="chat-stack is-collapsed">${headerHtml}</div>`;
+            }
+            const msgsHtml = msgs
+              .map((m, index) => {
+                const role = m.role === "assistant" ? "assistant" : "user";
+                const label = role === "assistant" ? "Coach" : "You";
+                const editing =
+                  editingChatMessage?.stackIndex === stackIdx &&
+                  editingChatMessage?.msgIndex === index &&
+                  role === "user";
+                const body = editing
+                  ? `<div class="chat-message-edit" data-chat-edit-stack="${stackIdx}" data-chat-edit-msg="${index}" contenteditable="true" role="textbox" aria-label="Edit message">${escapeHtml(m.content || "")}</div>`
+                  : role === "assistant"
+                    ? renderCoachReply(m.content || "", stackIdx, index)
+                    : escapeHtml(m.content || "");
+                const actions = editing
+                  ? `<div class="chat-msg-actions"><button type="button" class="btn btn-tertiary" data-chat-action="save-edit" data-stack-index="${stackIdx}" data-msg-index="${index}">Send</button><button type="button" class="btn btn-tertiary" data-chat-action="cancel-edit">Cancel</button></div>`
+                  : role === "assistant"
+                    ? `<div class="chat-msg-actions"><button type="button" class="btn btn-tertiary" data-chat-action="retry" data-stack-index="${stackIdx}" data-msg-index="${index}">Retry</button></div>`
+                    : `<div class="chat-msg-actions"><button type="button" class="btn btn-tertiary" data-chat-action="edit" data-stack-index="${stackIdx}" data-msg-index="${index}">Edit</button></div>`;
+                return (
+                  `<div class="chat-msg ${role}" aria-label="${label}">` +
+                  `<div class="chat-msg-body">${body}</div>${actions}` +
+                  `</div>`
+                );
+              })
+              .join("");
+            return `<div class="chat-stack">${headerHtml}<div class="chat-stack-body">${msgsHtml}</div></div>`;
           })
           .join("") +
         `</div>`;
@@ -1950,6 +2076,13 @@ import DOMPurify from "dompurify";
         const selection = window.getSelection();
         selection.removeAllRanges();
         selection.addRange(range);
+      }
+      if (renamingStackIndex != null) {
+        const input = feedbackEl.querySelector(`.stack-title-input[data-stack-index="${renamingStackIndex}"]`);
+        if (input) {
+          input.focus();
+          input.select();
+        }
       }
     });
   }
@@ -2123,8 +2256,8 @@ import DOMPurify from "dompurify";
     syncOverlayFromState();
   }
 
-  function markSuggestionReplaced(chatIndex, start, end, current, replacement, token = "") {
-    const message = activeChat()?.messages?.[chatIndex];
+  function markSuggestionReplaced(stackIndex, msgIndex, start, end, current, replacement, token = "") {
+    const message = activeChat()?.stacks?.[stackIndex]?.messages?.[msgIndex];
     if (!message || message.role !== "assistant") return;
     const source = token || "[[suggest:" + start + ":" + end + "=>" + replacement + "]]";
     message.content = message.content.replace(
@@ -2144,7 +2277,7 @@ import DOMPurify from "dompurify";
     }
   }
 
-  function renderVerifiedTextAnchor(anchor, action, chatIndex, token) {
+  function renderVerifiedTextAnchor(anchor, action, stackIndex, msgIndex, token) {
     const location = resolveTextAnchor(anchor);
     if (!location) {
       if (action === "suggest") {
@@ -2169,21 +2302,21 @@ import DOMPurify from "dompurify";
       'data-chat-action="current" data-preview="current" ' + attributes + '>' +
       escapeHtml(location.original) + '</button>' +
       '<button type="button" class="btn btn-tertiary" data-chat-action="suggest" ' +
-      'data-preview="replacement" data-chat-index="' + chatIndex + '" ' +
+      'data-preview="replacement" data-stack-index="' + stackIndex + '" data-msg-index="' + msgIndex + '" ' +
       'data-replacement="' + escapeHtml(anchor.replacement) + '" ' + attributes + '>' +
       escapeHtml(anchor.replacement) + '</button></span>';
   }
 
-  function renderCoachReply(content, chatIndex) {
+  function renderCoachReply(content, stackIndex, msgIndex) {
     const anchored = String(content || "")
       .replace(/\[\[mention:(\{[\s\S]*?\})\]\]/g, (token, payload) => {
         const anchor = parseTextAnchor(payload);
-        return anchor ? renderVerifiedTextAnchor(anchor, "mention", chatIndex, token) : token;
+        return anchor ? renderVerifiedTextAnchor(anchor, "mention", stackIndex, msgIndex, token) : token;
       })
       .replace(/\[\[suggest:(\{[\s\S]*?\})\]\]/g, (token, payload) => {
         const anchor = parseTextAnchor(payload);
         return anchor && typeof anchor.replacement === "string"
-          ? renderVerifiedTextAnchor(anchor, "suggest", chatIndex, token)
+          ? renderVerifiedTextAnchor(anchor, "suggest", stackIndex, msgIndex, token)
           : token;
       });
     return renderMarkdown(anchored).replace(/\[\[mention:(\d+):(\d+)\]\]/g, (_, start, end) =>
@@ -2193,7 +2326,7 @@ import DOMPurify from "dompurify";
     ).replace(/\[\[suggest:(\d+):(\d+)=(?:>|&gt;)([\s\S]*?)\]\]/g, (_, start, end, replacement) =>
       `<span class="chat-suggestion">` +
       `<button type="button" class="btn btn-tertiary suggestion-current" data-chat-action="current" data-preview="current" data-start="${start}" data-end="${end}">${escapeHtml(currentText.slice(Number(start), Number(end)))}</button>` +
-      `<button type="button" class="btn btn-tertiary" data-chat-action="suggest" data-preview="replacement" data-chat-index="${chatIndex}" data-start="${start}" data-end="${end}" data-replacement="${escapeHtml(replacement)}">${escapeHtml(replacement)}</button>` +
+      `<button type="button" class="btn btn-tertiary" data-chat-action="suggest" data-preview="replacement" data-stack-index="${stackIndex}" data-msg-index="${msgIndex}" data-start="${start}" data-end="${end}" data-replacement="${escapeHtml(replacement)}">${escapeHtml(replacement)}</button>` +
       `</span>`
     ).replace(/\[\[replaced:(?!\d+:\d+:)([^\]]*?)=(?:>|&gt;)([\s\S]*?)\]\]/g, (_, current, replacement) =>
       '<span class="chat-suggestion chat-suggestion-replaced">' +
@@ -2227,7 +2360,14 @@ import DOMPurify from "dompurify";
       lastBranch: currentBranchName || "main",
       createdAt: now,
       updatedAt: now,
-      messages: [],
+      stacks: [
+        {
+          id: `stack-${now}`,
+          title: "Stack 1",
+          collapsed: false,
+          messages: [],
+        },
+      ],
     };
     chatRecords = [chat, ...chatRecords];
     activeChatId = id;
@@ -2244,6 +2384,7 @@ import DOMPurify from "dompurify";
     activeChatId = id;
     chat.lastBranch = currentBranchName || chat.lastBranch || "main";
     chat.updatedAt = Date.now();
+    getChatStacks(chat);
     chatView = "thread";
     composerDraft = "";
     await persistChatsNow();
@@ -3006,37 +3147,53 @@ import DOMPurify from "dompurify";
       });
   }
 
-  async function sendChat({ retryUserIndex = null, overrideText = null } = {}) {
+  async function sendChat({ retryStackIndex = null, retryUserIndex = null, overrideText = null } = {}) {
     if (!canUseComposer()) return;
     const chat = activeChat();
     if (!chat) return;
-    const retrying = Number.isInteger(retryUserIndex);
-    const source = retrying ? chat.messages?.[retryUserIndex] : null;
-    if (retrying && (!source || source.role !== "user")) return;
-    const text = String(retrying ? (overrideText ?? source.content) : (chatInput?.value || composerDraft || "")).trim();
+    const isRetrying = Number.isInteger(retryStackIndex) && Number.isInteger(retryUserIndex);
+    const targetStack = isRetrying ? chat.stacks?.[retryStackIndex] : getActiveStack(chat);
+    const source = isRetrying ? targetStack?.messages?.[retryUserIndex] : null;
+    if (isRetrying && (!source || source.role !== "user")) return;
+    const text = String(
+      isRetrying ? (overrideText ?? source.content) : (chatInput?.value || composerDraft || "")
+    ).trim();
     if (!text) return;
 
     pullFromEditor();
-    const draftText = retrying
+    const draftText = isRetrying
       ? String(source.draftText ?? "")
       : tipTap ? getPlain(tipTap) : currentText || "";
-    const selection = retrying
+    const selection = isRetrying
       ? source.selection || { from: 0, to: 0 }
       : caretSelectionOffsets();
-    const prior = retrying
-      ? chat.messages.slice(0, retryUserIndex)
-      : Array.isArray(chat.messages) ? chat.messages.slice() : [];
-    const userMsg = {
-      role: "user",
-      content: text,
-      draftText,
-      selection,
-    };
-    if (!chat.messages.some((m) => m.role === "user") &&
-        (!chat.title || chat.title === (store.DEFAULT_CHAT_TITLE || "New Chat"))) {
+
+    let priorMessages = [];
+    if (isRetrying) {
+      const priorInStack = targetStack.messages.slice(0, retryUserIndex);
+      const stacksBefore = chat.stacks.slice(0, retryStackIndex);
+      priorMessages = [
+        ...stacksBefore.flatMap((s) => s.messages || []),
+        ...priorInStack,
+      ];
+      targetStack.messages = [
+        ...priorInStack,
+        { role: "user", content: text, draftText, selection },
+        { role: "assistant", content: "" },
+      ];
+    } else {
+      priorMessages = getChatStacks(chat).flatMap((s) => s.messages || []);
+      const userMsg = { role: "user", content: text, draftText, selection };
+      targetStack.messages.push(userMsg, { role: "assistant", content: "" });
+    }
+
+    const allMsgs = getChatStacks(chat).flatMap((s) => s.messages || []);
+    if (
+      !allMsgs.some((m) => m.role === "user" && m.content !== text) &&
+      (!chat.title || chat.title === (store.DEFAULT_CHAT_TITLE || "New Chat"))
+    ) {
       chat.title = chatTitleFromMessage(text);
     }
-    chat.messages = [...prior, userMsg, { role: "assistant", content: "" }];
     chat.lastBranch = currentBranchName || chat.lastBranch || "main";
     chat.updatedAt = Date.now();
     composerDraft = "";
@@ -3057,7 +3214,7 @@ import DOMPurify from "dompurify";
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: currentModel,
-          messages: apiMessagesFromChat(prior),
+          messages: apiMessagesFromChat(priorMessages),
           message: text,
           draft_text: draftText,
           selection,
@@ -3071,7 +3228,7 @@ import DOMPurify from "dompurify";
           typeof detail === "string" ? detail : res.statusText || "Chat failed"
         );
       }
-      const pendingReply = chat.messages[chat.messages.length - 1];
+      const pendingReply = targetStack.messages[targetStack.messages.length - 1];
       const data = await readChatStream(res, (delta) => {
         pendingReply.content += delta;
         renderChatThread({ stickBottom: true });
@@ -3087,7 +3244,8 @@ import DOMPurify from "dompurify";
       renderChatThread({ stickBottom: true });
       await persistChatsNow();
     } catch (err) {
-      chat.messages = prior;
+      targetStack.messages.pop();
+      if (!isRetrying) targetStack.messages.pop();
       renderChatThread({ stickBottom: true });
       setStatus(String(err.message || err), "danger");
       await persistChatsNow();
@@ -3099,6 +3257,10 @@ import DOMPurify from "dompurify";
 
   newChatBtn?.addEventListener("click", () => {
     void createChat();
+  });
+
+  finishStackBtn?.addEventListener("click", () => {
+    void finishCurrentStack();
   });
 
   chatBackBtn?.addEventListener("click", () => {
@@ -3165,14 +3327,30 @@ import DOMPurify from "dompurify";
   });
 
   feedbackEl.addEventListener("click", (e) => {
+    if (e.target.closest(".stack-title-input")) return;
     const button = e.target.closest("[data-chat-action]");
     if (!button || !feedbackEl.contains(button) || chatBusy) return;
     const action = button.dataset.chatAction;
-    const index = Number(button.dataset.index);
+    const stackIndex = Number(button.dataset.stackIndex);
+    const msgIndex = Number(button.dataset.msgIndex);
     const anchor = button.dataset.anchor
       ? parseTextAnchor(decodeURIComponent(button.dataset.anchor))
       : null;
     const location = anchor ? resolveTextAnchor(anchor) : null;
+
+    if (action === "toggle-stack") {
+      const chat = activeChat();
+      if (chat) {
+        const stacks = getChatStacks(chat);
+        if (stacks[stackIndex]) {
+          stacks[stackIndex].collapsed = !stacks[stackIndex].collapsed;
+          renderChatThread();
+          void persistChatsNow();
+        }
+      }
+      return;
+    }
+
     if (["mention", "current", "suggest"].includes(action) && !location) {
       setStatus("Suggestion could not be safely located in the current draft.", "warn");
       return;
@@ -3190,7 +3368,8 @@ import DOMPurify from "dompurify";
       );
       if (replaced) {
         markSuggestionReplaced(
-          Number(button.dataset.chatIndex),
+          Number(button.dataset.stackIndex),
+          Number(button.dataset.msgIndex),
           location.start,
           location.end,
           current,
@@ -3198,21 +3377,24 @@ import DOMPurify from "dompurify";
           decodeURIComponent(button.dataset.suggestionToken || "")
         );
       }
-    } else if (action === "edit" && Number.isInteger(index)) {
-      editingChatMessage = index;
+    } else if (action === "edit" && Number.isInteger(stackIndex) && Number.isInteger(msgIndex)) {
+      editingChatMessage = { stackIndex, msgIndex };
       renderChatThread();
     } else if (action === "cancel-edit") {
       editingChatMessage = null;
       renderChatThread();
-    } else if (action === "save-edit" && Number.isInteger(index)) {
-      const input = feedbackEl.querySelector('[data-chat-edit="' + index + '"]');
+    } else if (action === "save-edit" && Number.isInteger(stackIndex) && Number.isInteger(msgIndex)) {
+      const input = feedbackEl.querySelector(
+        `[data-chat-edit-stack="${stackIndex}"][data-chat-edit-msg="${msgIndex}"]`
+      );
       const value = String(input?.textContent || "").trim();
-      if (value) void sendChat({ retryUserIndex: index, overrideText: value });
-    } else if (action === "retry" && Number.isInteger(index)) {
-      const messages = activeChat()?.messages || [];
-      for (let i = index - 1; i >= 0; i--) {
+      if (value) void sendChat({ retryStackIndex: stackIndex, retryUserIndex: msgIndex, overrideText: value });
+    } else if (action === "retry" && Number.isInteger(stackIndex) && Number.isInteger(msgIndex)) {
+      const stack = activeChat()?.stacks?.[stackIndex];
+      const messages = stack?.messages || [];
+      for (let i = msgIndex - 1; i >= 0; i--) {
         if (messages[i]?.role === "user") {
-          void sendChat({ retryUserIndex: i });
+          void sendChat({ retryStackIndex: stackIndex, retryUserIndex: i });
           break;
         }
       }
@@ -3236,20 +3418,42 @@ import DOMPurify from "dompurify";
   });
 
   feedbackEl.addEventListener("contextmenu", (e) => {
+    const header = e.target.closest(".chat-stack-header");
+    if (header && feedbackEl.contains(header) && !chatBusy) {
+      e.preventDefault();
+      renamingStackIndex = Number(header.dataset.stackIndex);
+      renderChatThread();
+      return;
+    }
     const message = e.target.closest(".chat-msg.user");
     if (!message || !feedbackEl.contains(message) || chatBusy) return;
-    const messages = [...feedbackEl.querySelectorAll(".chat-msg")];
-    const index = messages.indexOf(message);
-    if (index < 0) return;
+    const stackEl = message.closest(".chat-stack");
+    const stackIndex = Number(stackEl?.querySelector("[data-stack-index]")?.dataset.stackIndex);
+    const messages = [...(stackEl?.querySelectorAll(".chat-msg") || [])];
+    const msgIndex = messages.indexOf(message);
+    if (msgIndex < 0 || !Number.isInteger(stackIndex)) return;
     e.preventDefault();
-    editingChatMessage = index;
+    editingChatMessage = { stackIndex, msgIndex };
     renderChatThread();
   });
 
   feedbackEl.addEventListener("keydown", (e) => {
+    const input = e.target.closest(".stack-title-input");
+    if (input && feedbackEl.contains(input)) {
+      const stackIdx = Number(input.dataset.stackIndex);
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void finishStackRename(stackIdx, input.value);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        void finishStackRename(stackIdx, input.value, { cancel: true });
+      }
+      return;
+    }
     const edit = e.target.closest(".chat-message-edit");
     if (!edit || !feedbackEl.contains(edit) || chatBusy) return;
-    const index = Number(edit.dataset.chatEdit);
+    const stackIndex = Number(edit.dataset.chatEditStack);
+    const msgIndex = Number(edit.dataset.chatEditMsg);
     if (e.key === "Escape") {
       e.preventDefault();
       editingChatMessage = null;
@@ -3257,9 +3461,21 @@ import DOMPurify from "dompurify";
     } else if (e.key === "Enter") {
       e.preventDefault();
       const value = String(edit.textContent || "").trim();
-      if (value && Number.isInteger(index)) {
-        void sendChat({ retryUserIndex: index, overrideText: value });
+      if (value && Number.isInteger(stackIndex) && Number.isInteger(msgIndex)) {
+        void sendChat({ retryStackIndex: stackIndex, retryUserIndex: msgIndex, overrideText: value });
       }
+    }
+  });
+
+  feedbackEl.addEventListener("focusout", (e) => {
+    const input = e.target.closest(".stack-title-input");
+    if (input && feedbackEl.contains(input)) {
+      const stackIdx = Number(input.dataset.stackIndex);
+      setTimeout(() => {
+        if (renamingStackIndex === stackIdx) {
+          void finishStackRename(stackIdx, input.value);
+        }
+      }, 0);
     }
   });
 
@@ -3367,10 +3583,16 @@ import DOMPurify from "dompurify";
         }
       }
       else if (key === "enter") {
-        if (activeDraftId && !gitBusy && !isViewingHistory() && hasExportableBody()) {
+        if (paneMode === "git" && activeDraftId && !gitBusy && !isViewingHistory() && hasExportableBody()) {
           e.preventDefault();
           e.stopPropagation();
           void runGit(manualCommit);
+        }
+        if (paneMode === "chat" && canUseComposer()) {
+          e.preventDefault();
+          e.stopPropagation();
+          void finishCurrentStack();
+          void sendChat();
         }
       }
       else if (key === "/") {

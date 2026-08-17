@@ -375,14 +375,39 @@ const VOLUME = "kindred";
     };
   }
 
+  function normalizeChatStack(stack) {
+    if (!stack || typeof stack !== "object") return null;
+    const id = String(stack.id || "").trim() || `stack-${Date.now()}`;
+    const title = String(stack.title || "").trim() || "Stack";
+    const collapsed = !!stack.collapsed;
+    const messages = Array.isArray(stack.messages)
+      ? stack.messages.map(normalizeChatMessage).filter(Boolean)
+      : [];
+    return { id, title, collapsed, messages };
+  }
+  
   function normalizeChatRecord(chat, fallbackBranch = "main") {
     if (!chat || typeof chat !== "object") return null;
     const id = String(chat.id || "").trim();
     if (!id) return null;
     const now = Date.now();
-    const messages = Array.isArray(chat.messages)
+    const rawMessages = Array.isArray(chat.messages)
       ? chat.messages.map(normalizeChatMessage).filter(Boolean)
       : [];
+    const stacks = Array.isArray(chat.stacks) && chat.stacks.length
+      ? chat.stacks.map(normalizeChatStack).filter(Boolean)
+      : [
+          {
+            id: `stack-${now}`,
+            title: "Stack 1",
+            collapsed: false,
+            messages: rawMessages,
+          },
+        ];
+    const messages = rawMessages.length
+      ? rawMessages
+      : stacks.flatMap((s) => s.messages);
+  
     return {
       id,
       title: String(chat.title || "").trim() || DEFAULT_CHAT_TITLE,
@@ -390,6 +415,7 @@ const VOLUME = "kindred";
       createdAt: Number(chat.createdAt) || now,
       updatedAt: Number(chat.updatedAt) || now,
       messages,
+      stacks,
     };
   }
 
