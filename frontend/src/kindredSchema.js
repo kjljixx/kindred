@@ -6,6 +6,7 @@ import { Extension, Mark, Node as TiptapNode, generateHTML, generateJSON } from 
 import StarterKit from "@tiptap/starter-kit";
 import Paragraph from "@tiptap/extension-paragraph";
 import Underline from "@tiptap/extension-underline";
+import Link from "@tiptap/extension-link";
 import TextAlign from "@tiptap/extension-text-align";
 import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
@@ -32,42 +33,6 @@ const Highlight = Mark.create({
   addCommands() {
     return {
       toggleHighlight: () => ({ commands }) => commands.toggleMark(this.name),
-    };
-  },
-});
-
-const Link = Mark.create({
-  name: "link",
-  inclusive: false,
-  addAttributes() {
-    return {
-      href: {},
-      target: { default: "_blank" },
-      rel: { default: "noopener noreferrer nofollow" },
-    };
-  },
-  parseHTML() {
-    return [{
-      tag: "a[href]",
-      getAttrs: (element) => {
-        const href = safeLinkHref(element.getAttribute("href"));
-        return href
-          ? {
-              href,
-              target: element.getAttribute("target") || "_blank",
-              rel: element.getAttribute("rel") || "noopener noreferrer nofollow",
-            }
-          : false;
-      },
-    }];
-  },
-  renderHTML({ HTMLAttributes }) {
-    return ["a", HTMLAttributes, 0];
-  },
-  addCommands() {
-    return {
-      setLink: (attrs) => ({ commands }) => commands.setMark(this.name, attrs),
-      unsetLink: () => ({ commands }) => commands.unsetMark(this.name),
     };
   },
 });
@@ -287,7 +252,17 @@ export function kindredContentExtensions() {
     KindredParagraph,
     Underline,
     Highlight,
-    Link,
+    Link.configure({
+      autolink: true,
+      linkOnPaste: true,
+      openOnClick: false,
+      defaultProtocol: "https",
+      HTMLAttributes: {
+        target: "_blank",
+        rel: "noopener noreferrer nofollow",
+      },
+      validate: (href) => Boolean(safeLinkHref(href)),
+    }),
     Image,
     TextStyle,
     Color,
