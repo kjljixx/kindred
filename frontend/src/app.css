@@ -324,6 +324,7 @@ body {
 .pane-title {
   color: var(--btn-tertiary-fg);
   font-size: var(--font-size-3);
+  font-weight: var(--font-weight-2);
 }
 
 button.pane-title {
