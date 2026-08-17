@@ -395,8 +395,19 @@ function alignConflictCount(html) {
   return doc.body.querySelectorAll("[data-kindred-align-ours]").length;
 }
 
+export function htmlHasTableConflict(html) {
+  return tableConflictCount(html) > 0;
+}
+
+function tableConflictCount(html) {
+  const raw = String(html || "");
+  if (!raw || !raw.includes("data-kindred-table-ours")) return 0;
+  const doc = new DOMParser().parseFromString(raw, "text/html");
+  return doc.body.querySelectorAll("[data-kindred-table-ours]").length;
+}
+
 export function unresolvedMergeConflictCount(html) {
-  return conflictMarkerCount(html) + alignConflictCount(html);
+  return conflictMarkerCount(html) + alignConflictCount(html) + tableConflictCount(html);
 }
 
 /**
@@ -433,6 +444,12 @@ export function stripKindredProtocol(html) {
     el.removeAttribute("data-kindred-align-theirs");
     el.removeAttribute("data-kindred-align-label-ours");
     el.removeAttribute("data-kindred-align-label-theirs");
+  });
+  root.querySelectorAll("[data-kindred-table-ours]").forEach((el) => {
+    el.removeAttribute("data-kindred-table-ours");
+    el.removeAttribute("data-kindred-table-theirs");
+    el.removeAttribute("data-kindred-table-label-ours");
+    el.removeAttribute("data-kindred-table-label-theirs");
   });
   return root.innerHTML;
 }
@@ -746,6 +763,63 @@ function createAlignConflictWidget(attrs, paraPos, onAction, conflictMode = "mer
   };
 }
 
+function createTablePreviewWidget(tableHtml, side) {
+  return () => {
+    const wrap = document.createElement("div");
+    wrap.className = `tableWrapper kindred-table-preview kindred-table-side-${side}`;
+    wrap.contentEditable = "false";
+    wrap.innerHTML = tableHtml || "";
+    return wrap;
+  };
+}
+
+function createTableConflictWidget(attrs, tablePos, onAction, conflictMode = "merge") {
+  return (view) => {
+    const wrap = document.createElement("div");
+    wrap.className = "merge-conflict merge-table-conflict";
+    wrap.contentEditable = "false";
+    const review = conflictMode === "review";
+
+    const oursBtn = document.createElement("button");
+    oursBtn.type = "button";
+    oursBtn.className = "merge-conflict-btn merge-conflict-ours";
+    oursBtn.title = "Keep Current table";
+    oursBtn.textContent = "Current";
+
+    const theirsBtn = document.createElement("button");
+    theirsBtn.type = "button";
+    theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
+    theirsBtn.title = review ? "Keep Dirty table" : "Keep Incoming table";
+    theirsBtn.textContent = review ? "Dirty" : "Theirs";
+
+    const setPreview = (side) => {
+      const tr = view.state.tr.setMeta(overlayKey, {
+        type: "tablePreview",
+        preview: side ? { tablePos, side } : null,
+      });
+      tr.setMeta("addToHistory", false);
+      view.dispatch(tr);
+    };
+
+    theirsBtn.addEventListener("mouseenter", () => setPreview("theirs"));
+    theirsBtn.addEventListener("mouseleave", () => setPreview(null));
+    oursBtn.addEventListener("mouseenter", () => setPreview("ours"));
+    oursBtn.addEventListener("mouseleave", () => setPreview(null));
+
+    const click = (action) => (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setPreview(null);
+      onAction?.(action, tablePos);
+    };
+    oursBtn.addEventListener("mousedown", click("ours"));
+    theirsBtn.addEventListener("mousedown", click("theirs"));
+
+    wrap.append(oursBtn, theirsBtn);
+    return wrap;
+  };
+}
+
 function appendAlignConflictDecorations(
   doc,
   decorations,
@@ -790,6 +864,96 @@ function appendAlignConflictDecorations(
   });
 }
 
+function appendTableConflictDecorations(
+  doc,
+  decorations,
+  onTableConflictAction,
+  tablePreview,
+  conflictMode = "merge"
+) {
+  doc.descendants((node, pos) => {
+    if (node.type.name !== "table") return;
+    if (!node.attrs.tableOurs || !node.attrs.tableTheirs) return;
+
+    decorations.push(
+      Decoration.widget(
+        pos,
+        createTableConflictWidget(
+          node.attrs,
+          pos,
+          onTableConflictAction,
+          conflictMode
+        ),
+        {
+          side: -1,
+          key: `table-conflict-${pos}:${conflictMode}`,
+        }
+      )
+    );
+
+    const isHoverTheirs =
+      tablePreview &&
+      tablePreview.tablePos === pos &&
+      tablePreview.side === "theirs";
+
+    if (isHoverTheirs) {
+      // Hide live (ours) table and display the incoming (theirs) table preview
+      decorations.push(
+        Decoration.node(pos, pos + node.nodeSize, {
+          style: "display: none !important;",
+        })
+      );
+      decorations.push(
+        Decoration.widget(
+          pos,
+          createTablePreviewWidget(node.attrs.tableTheirs, "theirs"),
+          {
+            side: 0,
+            key: `table-theirs-preview-${pos}`,
+          }
+        )
+      );
+    } else {
+      // Show live (ours) table with orange side styling
+      decorations.push(
+        Decoration.node(pos, pos + node.nodeSize, {
+          class: "kindred-table-conflict-node kindred-table-side-ours",
+        })
+      );
+    }
+  });
+}
+
+function createDeletedTableWidget(tableHtml) {
+  return () => {
+    const wrap = document.createElement("div");
+    wrap.className = "diff-table-del";
+    wrap.contentEditable = "false";
+    wrap.innerHTML = tableHtml || "";
+    return wrap;
+  };
+}
+
+function appendTableDiffDecorations(doc, decorations, tableDiffs) {
+  if (!tableDiffs) return;
+  if (tableDiffs.added?.length) {
+    doc.descendants((node, pos) => {
+      if (node.type.name !== "table") return;
+      decorations.push(
+        Decoration.node(pos, pos + node.nodeSize, { class: "diff-table-ins" })
+      );
+    });
+  }
+  for (const [index, html] of (tableDiffs.deleted || []).entries()) {
+    decorations.push(
+      Decoration.widget(0, createDeletedTableWidget(html), {
+        side: -1,
+        key: `deleted-table-${index}`,
+      })
+    );
+  }
+}
+
 function buildOverlayDecorations(doc, meta, diffsFn) {
   const decorations = [];
   if (!meta) return DecorationSet.empty;
@@ -821,6 +985,13 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
       meta.alignPreview,
       conflictMode
     );
+    appendTableConflictDecorations(
+      doc,
+      decorations,
+      meta.onTableConflictAction,
+      meta.tablePreview,
+      conflictMode
+    );
     return DecorationSet.create(doc, decorations);
   }
 
@@ -831,6 +1002,13 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     meta.alignPreview,
     conflictMode
   );
+  appendTableConflictDecorations(
+    doc,
+    decorations,
+    meta.onTableConflictAction,
+    meta.tablePreview,
+    conflictMode
+  );
 
   const baseline = meta.baseline || "";
   const currentPlain = meta.currentPlain || "";
@@ -838,10 +1016,15 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
   const showDiffs = meta.showDiffs !== false;
   const formatHunks = meta.formatHunks || [];
   const imageDiffs = meta.imageDiffs || null;
+  const tableDiffs = meta.tableDiffs || null;
   const hasFormat = showDiffs && formatHunks.length > 0;
   const hasImageDiffs =
     showDiffs &&
     ((imageDiffs?.added?.length || 0) + (imageDiffs?.deleted?.length || 0) > 0);
+  const hasTableDiffs =
+    showDiffs &&
+    ((tableDiffs?.added?.length || 0) + (tableDiffs?.deleted?.length || 0) > 0);
+  
   if (!diffsFn && !hasFormat && !hasImageDiffs) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
@@ -854,12 +1037,12 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
       : DecorationSet.empty;
   }
   // Empty baseline + content => whole doc is an insert (e.g. first commit).
-  if (!baseline && !currentPlain && !hl && !hasFormat && !hasImageDiffs) {
+  if (!baseline && !currentPlain && !hl && !hasFormat && !hasImageDiffs && !hasTableDiffs) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
       : DecorationSet.empty;
   }
-  if (baseline && baseline === currentPlain && !hl && !hasFormat && !hasImageDiffs) {
+  if (baseline && baseline === currentPlain && !hl && !hasFormat && !hasImageDiffs && !hasTableDiffs) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
       : DecorationSet.empty;
@@ -966,8 +1149,11 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     }
   }
 
-  if (showDiffs) appendImageDiffDecorations(doc, decorations, imageDiffs);
-
+  if (showDiffs) {
+    appendImageDiffDecorations(doc, decorations, imageDiffs);
+    appendTableDiffDecorations(doc, decorations, tableDiffs);
+  }
+  
   return DecorationSet.create(doc, decorations);
 }
 
@@ -979,6 +1165,7 @@ const KindredOverlay = Extension.create({
       diffsFn: null,
       onConflictAction: null,
       onAlignConflictAction: null,
+      onTableConflictAction: null,
     };
   },
 
@@ -1026,8 +1213,10 @@ const KindredOverlay = Extension.create({
               markedHtml: "",
               conflictMode: "merge",
               alignPreview: null,
+              tablePreview: null,
               formatHunks: [],
               imageDiffs: null,
+              tableDiffs: null,
               decorations: DecorationSet.empty,
             };
           },
@@ -1046,6 +1235,7 @@ const KindredOverlay = Extension.create({
                 conflictMode: next.conflictMode,
                 formatHunks: next.formatHunks,
                 imageDiffs: next.imageDiffs,
+                tableDiffs: next.tableDiffs,
               });
             }
             if (meta?.type === "alignPreview") {
@@ -1064,8 +1254,40 @@ const KindredOverlay = Extension.create({
                   alignPreview: next.alignPreview,
                   formatHunks: next.formatHunks,
                   imageDiffs: next.imageDiffs,
+                  tableDiffs: next.tableDiffs,
                   onConflictAction: extension.options.onConflictAction,
                   onAlignConflictAction: extension.options.onAlignConflictAction,
+                  onTableConflictAction: extension.options.onTableConflictAction,
+                },
+                extension.options.diffsFn
+              );
+            }
+            if (meta?.type === "tablePreview") {
+              next.tablePreview = meta.preview || null;
+            }
+            if (
+              meta?.type === "set" ||
+              meta?.type === "alignPreview" ||
+              meta?.type === "tablePreview" ||
+              tr.docChanged
+            ) {
+              next.decorations = buildOverlayDecorations(
+                newState.doc,
+                {
+                  baseline: next.baseline,
+                  currentPlain: next.currentPlain,
+                  highlight: next.highlight,
+                  showDiffs: next.showDiffs,
+                  conflicts: next.conflicts,
+                  conflictMode: next.conflictMode,
+                  alignPreview: next.alignPreview,
+                  tablePreview: next.tablePreview,
+                  formatHunks: next.formatHunks,
+                  imageDiffs: next.imageDiffs,
+                  tableDiffs: next.tableDiffs,
+                  onConflictAction: extension.options.onConflictAction,
+                  onAlignConflictAction: extension.options.onAlignConflictAction,
+                  onTableConflictAction: extension.options.onTableConflictAction,
                 },
                 extension.options.diffsFn
               );
@@ -1198,6 +1420,11 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
     const name = fontNameFromCssValue(fontFamilySelect.value);
     if (name) loadGoogleFont(name);
   }
+  const inTable = editor.isActive("table");
+  const tableTools = toolbarEl.querySelector("[data-table-tools]");
+  if (tableTools) {
+    tableTools.hidden = !inTable;
+  }
 }
 
 export function bindToolbar(editor, toolbarEl) {
@@ -1296,6 +1523,29 @@ export function bindToolbar(editor, toolbarEl) {
       }
     } else if (cmd === "image") {
       imageInput?.click();
+      return;
+    } else if (cmd === "table") {
+      chain.insertTable({ rows: 3, cols: 3, withHeaderRow: false }).run();
+      return;
+    }
+    else if (cmd === "addRowAfter") {
+      chain.addRowAfter().run();
+      return;
+    }
+    else if (cmd === "deleteRow") {
+      chain.deleteRow().run();
+      return;
+    }
+    else if (cmd === "addColumnAfter") {
+      chain.addColumnAfter().run();
+      return;
+    }
+    else if (cmd === "deleteColumn") {
+      chain.deleteColumn().run();
+      return;
+    }
+    else if (cmd === "deleteTable") {
+      chain.deleteTable().run();
       return;
     }
     else if (cmd === "alignLeft") chain.setTextAlign("left").run();
@@ -1489,6 +1739,7 @@ export function createKindredEditor({
   diffsFn = null,
   onConflictAction = null,
   onAlignConflictAction = null,
+  onTableConflictAction = null,
   onUpdate = null,
   placeholder = "Paste or type your text here. Double-click to import.",
 } = {}) {
@@ -1502,7 +1753,7 @@ export function createKindredEditor({
       KeptSelection,
       SelectionUnits,
       Placeholder.configure({ placeholder }),
-      KindredOverlay.configure({ diffsFn, onConflictAction, onAlignConflictAction }),
+      KindredOverlay.configure({ diffsFn, onConflictAction, onAlignConflictAction, onTableConflictAction }),
     ],
     content: ensureHtml(content),
     editorProps: {
@@ -1554,6 +1805,7 @@ export function refreshOverlay(editor, {
   conflictMode = "merge",
   formatHunks = [],
   imageDiffs = null,
+  tableDiffs = null,
 } = {}) {
   if (!editor) return;
   const conflicts = parseConflictSegments(markedHtml);
@@ -1567,5 +1819,6 @@ export function refreshOverlay(editor, {
     conflictMode: conflictMode === "review" ? "review" : "merge",
     formatHunks: conflicts ? [] : formatHunks,
     imageDiffs: conflicts ? null : imageDiffs,
+    tableDiffs: conflicts ? null : tableDiffs,
   });
 }

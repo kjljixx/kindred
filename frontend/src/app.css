@@ -1080,6 +1080,103 @@ button.pane-title {
   filter: sepia(1) saturate(3) hue-rotate(300deg);
 }
 
+/* Base editor table styling (no header rows) */
+.editor .ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: var(--space-4) 0;
+  overflow: hidden;
+  border-radius: var(--radius-1);
+}
+
+.editor .ProseMirror table td {
+  min-width: 1em;
+  border: 1px solid var(--color-border);
+  padding: var(--space-2) var(--space-3);
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.editor .ProseMirror table td > p {
+  margin: 0;
+  min-height: 1.0em;
+}
+
+.editor .ProseMirror table td.selectedCell {
+  background: var(--blue-bg);
+}
+
+/* Table conflict side tinting and preview */
+.editor .ProseMirror .kindred-table-side-ours,
+.editor .ProseMirror table.kindred-table-side-ours {
+  pointer-events: none;
+  user-select: none;
+  box-sizing: border-box;
+  border-radius: var(--radius-2);
+  background: var(--orange-bg);
+}
+
+.editor .ProseMirror .kindred-table-side-ours td,
+.editor .ProseMirror table.kindred-table-side-ours td {
+  pointer-events: none;
+  background: var(--orange-bg);
+  border-color: var(--orange-text);
+}
+
+.editor .ProseMirror .kindred-table-preview.kindred-table-side-theirs {
+  pointer-events: none;
+  box-sizing: border-box;
+  border-radius: var(--radius-2);
+  background: var(--blue-bg);
+  margin: var(--space-4) 0;
+}
+
+.editor .ProseMirror .kindred-table-preview.kindred-table-side-theirs table {
+  pointer-events: none;
+  user-select: none;
+  background: var(--blue-bg);
+}
+
+.editor .ProseMirror .kindred-table-preview.kindred-table-side-theirs td {
+  pointer-events: none;
+  border-color: var(--blue-text);
+  padding: var(--space-2) var(--space-3);
+  background: var(--blue-bg);
+}
+
+.editor .ProseMirror .kindred-table-preview.kindred-table-side-theirs td p {
+  margin: 0;
+}
+
+/* Full-table diff styling */
+.editor .ProseMirror .diff-table-ins,
+.editor .ProseMirror table.diff-table-ins {
+  background: var(--color-success-bg);
+}
+
+.editor .ProseMirror .diff-table-ins p,
+.editor .ProseMirror table.diff-table-ins p {
+  color: var(--accent-success-300);
+}
+
+.diff-table-del {
+  display: block;
+  margin: var(--space-4) 0;
+  opacity: var(--opacity-2);
+}
+
+.diff-table-del table {
+  background: var(--color-danger-bg);
+  pointer-events: none;
+}
+
+.diff-table-del td p {
+  margin: 0;
+  text-decoration: line-through;
+  color: var(--accent-danger-300);
+}
+
 /* Inline mark styles (color/font-size/font-family) beat .diff-del color. */
 
 .kindred-conflict-anchor {

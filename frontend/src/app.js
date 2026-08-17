@@ -10,6 +10,7 @@ import {
   parseConflictSegments,
   conflictMarkerCount,
   htmlHasAlignConflict,
+  htmlHasTableConflict,
   unresolvedMergeConflictCount,
   joinConflictBoth,
   formatConflictMarkers,
@@ -21,7 +22,7 @@ import {
 import { loadColoris, loadHtmlDiff } from "./optionalAssets.js";
 import { warmPopularGoogleFonts } from "./fontCatalog.js";
 import { alignTwoWay } from "./docAlign.js";
-import { htmlToDoc, nodePlainText, normalizeDoc } from "./kindredSchema.js";
+import { htmlToDoc, nodePlainText, normalizeDoc, blockToHtml } from "./kindredSchema.js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
@@ -248,6 +249,7 @@ import DOMPurify from "dompurify";
           conflictMode,
           formatHunks,
           imageDiffs: imageDiffsFromOps(ops),
+          tableDiffs: tableDiffsFromOps(ops),
         });
       } else {
         refreshOverlay(tipTap, {
@@ -259,6 +261,7 @@ import DOMPurify from "dompurify";
           conflictMode,
           formatHunks: [],
           imageDiffs: null,
+          tableDiffs: null,
         });
       }
     } finally {
@@ -292,6 +295,29 @@ import DOMPurify from "dompurify";
       } else if (op.type === "replace" && !sameImage(base, current)) {
         if (base) deleted.push(base);
         if (current) added.push(current);
+      }
+    }
+    return added.length || deleted.length ? { added, deleted } : null;
+  }
+
+  function tableDiffsFromOps(ops) {
+    const added = [];
+    const deleted = [];
+    for (const op of ops) {
+      if (op.type === "insert" && op.side === "theirs" && op.theirs?.type === "table") {
+        added.push(blockToHtml(op.theirs));
+      } else if (
+        op.type === "delete" &&
+        op.side === "theirs" &&
+        (op.base?.type === "table" || op.ours?.type === "table")
+      ) {
+        deleted.push(blockToHtml(op.base || op.ours));
+      } else if (
+        op.type === "replace" &&
+        (op.base?.type === "table" || op.theirs?.type === "table")
+      ) {
+        if (op.base?.type === "table") deleted.push(blockToHtml(op.base));
+        if (op.theirs?.type === "table") added.push(blockToHtml(op.theirs));
       }
     }
     return added.length || deleted.length ? { added, deleted } : null;
@@ -339,6 +365,7 @@ import DOMPurify from "dompurify";
     diffsFn: (a, b) => diffs(a, b),
     onConflictAction: (action, index) => handleConflictAction(action, index),
     onAlignConflictAction: (action, paraPos) => handleAlignConflictAction(action, paraPos),
+    onTableConflictAction: (action, tablePos) => handleTableConflictAction(action, tablePos),
     onUpdate: () => {
       if (
         suppressEditorUpdate ||
@@ -353,7 +380,7 @@ import DOMPurify from "dompurify";
       pullFromEditor();
       if (store) void store.hydrateImageElements(activeDraftId, editor, viewingOid);
       syncDirtyBodyFromCurrent();
-      if (pendingMerge || hasConflict || htmlHasAlignConflict(currentHtml)) syncMergeStatus();
+      if (pendingMerge || hasConflict || htmlHasAlignConflict(currentHtml) || htmlHasTableConflict(currentHtml)) syncMergeStatus();
       refreshStatusLeft();
       workingDirty = true;
       updateCommitBtn();
@@ -488,7 +515,6 @@ import DOMPurify from "dompurify";
   }
 
   function updateCommitBtn() {
-    console.log("update commit btn", workingDirty);
     const unresolved = unresolvedMergeConflictCount(currentHtml) > 0;
     const finishMerge = !!(pendingMerge && !unresolved);
     // Dirty review: Commit stays enabled; unresolved hunks auto-keep Dirty on commit.
@@ -650,6 +676,26 @@ import DOMPurify from "dompurify";
       }
       return `<p${next}>`;
     });
+
+    const tableAttr = takeTheirs
+      ? "data-kindred-table-theirs"
+      : "data-kindred-table-ours";
+    html = String(html || "").replace(/<table\b([^>]*)>[\s\S]*?<\/table>/gi, (full, attrs) => {
+      if (!/\bdata-kindred-table-(?:ours|theirs)\s*=/i.test(attrs)) return full;
+      const m = attrs.match(
+        new RegExp(`\\b${tableAttr}\\s*=\\s*(["'])([\\s\\S]*?)\\1`, "i")
+      );
+      if (m && m[2]) {
+        const decoded = m[2]
+          .replace(/&quot;/g, '"')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&');
+        return decoded;
+      }
+      return full;
+    });
+    
     return html || "<p></p>";
   }
 
@@ -909,9 +955,7 @@ import DOMPurify from "dompurify";
     try {
       await store.saveWorkingTree(activeDraftId, snapshotState());
       await refreshDraftList();
-      console.log("working dirty", workingDirty);
       await refreshWorkingDirty();
-      console.log("working dirty after refresh", workingDirty);
     } catch (err) {
       console.warn("kindred: failed to save draft", err);
     }
@@ -1039,7 +1083,6 @@ import DOMPurify from "dompurify";
   }
 
   function showGitPane() {
-    console.log("git pane update");
     draftsHeading.hidden = true;
     draftListEl.hidden = true;
     if (chatHeading) chatHeading.hidden = true;
@@ -1618,6 +1661,41 @@ import DOMPurify from "dompurify";
     persistActiveDraftSoon();
   }
 
+  function handleTableConflictAction(action, tablePos) {
+    if (!tipTap || tablePos == null) return;
+    const node = tipTap.state.doc.nodeAt(tablePos);
+    if (!node || node.type.name !== "table") return;
+    const chosenHtml =
+      action === "theirs" ? node.attrs.tableTheirs : node.attrs.tableOurs;
+    if (!chosenHtml) return;
+
+    const chosenDoc = htmlToDoc(chosenHtml);
+    const chosenTableNode = chosenDoc.content?.[0];
+    if (!chosenTableNode) return;
+
+    suppressEditorUpdate = true;
+    try {
+      const tr = tipTap.state.tr.replaceWith(
+        tablePos,
+        tablePos + node.nodeSize,
+        tipTap.schema.nodeFromJSON(chosenTableNode)
+      );
+      tipTap.view.dispatch(tr);
+    } finally {
+      suppressEditorUpdate = false;
+    }
+
+    pullFromEditor();
+    workingDirty = true;
+    syncDirtyBodyFromCurrent();
+    syncOverlayFromState();
+    syncMergeStatus();
+    refreshStatusLeft();
+    syncHeaderTitle();
+    updateCommitBtn();
+    persistActiveDraftSoon();
+  }
+
   function getCurrentText() {
     return currentText;
   }
@@ -1762,6 +1840,12 @@ import DOMPurify from "dompurify";
         continue;
       }
       if (op.type === "replace") {
+        if (op.base?.type === "table" || op.theirs?.type === "table") {
+          const newT = nodePlainText(op.theirs);
+          pushSep();
+          if (newT) parts.push([DIFF_EQUAL, newT]);
+          continue;
+        }
         const oldT = nodePlainText(op.base || op.ours);
         const newT = nodePlainText(op.theirs);
         pushSep();
@@ -1771,6 +1855,12 @@ import DOMPurify from "dompurify";
         continue;
       }
       if (op.type === "insert") {
+        if (op.theirs?.type === "table" || op.node?.type === "table") {
+          const text = nodePlainText(op.theirs || op.node);
+          pushSep();
+          if (text) parts.push([DIFF_EQUAL, text]);
+          continue;
+        }
         const text = nodePlainText(op.theirs || op.node);
         pushSep();
         if (text) parts.push([DIFF_INSERT, text]);
@@ -1778,6 +1868,9 @@ import DOMPurify from "dompurify";
       }
       if (op.type === "delete") {
         // Review-style two-way: side "theirs" means dirty deleted this base block.
+        if (op.base?.type === "table" || op.ours?.type === "table") {
+          continue;
+        }
         if (op.side === "theirs") {
           const text = nodePlainText(op.base || op.ours);
           pushSep();
@@ -2504,7 +2597,6 @@ import DOMPurify from "dompurify";
       const textActive = !dirtyReviewing && dirtyViewMode === "Text";
       const diffActive = !dirtyReviewing && dirtyViewMode === "Diff";
       const reviewActive = atDirty && dirtyReviewing;
-      console.log("renderGitPane", workingDirty);
       const reviewDisabled =
         modesLocked || !!viewingOid || (!workingDirty && !dirtyReviewing);
       const dirtyBtn = (label, action, active, disabled) =>

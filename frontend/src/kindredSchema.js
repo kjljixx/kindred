@@ -11,6 +11,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import FontFamily from "@tiptap/extension-font-family";
+import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 
 function safeLinkHref(value) {
   const href = String(value || "").trim();
@@ -159,6 +160,45 @@ const KindredParagraph = Paragraph.extend({
   },
 });
 
+/** Table node with optional 3-way/review conflict attrs. */
+const KindredTable = Table.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      tableOurs: {
+        default: null,
+        parseHTML: (el) => attrOrNull(el, "data-kindred-table-ours"),
+        renderHTML: (attrs) =>
+          attrs.tableOurs ? { "data-kindred-table-ours": attrs.tableOurs } : {},
+      },
+      tableTheirs: {
+        default: null,
+        parseHTML: (el) => attrOrNull(el, "data-kindred-table-theirs"),
+        renderHTML: (attrs) =>
+          attrs.tableTheirs
+            ? { "data-kindred-table-theirs": attrs.tableTheirs }
+            : {},
+      },
+      tableLabelOurs: {
+        default: null,
+        parseHTML: (el) => attrOrNull(el, "data-kindred-table-label-ours"),
+        renderHTML: (attrs) =>
+          attrs.tableLabelOurs
+            ? { "data-kindred-table-label-ours": attrs.tableLabelOurs }
+            : {},
+      },
+      tableLabelTheirs: {
+        default: null,
+        parseHTML: (el) => attrOrNull(el, "data-kindred-table-label-theirs"),
+        renderHTML: (attrs) =>
+          attrs.tableLabelTheirs
+            ? { "data-kindred-table-label-theirs": attrs.tableLabelTheirs }
+            : {},
+      },
+    };
+  },
+});
+
 /**
  * Pretty-print with newlines only between sibling blocks.
  * Never injects \\n before closing tags (that would sit inside paragraph text).
@@ -264,6 +304,12 @@ export function kindredContentExtensions() {
       validate: (href) => Boolean(safeLinkHref(href)),
     }),
     Image,
+    KindredTable.configure({
+      resizable: false,
+    }),
+    TableRow,
+    TableCell,
+    TableHeader,
     TextStyle,
     Color,
     FontSize,
@@ -283,7 +329,10 @@ export function nodePlainText(node) {
   if (!node) return "";
   if (node.type === "text") return String(node.text || "").replace(/\u00a0/g, " ");
   const kids = node.content || [];
-  return kids.map(nodePlainText).join("");
+  if (node.type === "paragraph") {
+    return kids.map(nodePlainText).join("");
+  }
+  return kids.map(nodePlainText).filter(Boolean).join("\n\n");
 }
 
 function isEmptyParagraphNode(node) {

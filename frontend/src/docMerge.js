@@ -25,6 +25,37 @@ function wrapPara(innerHtml) {
   return `<p>${innerHtml || ""}</p>`;
 }
 
+function formatTableConflict(oursNode, theirsNode, labelOurs, labelTheirs) {
+  const esc = (value) =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+  const oursHtml = oursNode ? blockToHtml(oursNode) : "";
+  const theirsHtml = theirsNode ? blockToHtml(theirsNode) : "";
+  const displayNode = oursNode || theirsNode;
+  if (!displayNode) return "";
+
+  let html = blockToHtml(displayNode);
+  const attrs =
+    ` data-kindred-table-ours="${esc(oursHtml)}"` +
+    ` data-kindred-table-theirs="${esc(theirsHtml)}"` +
+    ` data-kindred-table-label-ours="${esc(labelOurs)}"` +
+    ` data-kindred-table-label-theirs="${esc(labelTheirs)}"`;
+
+  return html.replace(/<table\b/i, `<table${attrs}`);
+}
+
+function isTableBlock(node) {
+  return node?.type === "table";
+}
+
+function isAtomicBlock(node) {
+  return node?.type === "image";
+}
+
 /**
  * @param {object} baseDoc
  * @param {object} oursDoc
@@ -72,8 +103,9 @@ function mergeDocs(
     );
   }
 
-  function isAtomicBlock(node) {
-    return node?.type === "image";
+  function handleTableConflict(ours, theirs) {
+    cleanMerge = false;
+    return formatTableConflict(ours, theirs, labelOurs, labelTheirs);
   }
 
   for (const op of ops) {
@@ -87,7 +119,9 @@ function mergeDocs(
       const oursHtml = blockToHtml(op.ours);
       const theirsHtml = blockToHtml(op.theirs);
       // Same family paragraph → leaf mark/text merge.
-      if (isAtomicBlock(op.ours) || isAtomicBlock(op.theirs) || isAtomicBlock(op.base)) {
+      if (isTableBlock(op.ours) || isTableBlock(op.theirs) || isTableBlock(op.base)) {
+        parts.push(handleTableConflict(op.ours, op.theirs));
+      } else if (isAtomicBlock(op.ours) || isAtomicBlock(op.theirs) || isAtomicBlock(op.base)) {
         parts.push(conflictBlock(op.ours, op.theirs));
       } else if (
         op.ours?.type === "paragraph" &&
@@ -105,6 +139,8 @@ function mergeDocs(
       if (op.side === "both") {
         if (sameHtml(op.ours, op.theirs)) {
           parts.push(blockToHtml(op.node || op.ours));
+        } else if (isTableBlock(op.ours) || isTableBlock(op.theirs)) {
+          parts.push(handleTableConflict(op.ours, op.theirs));
         } else if (isAtomicBlock(op.ours) || isAtomicBlock(op.theirs)) {
           parts.push(conflictBlock(op.ours, op.theirs));
         } else {
@@ -114,9 +150,13 @@ function mergeDocs(
       }
       if (op.side === "ours") {
         if (review) {
-          parts.push(isAtomicBlock(op.node)
-            ? conflictBlock(op.node, null)
-            : leaf("<p></p>", blockToHtml(op.node), "<p></p>"));
+          if (isTableBlock(op.node)) {
+            parts.push(handleTableConflict(op.node, null));
+          } else if (isAtomicBlock(op.node)) {
+            parts.push(conflictBlock(op.node, null));
+          } else {
+            parts.push(leaf("<p></p>", blockToHtml(op.node), "<p></p>"));
+          }
         } else {
           parts.push(blockToHtml(op.node));
         }
@@ -124,9 +164,13 @@ function mergeDocs(
       }
       // theirs insert
       if (review) {
-        parts.push(isAtomicBlock(op.node)
-          ? conflictBlock(null, op.node)
-          : leaf("<p></p>", "<p></p>", blockToHtml(op.node)));
+        if (isTableBlock(op.node)) {
+          parts.push(handleTableConflict(null, op.node));
+        } else if (isAtomicBlock(op.node)) {
+          parts.push(conflictBlock(null, op.node));
+        } else {
+          parts.push(leaf("<p></p>", "<p></p>", blockToHtml(op.node)));
+        }
       } else {
         parts.push(blockToHtml(op.node));
       }
@@ -138,47 +182,65 @@ function mergeDocs(
       if (op.side === "theirs") {
         // ours still has it, theirs deleted
         if (review) {
-          parts.push(isAtomicBlock(op.ours || op.base)
-            ? conflictBlock(op.ours || op.base, null)
-            :
-            leaf(
-              blockToHtml(op.base),
-              blockToHtml(op.ours || op.base),
-              "<p></p>"
-            ));
+          if (isTableBlock(op.ours || op.base)) {
+            parts.push(handleTableConflict(op.ours || op.base, null));
+          } else if (isAtomicBlock(op.ours || op.base)) {
+            parts.push(conflictBlock(op.ours || op.base, null));
+          } else {
+            parts.push(
+              leaf(
+                blockToHtml(op.base),
+                blockToHtml(op.ours || op.base),
+                "<p></p>"
+              )
+            );
+          }
         } else if (nodesMatchBase(op.ours, op.base)) {
           continue;
         } else {
-          parts.push(
-            leaf(
-              blockToHtml(op.base),
-              blockToHtml(op.ours || op.base),
-              "<p></p>"
-            )
-          );
+          if (isTableBlock(op.ours || op.base)) {
+            parts.push(handleTableConflict(op.ours || op.base, null));
+          } else {
+            parts.push(
+              leaf(
+                blockToHtml(op.base),
+                blockToHtml(op.ours || op.base),
+                "<p></p>"
+              )
+            );
+          }
         }
         continue;
       }
       // ours deleted, theirs still has it
       if (review) {
-        parts.push(isAtomicBlock(op.theirs || op.base)
-          ? conflictBlock(null, op.theirs || op.base)
-          :
-          leaf(
-            blockToHtml(op.base),
-            "<p></p>",
-            blockToHtml(op.theirs || op.base)
-          ));
+        if (isTableBlock(op.theirs || op.base)) {
+          parts.push(handleTableConflict(null, op.theirs || op.base));
+        } else if (isAtomicBlock(op.theirs || op.base)) {
+          parts.push(conflictBlock(null, op.theirs || op.base));
+        } else {
+          parts.push(
+            leaf(
+              blockToHtml(op.base),
+              "<p></p>",
+              blockToHtml(op.theirs || op.base)
+            )
+          );
+        }
       } else if (nodesMatchBase(op.theirs, op.base)) {
         continue;
       } else {
-        parts.push(
-          leaf(
-            blockToHtml(op.base),
-            "<p></p>",
-            blockToHtml(op.theirs || op.base)
-          )
-        );
+        if (isTableBlock(op.theirs || op.base)) {
+          parts.push(handleTableConflict(null, op.theirs || op.base));
+        } else {
+          parts.push(
+            leaf(
+              blockToHtml(op.base),
+              "<p></p>",
+              blockToHtml(op.theirs || op.base)
+            )
+          );
+        }
       }
     }
   }
