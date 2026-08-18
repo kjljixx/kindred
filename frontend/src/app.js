@@ -1972,13 +1972,24 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
         const ops = alignTwoWay(baseDoc, currentDoc);
         parts = diffsFromAstOps(ops);
         // Guard: if AST projection disagrees with plain equality, fall back.
-        const projected = parts
-          .filter((p) => p[0] !== DIFF_DELETE)
-          .map((p) => p[1])
-          .join("");
-        const plainNow = (current || "").replace(/\u00a0/g, " ");
-        if (projected.replace(/\s+/g, " ").trim() !== plainNow.replace(/\s+/g, " ").trim()) {
-          debugEvent("diff", "ast-projection-mismatch", { projected, plainNow, parts });
+        const projectedCurrent = parts
+          .filter(([op]) => op !== DIFF_DELETE)
+          .map(([, text]) => text)
+          .join("")
+          .replace(/\u00a0/g, " ");
+        
+        const exactCurrent = String(current || "")
+          .replace(/\u00a0/g, " ");
+        
+        if (projectedCurrent !== exactCurrent) {
+          debugEvent("diff", "ast-projection-mismatch", {
+            projectedCurrent,
+            current: exactCurrent,
+            projectedLength: projectedCurrent.length,
+            currentLength: exactCurrent.length,
+            delta: exactCurrent.length - projectedCurrent.length,
+          });
+        
           parts = null;
         } else {
           debugEvent("diff", "strategy", { type: "ast", opCount: ops.length });

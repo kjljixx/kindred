@@ -365,24 +365,15 @@ export function blockSignature(node) {
   return `${fam}:${JSON.stringify(node)}`;
 }
 
-/** Drop empty trailing/padding paragraphs used only for TipTap caret chrome. */
 export function significantBlocks(doc) {
   const blocks = doc?.content || [];
-  return blocks.filter((n) => !isEmptyParagraphNode(n));
+  return blocks;
 }
 
-/** Normalize JSON before align: clone + drop empty padding paragraphs. */
 export function normalizeDoc(doc) {
   const raw = doc && doc.type === "doc" ? cloneJson(doc) : cloneJson(EMPTY_DOC);
   const content = Array.isArray(raw.content) ? raw.content : [];
-  const kept = content.filter((n, i) => {
-    if (!isEmptyParagraphNode(n)) return true;
-    // Keep a lone empty paragraph so empty docs stay valid.
-    return content.length === 1 && i === 0;
-  });
-  // Prefer significant blocks when there is at least one non-empty.
-  const sig = kept.filter((n) => !isEmptyParagraphNode(n));
-  raw.content = sig.length ? sig : kept.length ? kept : [{ type: "paragraph" }];
+  raw.content = content.length ? content : [{ type: "paragraph" }];
   return raw;
 }
 

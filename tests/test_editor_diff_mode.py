@@ -118,6 +118,30 @@ def test_d8a_history_diff_scopes_an_edited_paragraph(kindred: KindredPage) -> No
   assert "Bravo" not in "".join(kindred.diff_ins_texts())
   assert "Bravo" not in "".join(kindred.diff_del_texts())
 
+def test_d8b_internal_empty_paragraphs_do_not_shift_diff_offsets(
+  kindred: KindredPage,
+) -> None:
+  """Regression: authored empty paragraphs must remain in Diff coordinates."""
+
+  kindred.paste_text("old")
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  kindred.replace_editor_text("test")
+  kindred.wait_until_editor_text("test")
+
+  for _ in range(5):
+    kindred.press_keys(Keys.END, Keys.ENTER, Keys.ENTER)
+    kindred.type_text("test")
+
+  kindred.enter_dirty_diff()
+
+  ins = "".join(kindred.diff_ins_texts())
+  deleted = "".join(kindred.diff_del_texts())
+
+  assert ins.count("test") == 6
+  assert "old" in deleted
 
 def test_d9_format_only_bold_does_not_invent_text_moves(kindred: KindredPage) -> None:
   kindred.paste_text("sameletters")
