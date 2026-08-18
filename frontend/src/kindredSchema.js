@@ -5,10 +5,8 @@
 import { Extension, Mark, Node as TiptapNode, generateHTML, generateJSON } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Paragraph from "@tiptap/extension-paragraph";
-import Underline from "@tiptap/extension-underline";
-import Link from "@tiptap/extension-link";
-import TextAlign from "@tiptap/extension-text-align";
-import TextStyle from "@tiptap/extension-text-style";
+import { TextAlign } from "@tiptap/extension-text-align";
+import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import FontFamily from "@tiptap/extension-font-family";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
@@ -287,29 +285,28 @@ export function kindredContentExtensions() {
   return [
     StarterKit.configure({
       heading: false,
-      bulletList: false,
-      orderedList: false,
-      listItem: false,
       blockquote: false,
       codeBlock: false,
       code: false,
       horizontalRule: false,
       paragraph: false,
+    
+      link: {
+        autolink: true,
+        linkOnPaste: true,
+        openOnClick: false,
+        defaultProtocol: "https",
+        HTMLAttributes: {
+          target: "_blank",
+          rel: "noopener noreferrer nofollow",
+        },
+        validate: (href) => Boolean(safeLinkHref(href)),
+      },
+    
+      underline: {},
     }),
     KindredParagraph,
-    Underline,
     Highlight,
-    Link.configure({
-      autolink: true,
-      linkOnPaste: true,
-      openOnClick: false,
-      defaultProtocol: "https",
-      HTMLAttributes: {
-        target: "_blank",
-        rel: "noopener noreferrer nofollow",
-      },
-      validate: (href) => Boolean(safeLinkHref(href)),
-    }),
     Image,
     KindredTable.configure({
       resizable: true,
