@@ -4,6 +4,8 @@ const WASM_CANDIDATES = [
 ];
 
 import { importDocxToHtml, htmlToDocxBlob as docshiftHtmlToDocxBlob } from './docshiftConvert.js';
+import { invertHtmlColors } from './colorInvert.js';
+import { CONFIG } from './config.js';
 
 /** @type {Promise<{ convert: Function }> | null} */
 let pandocPromise = null;
@@ -505,19 +507,24 @@ export function exportFormatById(formatId) {
  */
 export async function htmlToExportBlob(html, formatId = "docx") {
   const format = exportFormatById(formatId);
-  
+
+  let exportHtml = html;
+  if (CONFIG.export.invertColorsForDarkMode && format.id !== "md" && format.id !== "txt") {
+    exportHtml = invertHtmlColors(html || "<p></p>");
+  }
+
   // Use docshift for DOCX export (better client-side support)
   if (format.id === "docx") {
-    const blob = await docshiftHtmlToDocxBlob(html);
+    const blob = await docshiftHtmlToDocxBlob(exportHtml);
     return { blob, format };
   }
-  
+
   // WASI-safe output key; caller picks the download filename separately.
   const outName = `export.${format.ext}`;
   const { convert } = await ensurePandoc();
-  const { html: src, files, media } = materializeEmbeddedImages(html || "<p></p>");
+  const { html: src, files, media } = materializeEmbeddedImages(exportHtml || "<p></p>");
   if (format.id === "pdf") {
-    const blob = await htmlToPdfBlob(html);
+    const blob = await htmlToPdfBlob(exportHtml);
     return { blob, format };
   }
   const alignments =
