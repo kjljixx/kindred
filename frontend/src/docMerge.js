@@ -4,6 +4,7 @@
  */
 import { alignDocs } from "./docAlign.js";
 import { blockToHtml, htmlToDoc } from "./kindredSchema.js";
+import { debugEvent, debugVerbose, startTrace, summarizeAlignOp } from "./debug.js";
 
 function formatConflict(labelOurs, oursStr, labelTheirs, theirsStr) {
   const esc = (value) =>
@@ -80,7 +81,23 @@ function mergeDocs(
   let cleanMerge = true;
   const parts = [];
 
+  debugEvent("merge", "start", {
+    review,
+    labelOurs,
+    labelTheirs,
+    opCount: ops.length,
+    ops: ops.map(summarizeAlignOp),
+  });
+
+  function logDecision(op, decision) {
+    debugEvent("merge", "op", {
+      ...summarizeAlignOp(op),
+      decision,
+    });
+  }
+
   function leaf(baseHtml, oursHtml, theirsHtml) {
+    debugEvent("merge", "leaf:start", { review, baseHtml, oursHtml, theirsHtml });
     const result = leafMerge(
       baseHtml || "<p></p>",
       oursHtml || "<p></p>",
@@ -90,6 +107,10 @@ function mergeDocs(
       { review, leaf: true }
     );
     if (!result.cleanMerge) cleanMerge = false;
+    debugEvent("merge", "leaf:result", {
+      cleanMerge: result.cleanMerge,
+      mergedText: result.mergedText,
+    });
     return result.mergedText || "<p></p>";
   }
 
@@ -110,6 +131,7 @@ function mergeDocs(
 
   for (const op of ops) {
     if (op.type === "equal") {
+      logDecision(op, "equal");
       parts.push(blockToHtml(op.node));
       continue;
     }
@@ -120,16 +142,20 @@ function mergeDocs(
       const theirsHtml = blockToHtml(op.theirs);
       // Same family paragraph → leaf mark/text merge.
       if (isTableBlock(op.ours) || isTableBlock(op.theirs) || isTableBlock(op.base)) {
+        logDecision(op, "table-conflict");
         parts.push(handleTableConflict(op.ours, op.theirs));
       } else if (isAtomicBlock(op.ours) || isAtomicBlock(op.theirs) || isAtomicBlock(op.base)) {
+        logDecision(op, "atomic-conflict");
         parts.push(conflictBlock(op.ours, op.theirs));
       } else if (
         op.ours?.type === "paragraph" &&
         op.theirs?.type === "paragraph" &&
         (!op.base || op.base.type === "paragraph")
       ) {
+        logDecision(op, "leaf-merge");
         parts.push(leaf(baseHtml, oursHtml, theirsHtml));
       } else {
+        logDecision(op, "block-conflict");
         parts.push(conflictBlock(op.ours, op.theirs));
       }
       continue;
@@ -138,17 +164,22 @@ function mergeDocs(
     if (op.type === "insert") {
       if (op.side === "both") {
         if (sameHtml(op.ours, op.theirs)) {
+          logDecision(op, "accept-both-insert");
           parts.push(blockToHtml(op.node || op.ours));
         } else if (isTableBlock(op.ours) || isTableBlock(op.theirs)) {
+          logDecision(op, "table-conflict");
           parts.push(handleTableConflict(op.ours, op.theirs));
         } else if (isAtomicBlock(op.ours) || isAtomicBlock(op.theirs)) {
+          logDecision(op, "atomic-conflict");
           parts.push(conflictBlock(op.ours, op.theirs));
         } else {
+          logDecision(op, "leaf-merge");
           parts.push(leaf("<p></p>", blockToHtml(op.ours), blockToHtml(op.theirs)));
         }
         continue;
       }
       if (op.side === "ours") {
+        logDecision(op, review ? "review-insert-ours" : "accept-ours-insert");
         if (review) {
           if (isTableBlock(op.node)) {
             parts.push(handleTableConflict(op.node, null));
@@ -163,6 +194,7 @@ function mergeDocs(
         continue;
       }
       // theirs insert
+      logDecision(op, review ? "review-insert-theirs" : "accept-theirs-insert");
       if (review) {
         if (isTableBlock(op.node)) {
           parts.push(handleTableConflict(null, op.node));
@@ -178,6 +210,7 @@ function mergeDocs(
     }
 
     if (op.type === "delete") {
+      logDecision(op, review ? "review-delete" : "merge-delete");
       // side = who deleted (missing on that side)
       if (op.side === "theirs") {
         // ours still has it, theirs deleted
@@ -196,6 +229,7 @@ function mergeDocs(
             );
           }
         } else if (nodesMatchBase(op.ours, op.base)) {
+          logDecision(op, "drop-deleted-base");
           continue;
         } else {
           if (isTableBlock(op.ours || op.base)) {
@@ -228,6 +262,7 @@ function mergeDocs(
           );
         }
       } else if (nodesMatchBase(op.theirs, op.base)) {
+        logDecision(op, "drop-deleted-base");
         continue;
       } else {
         if (isTableBlock(op.theirs || op.base)) {
@@ -246,6 +281,12 @@ function mergeDocs(
   }
 
   const mergedText = parts.filter(Boolean).join("\n") || "<p></p>";
+  debugEvent("merge", "result", {
+    review,
+    cleanMerge,
+    opCount: ops.length,
+    outputHtml: mergedText,
+  });
   return {
     cleanMerge,
     mergedText,
@@ -276,13 +317,24 @@ export function mergeHtmlViaAst(
   leafMerge
 ) {
   const review = !!options?.review;
+  startTrace(review ? "review" : "merge", "calculate", {
+    labelOurs,
+    labelTheirs,
+    baseHtml,
+    oursHtml,
+    theirsHtml,
+  });
+  debugVerbose("merge", "input-html", { baseHtml, oursHtml, theirsHtml });
   if (oursHtml === theirsHtml) {
+    debugEvent("merge", "fast-path", { reason: "ours-equals-theirs" });
     return { cleanMerge: true, mergedText: oursHtml, ops: [] };
   }
   if (!review && oursHtml === baseHtml) {
+    debugEvent("merge", "fast-path", { reason: "ours-equals-base" });
     return { cleanMerge: true, mergedText: theirsHtml, ops: [] };
   }
   if (theirsHtml === baseHtml) {
+    debugEvent("merge", "fast-path", { reason: "theirs-equals-base" });
     return { cleanMerge: true, mergedText: oursHtml, ops: [] };
   }
 

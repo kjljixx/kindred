@@ -8,6 +8,7 @@ import {
   blockToHtml,
   significantBlocks,
 } from "./kindredSchema.js";
+import { debugEvent, debugVerbose, summarizeAlignOp, summarizeBlock } from "./debug.js";
 
 /**
  * LCS backtrack → ops: equal | a (only in a) | b (only in b).
@@ -90,17 +91,32 @@ export function alignDocs(baseDoc, oursDoc, theirsDoc, options = {}) {
   const oursBlocks = significantBlocks(oursDoc);
   const theirsBlocks = significantBlocks(theirsDoc);
 
+  const summarize = (node) => summarizeBlock(node, {
+    family: blockFamily(node),
+    signature: blockSignature(node),
+  });
+  debugEvent("align", "start", {
+    review,
+    baseBlocks: baseBlocks.map(summarize),
+    oursBlocks: oursBlocks.map(summarize),
+    theirsBlocks: theirsBlocks.map(summarize),
+  });
+  debugVerbose("align", "documents", { baseDoc, oursDoc, theirsDoc });
+
   // Same length + same families by index → index align (edits stay replace, not
   // delete+insert). Length/family changes use base-anchored signature LCS.
-  if (
+  const canIndexAlign =
     baseBlocks.length === oursBlocks.length &&
     oursBlocks.length === theirsBlocks.length &&
     baseBlocks.every(
       (b, i) =>
         blockFamily(b) === blockFamily(oursBlocks[i]) &&
         blockFamily(b) === blockFamily(theirsBlocks[i])
-    )
-  ) {
+    );
+
+  debugEvent("align", "strategy", { type: canIndexAlign ? "index" : "lcs" });
+
+  if (canIndexAlign) {
     const ops = [];
     for (let i = 0; i < baseBlocks.length; i++) {
       const base = baseBlocks[i];
@@ -134,6 +150,11 @@ export function alignDocs(baseDoc, oursDoc, theirsDoc, options = {}) {
         });
       }
     }
+    debugEvent("align", "result", {
+      review,
+      opCount: ops.length,
+      ops: ops.map(summarizeAlignOp),
+    });
     return ops;
   }
 
@@ -143,6 +164,14 @@ export function alignDocs(baseDoc, oursDoc, theirsDoc, options = {}) {
 
   const oursMap = mapSideToBase(baseKeys, oursKeys);
   const theirsMap = mapSideToBase(baseKeys, theirsKeys);
+
+  debugEvent("align", "lcs-map", {
+    baseKeys,
+    oursKeys,
+    theirsKeys,
+    oursMap,
+    theirsMap,
+  });
 
   const ops = [];
   let pathCounter = 0;
@@ -272,6 +301,11 @@ export function alignDocs(baseDoc, oursDoc, theirsDoc, options = {}) {
     pushGapInserts(bi);
   }
 
+  debugEvent("align", "result", {
+    review,
+    opCount: ops.length,
+    ops: ops.map(summarizeAlignOp),
+  });
   return ops;
 }
 

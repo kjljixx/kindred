@@ -14,6 +14,13 @@ import {
   mountFontFamilyPicker,
 } from "./fontCatalog.js";
 import { SelectionUnits } from "./selectionUnits.js";
+import {
+  debugEvent,
+  debugVerbose,
+  startTrace,
+  summarizeEditor,
+  summarizeTransaction,
+} from "./debug.js";
 
 const keptSelectionKey = new PluginKey("keptSelection");
 
@@ -25,13 +32,30 @@ function createKeptCaretWidget() {
   return el;
 }
 
+const InputDebug = Extension.create({
+  name: "inputDebug",
+  priority: 10000,
+  addKeyboardShortcuts() {
+    const logKey = (key) => () => {
+      startTrace("input", key, { editor: summarizeEditor(this.editor) });
+      return false;
+    };
+    return {
+      Backspace: logKey("Backspace"),
+      Enter: logKey("Enter"),
+      Tab: logKey("Tab"),
+      "Shift-Tab": logKey("Shift-Tab"),
+    };
+  },
+});
+
 const TabIndent = Extension.create({
   name: "tabIndent",
   addKeyboardShortcuts() {
     return {
-      Tab: () => this.editor.commands.insertContent("\t")
+      Tab: () => this.editor.commands.insertContent("\t"),
     };
-  }
+  },
 });
 
 /** Fake selection/caret while toolbar or chat holds focus. */
@@ -1049,6 +1073,16 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
   }
 
   const map = buildPlainPmMap(doc, BLOCK_SEP);
+  debugEvent("diff", "calculate", {
+    baseline,
+    currentPlain,
+    showDiffs,
+    highlight: hl,
+    formatHunkCount: formatHunks.length,
+    imageDiffs,
+    tableDiffs,
+  });
+
   const parts = !baseline
     ? currentPlain
       ? [[DIFF_INSERT, currentPlain]]
@@ -1060,6 +1094,13 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
       : typeof diffsFn === "function"
         ? diffsFn(baseline, currentPlain)
         : [];
+
+  debugEvent("diff", "result", {
+    partCount: parts.length,
+    parts,
+    plainLen: map.plainLen,
+  });
+  debugVerbose("diff", "pm-map", { map, doc: doc.toJSON() });
 
   let basePos = 0;
   let curPos = 0;
@@ -1110,6 +1151,14 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
         if (hl && basePos >= hl.start && basePos < hl.end) {
           cls = "diff-ins sent-hl";
         }
+        debugEvent("diff", "insert-decoration", {
+          text: data,
+          fromPlain,
+          toPlain,
+          fromPm: pmPosForPlain(map, fromPlain),
+          toPm: pmPosForPlain(map, toPlain),
+          className: cls,
+        });
         addInline(fromPlain, toPlain, cls);
       } else if (hl && basePos >= hl.start && basePos < hl.end) {
         addInline(fromPlain, toPlain, "sent-hl");
@@ -1118,6 +1167,12 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     } else if (op === DIFF_DELETE) {
       if (showDiffs) {
         const pm = pmPosForPlain(map, curPos);
+        debugEvent("diff", "delete-decoration", {
+          text: data,
+          basePos,
+          curPos,
+          pm,
+        });
         decorations.push(
           Decoration.widget(pm, createDeleteWidget(data), {
             side: -1,
@@ -1748,6 +1803,7 @@ export function createKindredEditor({
     autofocus: true,
     extensions: [
       ...kindredContentExtensions(),
+      InputDebug,
       TabIndent,
       ConflictParagraph,
       KeptSelection,
@@ -1768,7 +1824,15 @@ export function createKindredEditor({
       },
       // Remove handlePaste and handleDrop to let TipTap parse HTML & paragraphs natively
     },
+    onTransaction: ({ editor: ed, transaction }) => {
+      if (!transaction.docChanged && !transaction.selectionSet) return;
+      debugEvent("editor", "transaction", {
+        transaction: summarizeTransaction(transaction),
+        editor: summarizeEditor(ed),
+      });
+    },
     onUpdate: ({ editor: ed }) => {
+      debugEvent("editor", "update", { editor: summarizeEditor(ed) });
       onUpdate?.(ed);
     },
   });
@@ -1786,9 +1850,17 @@ export function getHtml(editor) {
   return canonicalizeTextHtml(editor.getHTML());
 }
 
-export function setHtml(editor, html, { emitUpdate = false } = {}) {
+export function setHtml(editor, html, { emitUpdate = false, source = "unknown" } = {}) {
   if (!editor) return;
-  editor.commands.setContent(ensureHtml(html), emitUpdate);
+  const incoming = ensureHtml(html);
+  debugEvent("editor", "setHtml", {
+    source,
+    emitUpdate,
+    same: canonicalizeTextHtml(editor.getHTML()) === canonicalizeTextHtml(incoming),
+    currentHtml: editor.getHTML(),
+    incomingHtml: incoming,
+  });
+  editor.commands.setContent(incoming, emitUpdate);
 }
 
 function setOverlay(editor, partial) {
@@ -1809,6 +1881,16 @@ export function refreshOverlay(editor, {
 } = {}) {
   if (!editor) return;
   const conflicts = parseConflictSegments(markedHtml);
+  debugEvent("diff", "overlay-refresh", {
+    baseline,
+    currentPlain,
+    showDiffs,
+    conflictMode,
+    conflictCount: conflicts?.filter?.((segment) => segment.type === "conflict").length || 0,
+    formatHunkCount: formatHunks.length,
+    imageDiffs,
+    tableDiffs,
+  });
   setOverlay(editor, {
     baseline: conflicts ? "" : baseline,
     currentPlain: conflicts ? "" : currentPlain,

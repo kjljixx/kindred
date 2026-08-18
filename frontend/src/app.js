@@ -26,6 +26,7 @@ import { htmlToDoc, nodePlainText, normalizeDoc, blockToHtml } from "./kindredSc
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { CONFIG } from "./config.js";
+import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.js";
 
 (() => {
   const DIFF_EQUAL = 0;
@@ -212,6 +213,13 @@ import { CONFIG } from "./config.js";
 
   function syncOverlayFromState() {
     if (!tipTap) return;
+    debugEvent("app", "syncOverlay:start", {
+      dirtyViewMode,
+      dirtyReviewing,
+      viewingHistory: isViewingHistory(),
+      currentText,
+      currentHtml,
+    });
     const marked =
       unresolvedMergeConflictCount(currentHtml) > 0 ? currentHtml : "";
     const viewing = isViewingHistory();
@@ -242,6 +250,16 @@ import { CONFIG } from "./config.js";
           currentHtml,
           parts
         );
+        debugEvent("diff", "overlay-input", {
+          viewing,
+          basePlain,
+          currentText,
+          opCount: ops.length,
+          parts,
+          formatHunks,
+          imageDiffs: imageDiffsFromOps(ops),
+          tableDiffs: tableDiffsFromOps(ops),
+        });
         refreshOverlay(tipTap, {
           baseline: basePlain,
           currentPlain: currentText,
@@ -267,6 +285,7 @@ import { CONFIG } from "./config.js";
       }
     } finally {
       suppressEditorUpdate = wasSuppressed;
+      debugEvent("app", "syncOverlay:end", { suppressEditorUpdate });
     }
   }
 
@@ -348,16 +367,33 @@ import { CONFIG } from "./config.js";
   }
 
   function pullFromEditor() {
-    if (!tipTap || suppressEditorUpdate) return;
+    if (!tipTap) return;
+    if (suppressEditorUpdate) {
+      debugEvent("app", "pullFromEditor:skipped", { reason: "suppressEditorUpdate" });
+      return;
+    }
+    const before = { currentHtml, currentText };
     if (conflictMarkerCount(currentHtml) > 0) {
       const tipHtml = getHtml(tipTap);
       const merged = mergeCleanEditsIntoMarked(currentHtml, tipHtml);
       if (merged != null) currentHtml = merged;
       currentText = getPlain(tipTap);
+      debugEvent("app", "pullFromEditor", {
+        mode: "conflict-marked",
+        before,
+        after: { currentHtml, currentText },
+        editor: summarizeEditor(tipTap),
+      });
       return;
     }
     currentHtml = getHtml(tipTap);
     currentText = getPlain(tipTap);
+    debugEvent("app", "pullFromEditor", {
+      mode: "clean",
+      before,
+      after: { currentHtml, currentText },
+      editor: summarizeEditor(tipTap),
+    });
   }
 
   tipTap = createKindredEditor({
@@ -376,8 +412,17 @@ import { CONFIG } from "./config.js";
         gitBusy ||
         isViewingHistory()
       ) {
+        debugEvent("app", "editorUpdate:skipped", {
+          suppressEditorUpdate,
+          rendering,
+          converting,
+          applyingHistory,
+          gitBusy,
+          viewingHistory: isViewingHistory(),
+        });
         return;
       }
+      debugEvent("app", "editorUpdate", { editor: summarizeEditor(tipTap) });
       pullFromEditor();
       if (store) void store.hydrateImageElements(activeDraftId, editor, viewingOid);
       syncDirtyBodyFromCurrent();
@@ -1167,6 +1212,7 @@ import { CONFIG } from "./config.js";
   }
 
   function applyRevisionToEditor() {
+    debugEvent("app", "applyRevisionToEditor:start", { currentHtml });
     suppressEditorUpdate = true;
     rendering = true;
     try {
@@ -1186,12 +1232,12 @@ import { CONFIG } from "./config.js";
       if (unresolved) {
         hasConflict = true;
         if (hasMarkers) {
-          setHtml(tipTap, conflictDisplayHtml(currentHtml), { emitUpdate: false });
+          setHtml(tipTap, conflictDisplayHtml(currentHtml), { emitUpdate: false, source: "applyRevisionToEditor:conflict" });
         } else {
-          setHtml(tipTap, currentHtml || "<p></p>", { emitUpdate: false });
+          setHtml(tipTap, currentHtml || "<p></p>", { emitUpdate: false, source: "applyRevisionToEditor" });
         }
       } else {
-        setHtml(tipTap, currentHtml || "<p></p>", { emitUpdate: false });
+        setHtml(tipTap, currentHtml || "<p></p>", { emitUpdate: false, source: "applyRevisionToEditor" });
       }
       currentText = getPlain(tipTap);
       void store.hydrateImageElements(activeDraftId, editor, viewingOid);
@@ -1199,6 +1245,11 @@ import { CONFIG } from "./config.js";
     } finally {
       rendering = false;
       suppressEditorUpdate = false;
+      debugEvent("app", "applyRevisionToEditor:end", {
+        currentHtml,
+        currentText,
+        editor: summarizeEditor(tipTap),
+      });
     }
   }
 
@@ -1258,7 +1309,7 @@ import { CONFIG } from "./config.js";
     suppressEditorUpdate = true;
     rendering = true;
     try {
-      setHtml(tipTap, currentHtml, { emitUpdate: false });
+      setHtml(tipTap, currentHtml, { emitUpdate: false, source: "resetEditorState" });
       currentText = getPlain(tipTap);
       syncOverlayFromState();
     } finally {
@@ -1496,7 +1547,11 @@ import { CONFIG } from "./config.js";
   }
 
   async function enterDirtyReview() {
-    if (!activeDraftId || !store) return;
+    startTrace("review", "enter", { activeDraftId, currentBranchName });
+    if (!activeDraftId || !store) {
+      debugEvent("review", "skipped", { reason: "missing-draft-or-store" });
+      return;
+    }
     if (isViewingHistory()) return;
     if (pendingMerge && unresolvedMergeConflictCount(currentHtml) > 0) return;
     if (dirtyReviewing) return;
@@ -1510,11 +1565,22 @@ import { CONFIG } from "./config.js";
     const head = await store.readHead(activeDraftId);
     if (!head) return;
     const headBody = head.html || head.text || "";
+    debugEvent("review", "calculate", {
+      headBody,
+      currentHtml,
+      label: currentBranchName || "HEAD",
+    });
     const result = store.reviewWorkingTree(
       headBody,
       currentHtml,
       currentBranchName || "HEAD"
     );
+    debugEvent("review", "result", {
+      cleanMerge: result.cleanMerge,
+      mergedText: result.mergedText,
+      opCount: result.ops?.length || 0,
+      ops: result.ops || [],
+    });
     if (result.cleanMerge) return;
     currentHtml = result.mergedText || "<p></p>";
     hasConflict = true;
@@ -1889,8 +1955,17 @@ import { CONFIG } from "./config.js";
 
   function diffs(baselineText, current, baseDoc, currentDoc) {
     const key = baselineText + "\0" + current;
-    if (diffsCacheKey === key) return diffsCacheParts;
+    if (diffsCacheKey === key) {
+      debugEvent("diff", "cache-hit", { baselineText, current, parts: diffsCacheParts });
+      return diffsCacheParts;
+    }
 
+    debugEvent("diff", "start", {
+      baselineText,
+      current,
+      hasBaseDoc: Boolean(baseDoc),
+      hasCurrentDoc: Boolean(currentDoc),
+    });
     let parts;
     if (baseDoc && currentDoc) {
       try {
@@ -1903,21 +1978,28 @@ import { CONFIG } from "./config.js";
           .join("");
         const plainNow = (current || "").replace(/\u00a0/g, " ");
         if (projected.replace(/\s+/g, " ").trim() !== plainNow.replace(/\s+/g, " ").trim()) {
+          debugEvent("diff", "ast-projection-mismatch", { projected, plainNow, parts });
           parts = null;
+        } else {
+          debugEvent("diff", "strategy", { type: "ast", opCount: ops.length });
         }
-      } catch {
+      } catch (error) {
+        debugEvent("diff", "ast-error", { message: String(error?.message || error) });
         parts = null;
       }
     }
 
     if (!parts) {
       if (baselineText === current) {
+        debugEvent("diff", "strategy", { type: "equal" });
         parts = current ? [[DIFF_EQUAL, current]] : [];
       } else {
+        debugEvent("diff", "strategy", { type: "word" });
         parts = wordDiffParts(baselineText, current);
       }
     }
 
+    debugEvent("diff", "result", { partCount: parts.length, parts });
     diffsCacheKey = key;
     diffsCacheParts = parts;
     return parts;
@@ -2765,7 +2847,7 @@ import { CONFIG } from "./config.js";
       }
       suppressEditorUpdate = true;
       try {
-        setHtml(tipTap, html, { emitUpdate: false });
+        setHtml(tipTap, html, { emitUpdate: false, source: "import" });
       } finally {
         suppressEditorUpdate = false;
       }
