@@ -22,7 +22,7 @@ import {
 import { loadColoris, loadHtmlDiff } from "./optionalAssets.js";
 import { warmPopularGoogleFonts } from "./fontCatalog.js";
 import { alignTwoWay } from "./docAlign.js";
-import { htmlToDoc, nodePlainText, normalizeDoc, blockToHtml } from "./kindredSchema.js";
+import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, isStructuralBlock,} from "./kindredSchema.js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { CONFIG } from "./config.js";
@@ -613,40 +613,20 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     refreshStatusLeft();
   }
 
-  function textblocksOf(node) {
-    if (node?.type === "paragraph") return [nodePlainText(node)];
-    const children = node?.content || [];
-    if (!children.length) return [nodePlainText(node)];
-    return children.flatMap(textblocksOf);
-  }
-
-  function statsBlocksOf(doc) {
-    return (doc.content || [])
-      .map((node) => nodePlainText(node).replace(/\u00a0/g, " "))
-      .filter((block) => block.trim());
-  }
-
-  function statsCharacterBlocksOf(doc) {
-    return (doc.content || [])
-      .map((node) => nodePlainText(node).replace(/\u00a0/g, " ").replace(/\t/g, "").replace(/\r?\n/g, ""))
-      .filter((block) => block.trim());
-  }
-
   function countStats(html) {
-    const doc = htmlToDoc(html || "<p></p>");
-    const raw = statsBlocksOf(doc).join("\n\n");
-    const chars = statsCharacterBlocksOf(doc).join("").length;
-    return countStatsText(raw, chars);
+    const plain = htmlToPlainText(html || "<p></p>");
+    return countStatsText(plain);
   }
 
-  function countStatsText(raw, chars = raw.length) {
+  function countStatsText(raw) {
     const trimmed = raw.trim();
+    const chars = raw.replace(/[\r\n\t]/g, "").length;
     const words = trimmed ? trimmed.split(/\s+/).filter(Boolean).length : 0;
     let sentences = 0;
     let paragraphs = 0;
     if (trimmed) {
-      paragraphs = trimmed.split(/\n\s*\n/).filter((p) => p.trim()).length || 1;
-      sentences = trimmed.split(/(?<=[.!?])\s+|\n\s*\n/).filter((s) => s.trim()).length;
+      paragraphs = trimmed.split(/[\r\n\t]+/).filter((p) => p.trim()).length || 1;
+      sentences = trimmed.split(/(?<=[.!?])\s+|[\r\n\t]+/).filter((s) => s.trim()).length;
     }
     return { words, chars, sentences, paragraphs };
   }
@@ -659,8 +639,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     if (!tipTap || tipTap.state.selection.empty) return null;
     const { from, to } = tipTap.state.selection;
     const raw = tipTap.state.doc.textBetween(from, to, "\n\n").replace(/\u00a0/g, " ");
-    const chars = raw.replace(/\t/g, "").replace(/\n/g, "").length;
-    return countStatsText(raw, chars);
+    return countStatsText(raw);
   }
 
   function formatStat(selected, total, singular) {
@@ -1894,62 +1873,90 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   /** Project AST ops → plain DIFF parts (shape from aligner; words inside replace). */
   function diffsFromAstOps(ops) {
     const parts = [];
-    let first = true;
-    function pushSep() {
-      if (!first) parts.push([DIFF_EQUAL, "\n\n"]);
-      first = false;
-    }
+    let firstCurrent = true;
+    let firstBase = true;
+  
     for (const op of ops) {
       if (op.type === "equal") {
-        const text = nodePlainText(op.node);
-        pushSep();
-        if (text) parts.push([DIFF_EQUAL, text]);
+        const text = docToPlainText(op.node);
+        if (!text) continue; // Skip empty blocks so no phantom \n\n is added
+  
+        if (!firstCurrent) parts.push([DIFF_EQUAL, "\n\n"]);
+        firstCurrent = false;
+        firstBase = false;
+        parts.push([DIFF_EQUAL, text]);
         continue;
       }
+  
       if (op.type === "replace") {
-        if (op.base?.type === "table" || op.theirs?.type === "table") {
-          const newT = nodePlainText(op.theirs);
-          pushSep();
-          if (newT) parts.push([DIFF_EQUAL, newT]);
+        const oldT = docToPlainText(op.base || op.ours);
+        const newT = docToPlainText(op.theirs);
+        if (!oldT && !newT) continue;
+  
+        if (isStructuralBlock(op.ours || op.theirs || op.base)) {
+          if (!firstCurrent && newT) parts.push([DIFF_EQUAL, "\n\n"]);
+          if (newT) {
+            firstCurrent = false;
+            parts.push([DIFF_EQUAL, newT]);
+          }
+          firstBase = false;
           continue;
         }
-        const oldT = nodePlainText(op.base || op.ours);
-        const newT = nodePlainText(op.theirs);
-        pushSep();
+  
+        // If new text was emptied, treat it as a delete
+        if (oldT && !newT) {
+          if (!firstBase) parts.push([DIFF_DELETE, "\n\n"]);
+          firstBase = false;
+          parts.push([DIFF_DELETE, oldT]);
+          continue;
+        }
+  
+        if (!firstCurrent) parts.push([DIFF_EQUAL, "\n\n"]);
+        firstCurrent = false;
+        firstBase = false;
         const inner = wordDiffParts(oldT, newT);
         if (inner.length) parts.push(...inner);
         else if (newT) parts.push([DIFF_EQUAL, newT]);
         continue;
       }
+  
       if (op.type === "insert") {
-        if (op.theirs?.type === "table" || op.node?.type === "table") {
-          const text = nodePlainText(op.theirs || op.node);
-          pushSep();
-          if (text) parts.push([DIFF_EQUAL, text]);
-          continue;
+        const text = docToPlainText(op.theirs || op.node);
+        if (!text) continue;
+  
+        if (!firstCurrent) parts.push([DIFF_INSERT, "\n\n"]);
+        firstCurrent = false;
+  
+        if (isStructuralBlock(op.theirs || op.node)) {
+          parts.push([DIFF_EQUAL, text]);
+        } else {
+          parts.push([DIFF_INSERT, text]);
         }
-        const text = nodePlainText(op.theirs || op.node);
-        pushSep();
-        if (text) parts.push([DIFF_INSERT, text]);
         continue;
       }
+  
       if (op.type === "delete") {
-        // Review-style two-way: side "theirs" means dirty deleted this base block.
-        if (op.base?.type === "table" || op.ours?.type === "table") {
+        if (isStructuralBlock(op.base || op.ours)) {
           continue;
         }
         if (op.side === "theirs") {
-          const text = nodePlainText(op.base || op.ours);
-          pushSep();
-          if (text) parts.push([DIFF_DELETE, text]);
+          const text = docToPlainText(op.base || op.ours);
+          if (!text) continue;
+  
+          if (!firstBase) parts.push([DIFF_DELETE, "\n\n"]);
+          firstBase = false;
+          parts.push([DIFF_DELETE, text]);
         } else if (op.side === "ours") {
-          // HEAD missing, dirty has it → insert
-          const text = nodePlainText(op.theirs || op.base);
-          pushSep();
-          if (text) parts.push([DIFF_INSERT, text]);
+          const text = docToPlainText(op.theirs || op.base);
+          if (!text) continue;
+  
+          if (!firstCurrent) parts.push([DIFF_INSERT, "\n\n"]);
+          firstCurrent = false;
+          parts.push([DIFF_INSERT, text]);
         }
       }
     }
+  
     return parts;
   }
 
@@ -2001,13 +2008,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     }
 
     if (!parts) {
-      if (baselineText === current) {
-        debugEvent("diff", "strategy", { type: "equal" });
-        parts = current ? [[DIFF_EQUAL, current]] : [];
-      } else {
-        debugEvent("diff", "strategy", { type: "word" });
-        parts = wordDiffParts(baselineText, current);
-      }
+      setStatus("ast doc mismatch; check console", "danger");
     }
 
     debugEvent("diff", "result", { partCount: parts.length, parts });

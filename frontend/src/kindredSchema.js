@@ -325,23 +325,81 @@ export function kindredContentExtensions() {
 
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
 
+export function isTableBlock(node) {
+  return node?.type === "table" || node?.type?.name === "table";
+}
+
+export function isListBlock(node) {
+  const type = node?.type?.name || node?.type;
+  return type === "bulletList" || type === "orderedList";
+}
+
+export function isStructuralBlock(node) {
+  return isTableBlock(node) || isListBlock(node);
+}
+
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-/** Plain text of a PM JSON node (for signatures / empty checks). */
-export function nodePlainText(node) {
+function pmNodeChildren(node) {
+  if (node.content?.content) return node.content.content;
+  if (Array.isArray(node.content)) return node.content;
+  if (!node.forEach) return [];
+  const kids = [];
+  node.forEach((child) => kids.push(child));
+  return kids;
+}
+
+/** Canonical plain text for PM JSON nodes and live ProseMirror docs. */
+export function docToPlainText(node) {
   if (!node) return "";
-  if (node.type === "text") return String(node.text || "").replace(/\u00a0/g, " ");
-  const kids = node.content || [];
-  if (node.type === "paragraph") {
-    return kids.map(nodePlainText).join("");
+  if (node.type === "text" || node.isText) {
+    return String(node.text || "").replace(/\u00a0/g, " ");
   }
-  return kids.map(nodePlainText).filter(Boolean).join("\n\n");
+
+  const kids = pmNodeChildren(node);
+  const type = node.type?.name || node.type;
+
+  if (type === "paragraph") {
+    return kids.map(docToPlainText).join("");
+  }
+  if (type === "listItem") {
+    return kids.map(docToPlainText).join("");
+  }
+  if (type === "bulletList" || type === "orderedList") {
+    return kids.map(docToPlainText).join("\n");
+  }
+  if (type === "table") {
+    return kids.map(docToPlainText).join("\n");
+  }
+  if (type === "tableRow") {
+    return kids.map(docToPlainText).join("\t");
+  }
+  if (type === "tableCell" || type === "tableHeader") {
+    return kids.map(docToPlainText).join(" ");
+  }
+
+  return kids.map(docToPlainText).filter(Boolean).join("\n\n");
+}
+
+function stripConflictMarkersFromHtml(html) {
+  const raw = String(html ?? "");
+  if (!raw.includes("data-kindred-")) return raw;
+  const doc = new DOMParser().parseFromString(raw, "text/html");
+  const root = doc.body;
+  root.querySelectorAll("[data-kindred-text-conflict]").forEach((el) => el.remove());
+  root.querySelectorAll("[data-kindred-conflict]").forEach((el) => el.remove());
+  return root.innerHTML;
+}
+
+export function htmlToPlainText(html) {
+  const doc = htmlToDoc(stripConflictMarkersFromHtml(html));
+  return docToPlainText(doc);
 }
 
 function isEmptyParagraphNode(node) {
-  return node?.type === "paragraph" && !nodePlainText(node).trim();
+  return node?.type === "paragraph" && !docToPlainText(node).trim();
 }
 
 /** Family key for block LCS (lists/tables plug in here later). */
@@ -361,7 +419,7 @@ export function blockFamily(node) {
 export function blockSignature(node) {
   if (!node) return "";
   const fam = blockFamily(node);
-  if (fam === "p") return `p:${nodePlainText(node).trim()}`;
+  if (fam === "p") return `p:${docToPlainText(node).trim()}`;
   return `${fam}:${JSON.stringify(node)}`;
 }
 

@@ -4,6 +4,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import {
   canonicalizeTextHtml,
+  docToPlainText,
   kindredContentExtensions,
   prettyPrintHtml,
 } from "./kindredSchema.js";
@@ -159,7 +160,6 @@ function alignPillContent(align) {
   const key = String(align || "left").toLowerCase();
   return ALIGN_LABEL[key] || ALIGN_LABEL.left;
 }
-const BLOCK_SEP = "\n\n";
 const overlayKey = new PluginKey("kindredOverlay");
 
 const DIFF_EQUAL = 0;
@@ -561,43 +561,67 @@ function conflictNodePos(doc, index) {
 }
 
 /**
- * Map plain-text offsets (TipTap getText blockSeparator) ↔ ProseMirror positions.
- * Returns { plainToPm, pmRanges } where plainToPm[i] is PM pos for plain offset i
- * (length plainLen+1), and text in doc maps continuously within textblocks.
+ * Map canonical plain-text offsets (docToPlainText) ↔ ProseMirror positions.
+ * Returns { plainToPm, plainLen } where plainToPm[i] is PM pos for plain offset i.
  */
-function buildPlainPmMap(doc, blockSep = BLOCK_SEP) {
+function buildPlainPmMap(doc) {
   const plainToPm = [];
   let plain = 0;
-  let firstBlock = true;
 
-  doc.descendants((node, pos) => {
-    if (!node.isTextblock) return;
-    if (!firstBlock) {
-      for (let i = 0; i < blockSep.length; i++) {
-        plainToPm[plain + i] = pos;
-      }
-      plain += blockSep.length;
+  function appendSep(sep, pmPos) {
+    for (let i = 0; i < sep.length; i++) {
+      plainToPm[plain + i] = pmPos;
     }
-    firstBlock = false;
-    let inner = pos + 1;
+    plain += sep.length;
+  }
+
+  function appendText(text, startPm) {
+    const normalized = String(text || "").replace(/\u00a0/g, " ");
+    for (let i = 0; i <= normalized.length; i++) {
+      plainToPm[plain + i] = startPm + i;
+    }
+    plain += normalized.length;
+  }
+
+  function joinChildren(node, pos, sep, filterEmpty = false) {
+    const isDoc = node.type?.name === "doc" || node.name === "doc";
+    const entries = [];
     node.forEach((child, offset) => {
-      if (child.isText) {
-        const startPlain = plain;
-        const startPm = pos + 1 + offset;
-        for (let i = 0; i <= child.text.length; i++) {
-          plainToPm[startPlain + i] = startPm + i;
-        }
-        plain += child.text.length;
-        inner = startPm + child.text.length;
-      } else if (child.isAtom || child.isLeaf) {
-        // hardBreak etc. — count as \n in getText? TipTap hardBreak is usually \n
-        plainToPm[plain] = pos + 1 + offset;
-        plain += 1;
-        plainToPm[plain] = pos + 1 + offset + child.nodeSize;
-      }
+      const childPos = isDoc ? offset : pos + 1 + offset;
+      entries.push({ child, pos: childPos });
     });
-    void inner;
-  });
+    const segments = filterEmpty
+      ? entries.filter(({ child }) => docToPlainText(child))
+      : entries;
+    let first = true;
+    for (const { child, pos: childPos } of segments) {
+      if (!first) appendSep(sep, childPos);
+      first = false;
+      walkNode(child, childPos);
+    }
+  }
+
+  function walkNode(node, pos) {
+    if (node.isText) {
+      appendText(node.text, pos);
+      return;
+    }
+
+    const type = node.type.name;
+    if (type === "paragraph" || type === "listItem") {
+      joinChildren(node, pos, "");
+    } else if (type === "bulletList" || type === "orderedList" || type === "table") {
+      joinChildren(node, pos, "\n");
+    } else if (type === "tableRow") {
+      joinChildren(node, pos, "\t");
+    } else if (type === "tableCell" || type === "tableHeader") {
+      joinChildren(node, pos, " ");
+    } else {
+      joinChildren(node, pos, "\n\n", true);
+    }
+  }
+
+  walkNode(doc, 0);
 
   if (!plainToPm.length) {
     plainToPm[0] = 1;
@@ -1072,7 +1096,7 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
       : DecorationSet.empty;
   }
 
-  const map = buildPlainPmMap(doc, BLOCK_SEP);
+  const map = buildPlainPmMap(doc);
   debugEvent("diff", "calculate", {
     baseline,
     currentPlain,
@@ -1841,8 +1865,8 @@ export function createKindredEditor({
 }
 
 export function getPlain(editor) {
-  if (!editor) return "";
-  return editor.getText({ blockSeparator: BLOCK_SEP }).replace(/\u00a0/g, " ");
+  if (!editor?.state?.doc) return "";
+  return docToPlainText(editor.state.doc);
 }
 
 export function getHtml(editor) {

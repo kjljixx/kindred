@@ -1,7 +1,7 @@
 import LightningFS from "@isomorphic-git/lightning-fs";
 import git from "isomorphic-git";
 import { mergeHtmlViaAst } from "./docMerge.js";
-import { canonicalizeTextHtml } from "./kindredSchema.js";
+import { canonicalizeTextHtml, htmlToPlainText } from "./kindredSchema.js";
 
 const VOLUME = "kindred";
   const ROOT = "/texts";
@@ -76,29 +76,15 @@ const VOLUME = "kindred";
       .join("");
   }
 
-  /**
-   * TipTap getHTML() → plain (same idea as editor getText).
-   * Only call on known editor HTML — never on already-plain text
-   * (plain may contain literal "<em>test</em>" etc.).
-   * Structured conflict nodes are empty spans (sides in attrs) → skipped.
-   */
-  function tipTapHtmlToPlain(html) {
-    const raw = String(html ?? "");
-    if (!raw) return "";
-    const doc = new DOMParser().parseFromString(raw, "text/html");
-    const root = doc.body;
-    root.querySelectorAll("[data-kindred-text-conflict]").forEach((el) => {
-      el.remove();
-    });
-    root.querySelectorAll("[data-kindred-conflict]").forEach((el) => {
-      el.remove();
-    });
-    root.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
-    const blocks = [...root.children];
-    if (!blocks.length) {
-      return asPlain(root.textContent || "");
-    }
-    return blocks.map((b) => asPlain(b.textContent || "")).join("\n\n");
+  function titleFromText(text) {
+    const raw = String(text || "");
+    const plain = raw.includes("<") ? htmlToPlainText(raw) : raw;
+    const line = plain
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .find(Boolean);
+    if (!line) return "Empty draft";
+    return line.length > 56 ? `${line.slice(0, 56)}...` : line;
   }
 
   function htmlHasConflictMarkers(html) {
@@ -190,17 +176,6 @@ const VOLUME = "kindred";
   /** text body from the app is TipTap getHTML(); canonicalize for stable dirty. */
   function textHtmlFromEditor(value) {
     return storeTextHtml(value);
-  }
-
-  function titleFromText(text) {
-    // Callers pass TipTap getHTML() (or empty). Project to plain for the title line.
-    const raw = tipTapHtmlToPlain(text || "");
-    const line = raw
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .find(Boolean);
-    if (!line) return "Empty draft";
-    return line.length > 56 ? `${line.slice(0, 56)}...` : line;
   }
 
   function newDraftId() {
@@ -1575,6 +1550,8 @@ const VOLUME = "kindred";
     const finished = [];
     const blockAligns = [];
     let blockCount = 0;
+    let listDepth = 0;
+    let liIndex = 0;
 
     function openMark(type) {
       if (openMarks[type] == null) openMarks[type] = plain.length;
@@ -1648,6 +1625,16 @@ const VOLUME = "kindred";
           closeAllMarks();
           continue;
         }
+        if (name === "UL" || name === "OL") {
+          closeAllMarks();
+          listDepth = Math.max(0, listDepth - 1);
+          if (listDepth === 0) liIndex = 0;
+          continue;
+        }
+        if (name === "LI") {
+          closeAllMarks();
+          continue;
+        }
         if (name === "SPAN" || name === "FONT") {
           const opened = spanExclusiveOpened.pop() || [];
           for (let k = opened.length - 1; k >= 0; k--) closeExclusive(opened[k]);
@@ -1669,12 +1656,33 @@ const VOLUME = "kindred";
         continue;
       }
       if (name === "P" || name === "DIV") {
-        if (blockCount > 0) {
+        if (listDepth === 0 && blockCount > 0) {
           closeAllMarks();
           plain += "\n\n";
         }
         blockAligns.push(parseTextAlignFromOpenTag(chunk));
         blockCount++;
+        continue;
+      }
+      if (name === "UL" || name === "OL") {
+        if (listDepth === 0 && blockCount > 0) {
+          closeAllMarks();
+          plain += "\n\n";
+        }
+        listDepth++;
+        liIndex = 0;
+        if (listDepth === 1) {
+          blockAligns.push("left");
+          blockCount++;
+        }
+        continue;
+      }
+      if (name === "LI") {
+        if (liIndex > 0) {
+          closeAllMarks();
+          plain += "\n";
+        }
+        liIndex++;
         continue;
       }
       if ((name === "SPAN" || name === "FONT") && !/\/>$/.test(chunk)) {
@@ -3056,7 +3064,7 @@ const KindredGitStore = {
   autoMessage,
   nextSequentialName,
   titleFromText,
-  htmlToPlain: tipTapHtmlToPlain,
+  htmlToPlain: htmlToPlainText,
   formatHunksFromDiff,
   reviewWorkingTree,
   dumpFsTree,
