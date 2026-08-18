@@ -1,17 +1,3 @@
-const SRGB_TO_XYZ = [
-  [0.4124564, 0.3575761, 0.1804375],
-  [0.2126729, 0.7151522, 0.0721750],
-  [0.0193339, 0.1191920, 0.9503041],
-];
-
-const XYZ_TO_SRGB = [
-  [3.2404542, -1.5371385, -0.4985314],
-  [-0.9692660, 1.8760108, 0.0415560],
-  [0.0556434, -0.2040259, 1.0572252],
-];
-
-const D65 = { X: 0.95047, Y: 1.00000, Z: 1.08883 };
-
 function srgbToLinear(c) {
   const v = c / 255;
   return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
@@ -21,93 +7,18 @@ function linearToSrgb(v) {
   return v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
 }
 
-function rgbToXyz(r, g, b) {
+function relativeLuminance(r, g, b) {
   const lr = srgbToLinear(r);
   const lg = srgbToLinear(g);
   const lb = srgbToLinear(b);
-  return {
-    X: lr * SRGB_TO_XYZ[0][0] + lg * SRGB_TO_XYZ[0][1] + lb * SRGB_TO_XYZ[0][2],
-    Y: lr * SRGB_TO_XYZ[1][0] + lg * SRGB_TO_XYZ[1][1] + lb * SRGB_TO_XYZ[1][2],
-    Z: lr * SRGB_TO_XYZ[2][0] + lg * SRGB_TO_XYZ[2][1] + lb * SRGB_TO_XYZ[2][2],
-  };
+  return lr * 0.2126 + lg * 0.7152 + lb * 0.0722;
 }
 
-function xyzToRgb(X, Y, Z) {
-  const lr = X * XYZ_TO_SRGB[0][0] + Y * XYZ_TO_SRGB[0][1] + Z * XYZ_TO_SRGB[0][2];
-  const lg = X * XYZ_TO_SRGB[1][0] + Y * XYZ_TO_SRGB[1][1] + Z * XYZ_TO_SRGB[1][2];
-  const lb = X * XYZ_TO_SRGB[2][0] + Y * XYZ_TO_SRGB[2][1] + Z * XYZ_TO_SRGB[2][2];
-  return {
-    r: Math.round(Math.max(0, Math.min(255, linearToSrgb(lr) * 255))),
-    g: Math.round(Math.max(0, Math.min(255, linearToSrgb(lg) * 255))),
-    b: Math.round(Math.max(0, Math.min(255, linearToSrgb(lb) * 255))),
-  };
+function invertLuminance(l) {
+  return Math.min(1, Math.max(0, (1 - l) / (20 * l + 1)));
 }
 
-function xyzToLch(X, Y, Z) {
-  const xr = X / D65.X;
-  const yr = Y / D65.Y;
-  const zr = Z / D65.Z;
-
-  const fx = xr > 0.008856 ? Math.cbrt(xr) : (7.787 * xr) + 16 / 116;
-  const fy = yr > 0.008856 ? Math.cbrt(yr) : (7.787 * yr) + 16 / 116;
-  const fz = zr > 0.008856 ? Math.cbrt(zr) : (7.787 * zr) + 16 / 116;
-
-  const L = Math.max(0, 116 * fy - 16);
-  const a = 500 * (fx - fy);
-  const b = 200 * (fy - fz);
-
-  const C = Math.sqrt(a * a + b * b);
-  let h = Math.atan2(b, a) * (180 / Math.PI);
-  if (h < 0) h += 360;
-
-  return { L, C, h };
-}
-
-function lchToXyz(L, C, h) {
-  const a = C * Math.cos(h * (Math.PI / 180));
-  const b = C * Math.sin(h * (Math.PI / 180));
-  const fy = (L + 16) / 116;
-  const fx = a / 500 + fy;
-  const fz = fy - b / 200;
-
-  const xr = fx > 0.206893 ? fx * fx * fx : (fx - 16 / 116) / 7.787;
-  const yr = L > 7.9996 ? fy * fy * fy : (fy - 16 / 116) / 7.787;
-  const zr = fz > 0.206893 ? fz * fz * fz : (fz - 16 / 116) / 7.787;
-
-  return {
-    X: xr * D65.X,
-    Y: yr * D65.Y,
-    Z: zr * D65.Z,
-  };
-}
-
-function rgbToLch(r, g, b) {
-  const { X, Y, Z } = rgbToXyz(r, g, b);
-  return xyzToLch(X, Y, Z);
-}
-
-function lchToRgb(L, C, h) {
-  const { X, Y, Z } = lchToXyz(L, C, h);
-  return xyzToRgb(X, Y, Z);
-}
-
-function invertLchLightness(lch) {
-  const normalized = lch.L / 100;
-  const inverted = 1 - normalized ** 1.8;
-  return { ...lch, L: inverted * 100 };
-}
-
-function parseHsl(hslStr) {
-  const m = hslStr.match(/hsla?\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*(?:,\s*([\d.]+))?\s*\)/i);
-  if (!m) return null;
-  const h = parseFloat(m[1]);
-  const s = parseFloat(m[2]) / 100;
-  const l = parseFloat(m[3]) / 100;
-  const a = m[4] ? parseFloat(m[4]) : 1;
-  return { h, s, l, a, original: hslStr };
-}
-
-function hslToRgb(h, s, l) {
+function hslToRgbFloat(h, s, l) {
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
   const m = l - c / 2;
@@ -119,9 +30,18 @@ function hslToRgb(h, s, l) {
   else if (h < 300) { r = x; b = c; }
   else { r = c; b = x; }
   return {
-    r: Math.round((r + m) * 255),
-    g: Math.round((g + m) * 255),
-    b: Math.round((b + m) * 255),
+    r: (r + m) * 255,
+    g: (g + m) * 255,
+    b: (b + m) * 255,
+  };
+}
+
+function hslToRgb(h, s, l) {
+  const { r, g, b } = hslToRgbFloat(h, s, l);
+  return {
+    r: Math.round(Math.max(0, Math.min(255, r))),
+    g: Math.round(Math.max(0, Math.min(255, g))),
+    b: Math.round(Math.max(0, Math.min(255, b))),
   };
 }
 
@@ -140,6 +60,39 @@ function rgbToHsl(r, g, b) {
     }
   }
   return { h: h < 0 ? h + 360 : h, s, l };
+}
+
+function withLuminance(r, g, b, targetLuminance) {
+  const { h, s } = rgbToHsl(r, g, b);
+  let upperLightness = 1;
+  let lowerLightness = 0;
+  for (let i = 0; i < 20; i++) {
+    const lightness = (upperLightness + lowerLightness) / 2;
+    const { r: r2, g: g2, b: b2 } = hslToRgbFloat(h, s, lightness);
+    const luminance = relativeLuminance(r2, g2, b2);
+    if (luminance > targetLuminance) {
+      upperLightness = lightness;
+    } else {
+      lowerLightness = lightness;
+    }
+  }
+  return hslToRgb(h, s, lowerLightness);
+}
+
+function invertCP(r, g, b) {
+  const l = relativeLuminance(r, g, b);
+  const targetL = invertLuminance(l);
+  return withLuminance(r, g, b, targetL);
+}
+
+function parseHsl(hslStr) {
+  const m = hslStr.match(/hsla?\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*(?:,\s*([\d.]+))?\s*\)/i);
+  if (!m) return null;
+  const h = parseFloat(m[1]);
+  const s = parseFloat(m[2]) / 100;
+  const l = parseFloat(m[3]) / 100;
+  const a = m[4] ? parseFloat(m[4]) : 1;
+  return { ...hslToRgb(h, s, l), a, original: hslStr };
 }
 
 function parseRgb(rgbStr) {
@@ -211,25 +164,21 @@ function formatColor(parsed, originalFormat) {
 function invertColorValue(colorStr) {
   const parsed = parseColor(colorStr);
   if (!parsed) return colorStr;
-
   if (parsed.a === 0) return colorStr;
 
   const { r, g, b } = parsed;
-  const lch = rgbToLch(r, g, b);
-  const inverted = invertLchLightness(lch);
-  const { r: r2, g: g2, b: b2 } = lchToRgb(inverted.L, inverted.C, inverted.h);
-
-  return formatColor({ r: r2, g: g2, b: b2, a: parsed.a }, parsed.original || colorStr);
+  const inverted = invertCP(r, g, b);
+  return formatColor({ ...inverted, a: parsed.a }, parsed.original || colorStr);
 }
 
-function invertStyleDeclaration(styleStr) {
+function invertStyleDeclaration(styleStr, invertFn) {
   if (!styleStr) return styleStr;
 
   return styleStr.replace(
     /(--[\w-]+\s*:\s*)([^;]+)(;?)/g,
     (match, prop, value, semi) => {
       const trimmed = value.trim();
-      const inverted = invertColorValue(trimmed);
+      const inverted = invertFn(trimmed);
       return prop + inverted + semi;
     }
   ).replace(
@@ -237,7 +186,7 @@ function invertStyleDeclaration(styleStr) {
     (match, prop, value, semi) => {
       const trimmed = value.trim();
       if (/^(inherit|initial|unset|revert|currentColor)$/i.test(trimmed)) return match;
-      const inverted = invertColorValue(trimmed);
+      const inverted = invertFn(trimmed);
       return `${prop}: ${inverted}${semi}`;
     }
   ).replace(
@@ -245,7 +194,7 @@ function invertStyleDeclaration(styleStr) {
     (match, prop, value, semi) => {
       const inverted = value.replace(
         /(rgb|hsl)a?\([^)]+\)|#[a-f\d]{3,8}/gi,
-        (colorMatch) => invertColorValue(colorMatch)
+        (colorMatch) => invertFn(colorMatch)
       );
       return `${prop}: ${inverted}${semi}`;
     }
@@ -254,7 +203,7 @@ function invertStyleDeclaration(styleStr) {
     (match) => {
       return match.replace(
         /(rgb|hsl)a?\([^)]+\)|#[a-f\d]{3,8}/gi,
-        (colorMatch) => invertColorValue(colorMatch)
+        (colorMatch) => invertFn(colorMatch)
       );
     }
   );
@@ -262,13 +211,22 @@ function invertStyleDeclaration(styleStr) {
 
 export function invertHtmlColors(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-
   for (const el of doc.querySelectorAll('*')) {
     const style = el.getAttribute('style');
     if (style) {
-      el.setAttribute('style', invertStyleDeclaration(style));
+      el.setAttribute('style', invertStyleDeclaration(style, invertColorValue));
     }
   }
+  return doc.documentElement.outerHTML;
+}
 
+export function invertHtmlColorsImport(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  for (const el of doc.querySelectorAll('*')) {
+    const style = el.getAttribute('style');
+    if (style) {
+      el.setAttribute('style', invertStyleDeclaration(style, invertColorValue));
+    }
+  }
   return doc.documentElement.outerHTML;
 }

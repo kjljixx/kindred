@@ -25,6 +25,7 @@ import { alignTwoWay } from "./docAlign.js";
 import { htmlToDoc, nodePlainText, normalizeDoc, blockToHtml } from "./kindredSchema.js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { CONFIG } from "./config.js";
 
 (() => {
   const DIFF_EQUAL = 0;
@@ -2757,7 +2758,11 @@ import DOMPurify from "dompurify";
         await refreshCommits();
       }
       const { importFileToHtml } = await loadPandocModule();
-      const html = stripKindredProtocol(await importFileToHtml(file));
+      const { invertHtmlColorsImport } = await import("./colorInvert.js");
+      let html = stripKindredProtocol(await importFileToHtml(file));
+      if (CONFIG.export.invertColorsForDarkMode) {
+        html = invertHtmlColorsImport(html);
+      }
       suppressEditorUpdate = true;
       try {
         setHtml(tipTap, html, { emitUpdate: false });
