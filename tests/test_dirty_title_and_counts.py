@@ -104,3 +104,75 @@ def test_selection_counts_show_selected_over_total(kindred: KindredPage) -> None
   kindred.wait_until_status_contains(
     "2/3 words · 12/21 chars · 1/2 sentences · 1/1 paragraph"
   )
+
+
+def expected_table_counts() -> tuple[int, int, int, int]:
+  """Expected words, chars, sentences, paragraphs for a 2x2 table.
+  
+  Table structure:
+    <tr><td><p>Alpha</p></td><td><p>Bravo</p></td></tr>
+    <tr><td><p>Charlie delta</p></td><td><p>Echo</p></td></tr>
+  
+  nodePlainText(table) joins cells with \n\n -> "Alpha\n\nBravo\n\nCharlie delta\n\nEcho"
+  statsCharacterBlocksOf strips \t and \n -> "AlphaBravoCharlie deltaEcho" = 27 chars
+  Words: Alpha, Bravo, Charlie, delta, Echo = 5
+  Sentences: split on \n\n -> 4 (each cell treated as sentence)
+  Paragraphs: split on \n\n -> 4
+  """
+  return 5, 27, 4, 4
+
+
+def test_table_character_counts(kindred: KindredPage) -> None:
+  """Test that table cell text is counted without structural newlines/tabs."""
+  table_html = (
+    "<table><tbody>"
+    "<tr><td><p>Alpha</p></td><td><p>Bravo</p></td></tr>"
+    "<tr><td><p>Charlie delta</p></td><td><p>Echo</p></td></tr>"
+    "</tbody></table>"
+  )
+  kindred.paste_html(table_html)
+  kindred.wait_until_draft_active()
+  words, chars, sentences, paragraphs = expected_table_counts()
+  kindred.wait_until_word_char_counts(words, chars)
+  assert f"{sentences} sentences" in kindred.status_text()
+  assert f"{paragraphs} paragraphs" in kindred.status_text()
+
+
+def test_table_with_text_combined_counts(kindred: KindredPage) -> None:
+  """Test counts when document has both table and regular paragraphs."""
+  table_html = (
+    "<table><tbody>"
+    "<tr><td><p>Cell one</p></td><td><p>Cell two</p></td></tr>"
+    "</tbody></table>"
+  )
+  text = "Intro paragraph."
+  # Paste text first, then table
+  kindred.paste_text(text)
+  kindred.wait_until_draft_active()
+  kindred.press_keys(Keys.END, Keys.ENTER)
+  kindred.paste_html(table_html)
+  kindred.wait_until_draft_active()
+  
+  # "Intro paragraph." = 2 words, 16 chars, 1 sentence, 1 paragraph
+  # Table: "Cell one\n\nCell two" = 4 words, 16 chars (no newlines), 2 sentences, 2 paragraphs
+  # Combined: 6 words, 32 chars, 3 sentences, 3 paragraphs
+  kindred.wait_until_word_char_counts(6, 32)
+  assert "3 sentences" in kindred.status_text()
+  assert "3 paragraphs" in kindred.status_text()
+
+
+def test_table_selection_counts(kindred: KindredPage) -> None:
+  """Test selection counts work inside a table."""
+  table_html = (
+    "<table><tbody>"
+    "<tr><td><p>Alpha bravo</p></td><td><p>Charlie delta</p></td></tr>"
+    "</tbody></table>"
+  )
+  kindred.paste_html(table_html)
+  kindred.wait_until_draft_active()
+  # Select "Alpha bravo" (first cell, 11 chars, 2 words, 1 sentence, 1 paragraph)
+  # Total: "Alpha bravo\n\nCharlie delta" -> 4 words, 24 chars, 2 sentences, 2 paragraphs
+  kindred.select_editor_text(0, len("Alpha bravo"))
+  kindred.wait_until_status_contains(
+    "2/4 words · 11/24 chars · 1/2 sentences · 1/2 paragraph"
+  )
