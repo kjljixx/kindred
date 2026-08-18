@@ -92,7 +92,9 @@ function lchToRgb(L, C, h) {
 }
 
 function invertLchLightness(lch) {
-  return { ...lch, L: 100 - lch.L };
+  const normalized = lch.L / 100;
+  const inverted = 1 - normalized ** 1.8;
+  return { ...lch, L: inverted * 100 };
 }
 
 function parseHsl(hslStr) {
