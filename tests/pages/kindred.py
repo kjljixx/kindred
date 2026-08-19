@@ -629,11 +629,11 @@ class KindredPage:
       raise last_err
 
   def diff_ins_texts(self) -> list[str]:
-    els = self.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-ins")
+    els = self.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-ins, #editor .diff-table-ins, #editor .diff-list-ins")
     return [(e.text or "").replace("\xa0", " ") for e in els]
 
   def diff_del_texts(self) -> list[str]:
-    els = self.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-del")
+    els = self.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-del, #editor .diff-table-del, #editor .diff-list-del")
     return [(e.text or "").replace("\xa0", " ") for e in els]
 
   def commit_button_disabled(self) -> bool:
@@ -670,6 +670,13 @@ class KindredPage:
     )
 
   def toolbar_click(self, cmd: str) -> None:
+    if "align" in cmd:
+      btn = self.wait.until(
+        EC.element_to_be_clickable(
+          (By.CSS_SELECTOR, f'#editor-toolbar button[data-align-trigger]')
+        )
+      )
+      btn.click()
     btn = self.wait.until(
       EC.element_to_be_clickable(
         (By.CSS_SELECTOR, f'#editor-toolbar button[data-cmd="{cmd}"]')

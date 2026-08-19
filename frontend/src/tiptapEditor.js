@@ -7,6 +7,7 @@ import {
   docToPlainText,
   kindredContentExtensions,
   prettyPrintHtml,
+  blockToHtml
 } from "./kindredSchema.js";
 import {
   DEFAULT_FONT_FAMILY,
@@ -1159,19 +1160,48 @@ function createDeletedTableWidget(tableHtml) {
 
 function appendTableDiffDecorations(doc, decorations, tableDiffs) {
   if (!tableDiffs) return;
-  if (tableDiffs.added?.length) {
-    doc.descendants((node, pos) => {
-      if (node.type.name !== "table") return;
+
+  const addedMap = new Map();
+  for (const html of tableDiffs.added || []) {
+    addedMap.set(html, (addedMap.get(html) || 0) + 1);
+  }
+
+  const replacementsMap = new Map();
+  for (const rep of tableDiffs.replacements || []) {
+    replacementsMap.set(rep.newHtml, rep.oldHtml);
+  }
+
+  doc.descendants((node, pos) => {
+    if (node.type.name !== "table") return;
+    const html = blockToHtml(node);
+
+    // If this table replaced an older table, render the red deleted table directly above it
+    if (replacementsMap.has(html)) {
+      const oldHtml = replacementsMap.get(html);
+      decorations.push(
+        Decoration.widget(pos, createDeletedTableWidget(oldHtml), {
+          side: -1,
+          key: `deleted-table-${pos}`,
+        })
+      );
+    }
+
+    // Only highlight this table green if it is actually in the added/modified list
+    const count = addedMap.get(html) || 0;
+    if (count > 0) {
       decorations.push(
         Decoration.node(pos, pos + node.nodeSize, { class: "diff-table-ins" })
       );
-    });
-  }
+      addedMap.set(html, count - 1);
+    }
+  });
+
+  // Standalone deletes (tables removed without a replacement)
   for (const [index, html] of (tableDiffs.deleted || []).entries()) {
     decorations.push(
       Decoration.widget(0, createDeletedTableWidget(html), {
         side: -1,
-        key: `deleted-table-${index}`,
+        key: `deleted-table-standalone-${index}`,
       })
     );
   }
@@ -1189,19 +1219,45 @@ function createDeletedListWidget(listHtml) {
 
 function appendListDiffDecorations(doc, decorations, listDiffs) {
   if (!listDiffs) return;
-  if (listDiffs.added?.length) {
-    doc.descendants((node, pos) => {
-      if (node.type.name !== "bulletList" && node.type.name !== "orderedList") return;
+
+  const addedMap = new Map();
+  for (const html of listDiffs.added || []) {
+    addedMap.set(html, (addedMap.get(html) || 0) + 1);
+  }
+
+  const replacementsMap = new Map();
+  for (const rep of listDiffs.replacements || []) {
+    replacementsMap.set(rep.newHtml, rep.oldHtml);
+  }
+
+  doc.descendants((node, pos) => {
+    if (node.type.name !== "bulletList" && node.type.name !== "orderedList") return;
+    const html = blockToHtml(node);
+
+    if (replacementsMap.has(html)) {
+      const oldHtml = replacementsMap.get(html);
+      decorations.push(
+        Decoration.widget(pos, createDeletedListWidget(oldHtml), {
+          side: -1,
+          key: `deleted-list-${pos}`,
+        })
+      );
+    }
+
+    const count = addedMap.get(html) || 0;
+    if (count > 0) {
       decorations.push(
         Decoration.node(pos, pos + node.nodeSize, { class: "diff-list-ins" })
       );
-    });
-  }
+      addedMap.set(html, count - 1);
+    }
+  });
+
   for (const [index, html] of (listDiffs.deleted || []).entries()) {
     decorations.push(
       Decoration.widget(0, createDeletedListWidget(html), {
         side: -1,
-        key: `deleted-list-${index}`,
+        key: `deleted-list-standalone-${index}`,
       })
     );
   }

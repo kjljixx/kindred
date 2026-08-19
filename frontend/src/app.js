@@ -23,7 +23,7 @@ import {
 import { loadColoris, loadHtmlDiff } from "./optionalAssets.js";
 import { warmPopularGoogleFonts } from "./fontCatalog.js";
 import { alignTwoWay } from "./docAlign.js";
-import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, isStructuralBlock,} from "./kindredSchema.js";
+import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, isStructuralBlock, isListBlock, isTableBlock } from "./kindredSchema.js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { CONFIG } from "./config.js";
@@ -327,51 +327,59 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   function tableDiffsFromOps(ops) {
     const added = [];
     const deleted = [];
+    const replacements = [];
+  
     for (const op of ops) {
-      if (op.type === "insert" && op.side === "theirs" && op.theirs?.type === "table") {
-        added.push(blockToHtml(op.theirs));
-      } else if (
-        op.type === "delete" &&
-        op.side === "theirs" &&
-        (op.base?.type === "table" || op.ours?.type === "table")
-      ) {
+      if (op.type === "insert" && op.side === "theirs" && isTableBlock(op.theirs || op.node)) {
+        added.push(blockToHtml(op.theirs || op.node));
+      } else if (op.type === "delete" && op.side === "theirs" && isTableBlock(op.base || op.ours)) {
         deleted.push(blockToHtml(op.base || op.ours));
-      } else if (
-        op.type === "replace" &&
-        (op.base?.type === "table" || op.theirs?.type === "table")
-      ) {
-        if (op.base?.type === "table") deleted.push(blockToHtml(op.base));
-        if (op.theirs?.type === "table") added.push(blockToHtml(op.theirs));
+      } else if (op.type === "replace" && (isTableBlock(op.base) || isTableBlock(op.theirs))) {
+        const oldHtml = isTableBlock(op.base) ? blockToHtml(op.base) : "";
+        const newHtml = isTableBlock(op.theirs) ? blockToHtml(op.theirs) : "";
+        if (oldHtml && newHtml) {
+          replacements.push({ oldHtml, newHtml });
+          added.push(newHtml);
+        } else if (oldHtml) {
+          deleted.push(oldHtml);
+        } else if (newHtml) {
+          added.push(newHtml);
+        }
       }
     }
-    return added.length || deleted.length ? { added, deleted } : null;
+  
+    return added.length || deleted.length || replacements.length
+      ? { added, deleted, replacements }
+      : null;
   }
-
-  function isListNode(node) {
-    return node?.type === "bulletList" || node?.type === "orderedList";
-  }
-
+  
   function listDiffsFromOps(ops) {
     const added = [];
     const deleted = [];
+    const replacements = [];
+  
     for (const op of ops) {
-      if (op.type === "insert" && op.side === "theirs" && isListNode(op.theirs)) {
-        added.push(blockToHtml(op.theirs));
-      } else if (
-        op.type === "delete" &&
-        op.side === "theirs" &&
-        (isListNode(op.base) || isListNode(op.ours))
-      ) {
+      if (op.type === "insert" && op.side === "theirs" && isListBlock(op.theirs || op.node)) {
+        added.push(blockToHtml(op.theirs || op.node));
+      } else if (op.type === "delete" && op.side === "theirs" && isListBlock(op.base || op.ours)) {
         deleted.push(blockToHtml(op.base || op.ours));
-      } else if (
-        op.type === "replace" &&
-        (isListNode(op.base) || isListNode(op.theirs))
-      ) {
-        if (isListNode(op.base)) deleted.push(blockToHtml(op.base));
-        if (isListNode(op.theirs)) added.push(blockToHtml(op.theirs));
+      } else if (op.type === "replace" && (isListBlock(op.base) || isListBlock(op.theirs))) {
+        const oldHtml = isListBlock(op.base) ? blockToHtml(op.base) : "";
+        const newHtml = isListBlock(op.theirs) ? blockToHtml(op.theirs) : "";
+        if (oldHtml && newHtml) {
+          replacements.push({ oldHtml, newHtml });
+          added.push(newHtml);
+        } else if (oldHtml) {
+          deleted.push(oldHtml);
+        } else if (newHtml) {
+          added.push(newHtml);
+        }
       }
     }
-    return added.length || deleted.length ? { added, deleted } : null;
+  
+    return added.length || deleted.length || replacements.length
+      ? { added, deleted, replacements }
+      : null;
   }
 
   async function htmlAtCommitOid(oid) {
