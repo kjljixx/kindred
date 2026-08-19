@@ -696,8 +696,10 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   /** Resolve conflict HTML to one side (ours = base branch, theirs = incoming/dirty). */
   function htmlTakingSide(sourceHtml, side) {
     const takeTheirs = side === "theirs";
-    const segments = parseConflictSegments(sourceHtml);
-    let html = sourceHtml;
+    let html = sourceHtml || "<p></p>";
+  
+    // 1. Resolve inline text conflicts
+    const segments = parseConflictSegments(html);
     if (segments) {
       const parts = [];
       for (const seg of segments) {
@@ -706,74 +708,62 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
       }
       html = parts.join("");
     }
-    const alignAttr = takeTheirs
-      ? "data-kindred-align-theirs"
-      : "data-kindred-align-ours";
-    html = String(html || "").replace(/<p\b([^>]*)>/gi, (full, attrs) => {
-      if (!/\bdata-kindred-align-(?:ours|theirs)\s*=/i.test(attrs)) return full;
-      const m = attrs.match(
-        new RegExp(`\\b${alignAttr}\\s*=\\s*(["'])([\\s\\S]*?)\\1`, "i")
-      );
-      const align = (m && m[2]) || "left";
-      let next = attrs.replace(
-        /\s*data-kindred-align-(?:ours|theirs|label-ours|label-theirs)\s*=\s*(["'])[\s\S]*?\1/gi,
-        ""
-      );
-      if (/\bstyle\s*=/i.test(next)) {
-        next = next.replace(/\bstyle\s*=\s*(["'])([\s\S]*?)\1/i, (_, q, style) => {
-          let s = String(style)
-            .replace(/(?:^|;)\s*text-align\s*:\s*[^;]*/i, "")
-            .replace(/^;\s*|\s*;$/g, "")
-            .trim();
-          s = s ? `${s}; text-align: ${align}` : `text-align: ${align}`;
-          return `style=${q}${s}${q}`;
-        });
-      } else {
-        next = ` style="text-align: ${align}"${next}`;
-      }
-      return `<p${next}>`;
-    });
-
-    const tableAttr = takeTheirs
-      ? "data-kindred-table-theirs"
-      : "data-kindred-table-ours";
-    html = String(html || "").replace(/<table\b([^>]*)>[\s\S]*?<\/table>/gi, (full, attrs) => {
-      if (!/\bdata-kindred-table-(?:ours|theirs)\s*=/i.test(attrs)) return full;
-      const m = attrs.match(
-        new RegExp(`\\b${tableAttr}\\s*=\\s*(["'])([\\s\\S]*?)\\1`, "i")
-      );
-      if (m && m[2]) {
-        const decoded = m[2]
-          .replace(/&quot;/g, '"')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&amp;/g, '&');
-        return decoded;
-      }
-      return full;
-    });
-
-    const listAttr = takeTheirs
-      ? "data-kindred-list-theirs"
-      : "data-kindred-list-ours";
-    const listDoc = new DOMParser().parseFromString(
+  
+    // 2. DOM-based resolution for alignments, tables, and lists
+    const doc = new DOMParser().parseFromString(
       `<div id="__kindred_root">${html}</div>`,
       "text/html"
     );
-    const listRoot = listDoc.getElementById("__kindred_root");
-    if (listRoot) {
-      listRoot.querySelectorAll("[data-kindred-list-ours]").forEach((el) => {
-        const chosen = el.getAttribute(listAttr);
-        if (!chosen) return;
-        const wrap = listDoc.createElement("div");
+    const root = doc.getElementById("__kindred_root");
+    if (!root) return html || "<p></p>";
+  
+    const alignAttr = takeTheirs ? "data-kindred-align-theirs" : "data-kindred-align-ours";
+    const tableAttr = takeTheirs ? "data-kindred-table-theirs" : "data-kindred-table-ours";
+    const listAttr  = takeTheirs ? "data-kindred-list-theirs"  : "data-kindred-list-ours";
+  
+    // Resolve paragraph alignments
+    root.querySelectorAll("[data-kindred-align-ours]").forEach((el) => {
+      const align = el.getAttribute(alignAttr) || "left";
+      el.style.textAlign = align;
+      el.removeAttribute("data-kindred-align-ours");
+      el.removeAttribute("data-kindred-align-theirs");
+      el.removeAttribute("data-kindred-align-label-ours");
+      el.removeAttribute("data-kindred-align-label-theirs");
+    });
+  
+    // Resolve table conflicts
+    root.querySelectorAll("[data-kindred-table-ours]").forEach((el) => {
+      const chosen = el.getAttribute(tableAttr);
+      if (chosen && chosen.trim()) {
+        const wrap = doc.createElement("div");
         wrap.innerHTML = chosen;
         const replacement = wrap.firstElementChild;
-        if (replacement) el.replaceWith(listDoc.importNode(replacement, true));
-      });
-      html = listRoot.innerHTML;
-    }
-
-    return html || "<p></p>";
+        if (replacement) {
+          el.replaceWith(doc.importNode(replacement, true));
+          return;
+        }
+      }
+      // If the chosen side is empty (e.g. table deleted on this side), remove it
+      el.remove();
+    });
+  
+    // Resolve list conflicts
+    root.querySelectorAll("[data-kindred-list-ours]").forEach((el) => {
+      const chosen = el.getAttribute(listAttr);
+      if (chosen && chosen.trim()) {
+        const wrap = doc.createElement("div");
+        wrap.innerHTML = chosen;
+        const replacement = wrap.firstElementChild;
+        if (replacement) {
+          el.replaceWith(doc.importNode(replacement, true));
+          return;
+        }
+      }
+      // If the chosen side is empty (e.g. list deleted on this side), remove it
+      el.remove();
+    });
+  
+    return root.innerHTML || "<p></p>";
   }
 
   function htmlTakingOurs(sourceHtml) {
@@ -1549,6 +1539,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
       workingDirty = true;
       applyRevisionToEditor();
     }
+    debugEvent("review", "postTakeAllTheirs", { currentHtml });
     dirtyReviewing = false;
     hasConflict = unresolvedMergeConflictCount(currentHtml) > 0;
     syncDirtyBodyFromCurrent();
