@@ -235,14 +235,25 @@ export function invertStyleDeclaration(styleStr, invertFn = invertColor) {
   );
 }
 
-export function invertHtmlColors(html, invertFn = invertColor) {
+export function invertHtmlColors(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
+
+  for (const mark of doc.querySelectorAll('mark')) {
+    const style = mark.getAttribute('style') || '';
+    if (!/color\s*:/i.test(style) || /background-color\s*:/i.test(style)) {
+      if (!/(^|;)\s*color\s*:/i.test(style)) {
+        mark.setAttribute('style', `color: inherit; ${style}`.trim());
+      }
+    }
+  }
+
   for (const el of doc.querySelectorAll('*')) {
     const style = el.getAttribute('style');
     if (style) {
-      el.setAttribute('style', invertStyleDeclaration(style, invertFn));
+      el.setAttribute('style', invertStyleDeclaration(style, invertColorValue));
     }
   }
+
   return doc.documentElement.outerHTML;
 }
 

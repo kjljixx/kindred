@@ -40,7 +40,13 @@ const Highlight = Mark.create({
     return [
       {
         tag: "mark",
-        getAttrs: (element) => ({ color: element.style.backgroundColor || null }),
+      },
+      {
+        tag: "span",
+        getAttrs: (element) => {
+          const bg = element.style?.backgroundColor;
+          return bg ? {} : false;
+        },
       },
     ];
   },
@@ -288,7 +294,7 @@ const KindredTable = Table.extend({
 
 /**
  * Pretty-print with newlines only between sibling blocks.
- * Never injects \\n before closing tags (that would sit inside paragraph text).
+ * Never injects \n before closing tags (that would sit inside paragraph text).
  */
 export function prettyPrintHtml(html) {
   const compact = String(html || "")
