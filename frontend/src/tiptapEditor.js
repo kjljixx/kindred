@@ -1643,6 +1643,12 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
   if (!toolbarEl) return;
   const lockedMark = (name) => lockedMarks?.find((mark) => mark.type === name) || null;
   const markIsActive = (name) => lockedMarks ? Boolean(lockedMark(name)) : editor.isActive(name);
+
+  let activeAlignCmd = "alignLeft";
+  if (editor.isActive({ textAlign: "center" })) activeAlignCmd = "alignCenter";
+  else if (editor.isActive({ textAlign: "right" })) activeAlignCmd = "alignRight";
+  else if (editor.isActive({ textAlign: "justify" })) activeAlignCmd = "alignJustify";
+
   toolbarEl.querySelectorAll("[data-cmd]").forEach((btn) => {
     const cmd = btn.dataset.cmd;
     let active = false;
@@ -1660,6 +1666,19 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
     else if (cmd === "orderedList") active = editor.isActive("orderedList");
     btn.classList.toggle("is-active", active);
   });
+
+  const alignTrigger = toolbarEl.querySelector("[data-align-trigger]");
+  const activeAlignBtn = toolbarEl.querySelector(`[data-cmd="${activeAlignCmd}"]`);
+  if (alignTrigger && activeAlignBtn && alignTrigger.dataset.currentAlign !== activeAlignCmd) {
+    alignTrigger.dataset.currentAlign = activeAlignCmd;
+    alignTrigger.innerHTML = activeAlignBtn.innerHTML;
+    alignTrigger.title = activeAlignBtn.title;
+    alignTrigger.setAttribute(
+      "aria-label",
+      activeAlignBtn.getAttribute("aria-label") || activeAlignBtn.title
+    );
+  }
+
   const attrs = lockedMarks ? lockedMark("textStyle")?.attrs || {} : editor.getAttributes("textStyle");
   const colorInput = toolbarEl.querySelector("[data-color-input]");
   const colorSwatch = toolbarEl.querySelector(".tb-color-swatch");
@@ -1707,6 +1726,8 @@ export function bindToolbar(editor, toolbarEl) {
     : null;
   const fontFamilyTrigger = toolbarEl.querySelector("[data-font-family-trigger]");
   const fontFamilyPanel = toolbarEl.querySelector("[data-font-family-panel]");
+  const alignTrigger = toolbarEl.querySelector("[data-align-trigger]");
+  const alignMenu = toolbarEl.querySelector("[data-align-menu]");
   const imageInput = toolbarEl.querySelector("[data-image-input]");
   const formatLockButton = toolbarEl.querySelector("[data-format-lock]");
   let stashedSelection = null;
@@ -1735,6 +1756,12 @@ export function bindToolbar(editor, toolbarEl) {
     event.preventDefault();
     setFormatLock(!formatLock);
   };
+  
+  const setAlignMenuOpen = (open) => {
+    if (!alignMenu || !alignTrigger) return;
+    alignMenu.hidden = !open;
+    alignTrigger.setAttribute("aria-expanded", String(open));
+  };
 
   const isColorPickerOpen = () => Boolean(document.querySelector(".clr-picker.clr-open"));
   const isChatComposerActive = () => {
@@ -1747,6 +1774,9 @@ export function bindToolbar(editor, toolbarEl) {
     const el = document.activeElement;
     if (el && (el === fontSizeInput || el === fontFamilySelect || el === colorInput)) return true;
     if (el && fontFamilyTrigger && (el === fontFamilyTrigger || fontFamilyPanel?.contains(el))) {
+      return true;
+    }
+    if (el && alignTrigger && (el === alignTrigger || alignMenu?.contains(el))) {
       return true;
     }
     if (isColorPickerOpen()) return true;
@@ -1771,6 +1801,29 @@ export function bindToolbar(editor, toolbarEl) {
     });
   };
 
+  const onAlignTriggerClick = (e) => {
+    console.log("hi");
+    console.log(alignMenu.hidden);
+    e.preventDefault();
+    setAlignMenuOpen(alignMenu?.hidden ?? true);
+  };
+
+  const onDocClick = (e) => {
+    console.log("hello");
+    if (alignMenu && !alignMenu.hidden && !alignTrigger?.contains(e.target) && !alignMenu.contains(e.target)) {
+      setAlignMenuOpen(false);
+    }
+  };
+
+  const onDocKeydown = (e) => {
+    console.log("hello2");
+    if (e.key === "Escape" && alignMenu && !alignMenu.hidden) {
+      setAlignMenuOpen(false);
+      alignTrigger?.focus();
+    }
+  };
+
+  // Update onClick to close the menu on alignment command:
   const onClick = (e) => {
     const btn = e.target.closest("[data-cmd]");
     if (!btn || !toolbarEl.contains(btn)) return;
@@ -1818,10 +1871,10 @@ export function bindToolbar(editor, toolbarEl) {
       chain.deleteTable().run();
       return;
     }
-    else if (cmd === "alignLeft") chain.setTextAlign("left").run();
-    else if (cmd === "alignCenter") chain.setTextAlign("center").run();
-    else if (cmd === "alignRight") chain.setTextAlign("right").run();
-    else if (cmd === "alignJustify") chain.setTextAlign("justify").run();
+    else if (cmd === "alignLeft") { chain.setTextAlign("left").run(); setAlignMenuOpen(false); }
+    else if (cmd === "alignCenter") { chain.setTextAlign("center").run(); setAlignMenuOpen(false); }
+    else if (cmd === "alignRight") { chain.setTextAlign("right").run(); setAlignMenuOpen(false); }
+    else if (cmd === "alignJustify") { chain.setTextAlign("justify").run(); setAlignMenuOpen(false); }
     else if (cmd === "bulletList") chain.toggleBulletList().run();
     else if (cmd === "orderedList") chain.toggleOrderedList().run();
     if (formatLock) {
@@ -1929,6 +1982,9 @@ export function bindToolbar(editor, toolbarEl) {
     scheduleClearIfNoKeepTarget();
   };
 
+  alignTrigger?.addEventListener("click", onAlignTriggerClick);
+  document.addEventListener("click", onDocClick);
+  document.addEventListener("keydown", onDocKeydown);
   toolbarEl.addEventListener("click", onClick);
   formatLockButton?.addEventListener("mousedown", onFormatLockPointerDown);
   formatLockButton?.addEventListener("click", onFormatLockClick);
@@ -1965,6 +2021,9 @@ export function bindToolbar(editor, toolbarEl) {
   editor.on("selectionUpdate", onSel);
   syncToolbar(editor, toolbarEl);
   return () => {
+    alignTrigger?.removeEventListener("click", onAlignTriggerClick);
+    document.removeEventListener("click", onDocClick);
+    document.removeEventListener("keydown", onDocKeydown);
     toolbarEl.removeEventListener("click", onClick);
     formatLockButton?.removeEventListener("mousedown", onFormatLockPointerDown);
     formatLockButton?.removeEventListener("click", onFormatLockClick);
