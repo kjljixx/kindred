@@ -1236,12 +1236,15 @@ button.pane-title {
   line-height: var(--line-height-2);
 }
 
-.editor .ProseMirror li > p {
+.editor .ProseMirror li > p,
+.editor .ProseMirror .kindred-list-preview li > p {
   margin: 0;
+  min-height: 1.25em;
 }
 
 /* List conflict + preview */
 .merge-list-conflict {
+  width: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
