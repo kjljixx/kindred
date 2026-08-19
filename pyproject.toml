@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kindred"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local writing GUI with draft-scoped AI chat"
 readme = "README.md"
 requires-python = ">=3.11"
