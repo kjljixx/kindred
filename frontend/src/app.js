@@ -2931,6 +2931,9 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     converting = true;
     updateCommitBtn();
     setStatus("importing...");
+    let slowTimer = setTimeout(() => {
+      setStatus("importing... please be patient, pandoc may be downloading...");
+    }, 3000);
     try {
       if (pendingMerge && activeDraftId && store) {
         await flushSaveTimer();
@@ -2976,6 +2979,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     } finally {
       converting = false;
       updateCommitBtn();
+      clearChatState(slowTimer);
     }
   }
 
