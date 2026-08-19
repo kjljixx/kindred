@@ -1135,7 +1135,7 @@ const VOLUME = "kindred";
   }
 
   /** Boolean marks that stack (bold∪underline). */
-  const ORTHOGONAL_MARK_TYPES = ["bold", "italic", "underline", "strike", "highlight"];
+  const ORTHOGONAL_MARK_TYPES = ["bold", "italic", "underline", "strike"];
   const MARK_FROM_TAG = {
     STRONG: "bold",
     B: "bold",
@@ -1144,7 +1144,6 @@ const VOLUME = "kindred";
     U: "underline",
     S: "strike",
     STRIKE: "strike",
-    MARK: "highlight",
   };
   const MARK_TO_TAG = {
     bold: "strong",
@@ -1153,6 +1152,23 @@ const VOLUME = "kindred";
     strike: "s",
     highlight: "mark",
   };
+
+  function normalizeColorWithAlpha(raw) {
+    if (/^#[0-9a-fA-F]{8}$/.test(raw)) return raw.toLowerCase();
+    if (/^#[0-9a-fA-F]{6}$/.test(raw)) return `${raw.toLowerCase()}ff`;
+    const rgba = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:,\s*([\d.]+))?\)/i.exec(raw);
+    if (rgba) {
+      const hex = (n) => Number(n).toString(16).padStart(2, "0");
+      const alpha =
+        rgba[4] != null
+          ? Math.round(Number(rgba[4]) * 255)
+              .toString(16)
+              .padStart(2, "0")
+          : "ff";
+      return `#${hex(rgba[1])}${hex(rgba[2])}${hex(rgba[3])}${alpha}`.toLowerCase();
+    }
+    return raw;
+  }
 
   /**
    * Exclusive valued marks: one value per char; both-sides clash → format conflict.
@@ -1244,6 +1260,20 @@ const VOLUME = "kindred";
       parseFromOpenTag(chunk) {
         const attr = /\bhref\s*=\s*(["'])(.*?)\1/i.exec(chunk);
         return attr ? attr[2].trim() : null;
+      },
+    },
+    highlight: {
+      normalize(value) {
+        const raw = String(value || "").trim();
+        if (!raw) return null;
+        return normalizeColorWithAlpha(raw);
+      },
+      wrapHtml(inner, value) {
+        return `<mark style="background-color: ${value}">${inner}</mark>`;
+      },
+      parseFromStyle(styleText) {
+        const m = /(?:^|;)\s*background-color\s*:\s*([^;]+)/i.exec(styleText || "");
+        return m ? m[1].trim() : null;
       },
     },
   };
@@ -1656,6 +1686,10 @@ const VOLUME = "kindred";
           closeExclusive("link");
           continue;
         }
+        if (name === "MARK") {
+          closeExclusive("highlight");
+          continue;
+        }
         const mt = MARK_FROM_TAG[name];
         if (mt) closeMark(mt);
         continue;
@@ -1709,6 +1743,13 @@ const VOLUME = "kindred";
       }
       if (name === "A" && !/\/>$/.test(chunk)) {
         openExclusive("link", EXCLUSIVE_MARKS.link.parseFromOpenTag(chunk));
+        continue;
+      }
+      if (name === "MARK" && !/\/>$/.test(chunk)) {
+        const style = /\bstyle\s*=\s*(["'])(.*?)\1/i.exec(chunk);
+        const styleText = style ? style[2] : "";
+        const bg = EXCLUSIVE_MARKS.highlight.parseFromStyle(styleText);
+        openExclusive("highlight", bg || "#75720c");
         continue;
       }
       const mt = MARK_FROM_TAG[name];

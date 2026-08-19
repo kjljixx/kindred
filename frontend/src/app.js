@@ -486,9 +486,11 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   bindToolbar(tipTap, toolbarEl);
   resetEditorState({ text: "" });
   requestAnimationFrame(() => tipTap?.commands.focus());
-  toolbarEl.querySelector(".toolbar-color")?.addEventListener("pointerdown", () => {
-    void loadColoris().catch((error) => console.warn("Color picker failed to load:", error));
-  }, { once: true });
+  toolbarEl.querySelectorAll(".toolbar-color")?.forEach((el) => {
+    el.addEventListener("pointerdown", () => {
+      void loadColoris().catch((error) => console.warn("Color picker failed to load:", error));
+    }, { once: true });
+  });
 
   const stashChatKeptSelection = () => {
     if (!tipTap) return;

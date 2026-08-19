@@ -733,12 +733,16 @@ button.pane-title {
   text-decoration: underline;
 }
 
+.editor mark:not([style*="background-color"]),
+.editor .ProseMirror mark:not([style*="background-color"]) {
+  background: #75720c;
+}
+
 .editor-toolbar mark,
 .editor .ProseMirror mark {
   padding: 0 0.08em;
   border-radius: 0.1em;
   color: inherit;
-  background: #75720c;
 }
 
 .editor-toolbar button:not(.is-active) mark {
@@ -978,6 +982,40 @@ button.pane-title {
   background: currentColor;
 }
 
+.editor-toolbar .tb-highlight-swatch {
+  position: absolute;
+  bottom: 0.35rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1rem;
+  height: 0.2rem;
+  border-radius: 1px;
+  background: #75720c;
+}
+
+#highlight-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-2);
+}
+
+#highlight-container button {
+  color: var(--color-text-muted);
+  border-radius: var(--radius-2);
+}
+
+#highlight-container button:hover {
+  color: var(--color-text-bright);
+  background: var(--color-border-strong);
+}
+
+#highlight-container button.is-active {
+  background: var(--neutral-600);
+  color: var(--color-text-bright);
+}
+
 .editor-toolbar .color-field {
   position: absolute;
   inset: 0;
@@ -987,12 +1025,23 @@ button.pane-title {
   cursor: pointer;
 }
 
+.editor-toolbar .color-field-hidden {
+  position: fixed;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
+  padding: 0;
+}
+
 .clr-picker {
   border-top-left-radius: var(--radius-2) !important;
   border-top-right-radius: var(--radius-2) !important;
   border-bottom-left-radius: var(--radius-2) !important;
   border-bottom-right-radius: var(--radius-2) !important;
   background-color: var(--color-bg-raised) !important;
+  width: 300px;
 }
 
 .clr-close {

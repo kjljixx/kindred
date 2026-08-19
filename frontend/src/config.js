@@ -1,6 +1,6 @@
 export const CONFIG = {
   debug: {
-    enabled: true,
+    enabled: false,
     verbose: false,
     scopes: {
       input: true,

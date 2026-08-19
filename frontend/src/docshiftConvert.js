@@ -9,6 +9,7 @@ import { toHtml, toDocx } from 'docshift';
 export async function importDocxToHtml(file) {
   const blob = file instanceof Blob ? file : new Blob([file], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
   const html = await toHtml(blob);
+  console.log(html);
   return html || '<p></p>';
 }
 

@@ -39,16 +39,43 @@ export function loadColoris() {
       loadStylesheet("/static/coloris.min.css"),
       loadScript("/static/coloris.min.js"),
     ]).then(() => {
+      // 1. Set global defaults once
       window.Coloris({
-        el: "[data-color-input]",
+        el: "[data-highlight-input], [data-color-input], [data-coloris]",
         wrap: false,
         theme: "default",
         themeMode: "dark",
-        alpha: false,
-        format: "hex",
         focusInput: false,
         closeButton: true,
         closeLabel: "Done",
+      });
+    
+      // 2. Custom settings for Font Color
+      window.Coloris.setInstance("[data-color-input]", {
+        alpha: false,
+        format: "hex",
+        swatches: [
+          "#d4d4d4",
+          "rgba(255, 235, 59, 1.0)",
+          "rgba(76, 175, 80, 1.0)",
+          "rgba(33, 150, 243, 1.0)",
+          "rgba(255, 87, 34, 1.0)",
+          "rgba(233, 30, 99, 1.0)",
+          "rgba(156, 39, 176, 1.0)",
+        ],
+      });
+    
+      // 3. Custom settings for Highlight Color (with alpha enabled)
+      window.Coloris.setInstance("[data-highlight-input]", {
+        alpha: false,
+        format: "mixed",
+        swatches: [
+          "rgba(117, 114, 12, 1.0)",
+          "rgba(0, 111, 0, 1.0)",
+          "rgba(0, 93, 93, 1.0)",
+          "rgba(255, 75, 75, 1.0)",
+          "rgba(252, 0, 252, 1.0)",
+        ],
       });
     }).catch((error) => {
       colorisPromise = null;

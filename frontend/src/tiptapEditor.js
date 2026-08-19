@@ -87,10 +87,12 @@ const KeptSelection = Extension.create({
           },
       clearKeptSelection:
         () =>
-          ({ tr, dispatch }) => {
+          ({ tr, state, dispatch }) => {
             if (dispatch) {
               tr.setMeta(keptSelectionKey, null);
               tr.setMeta("addToHistory", false);
+              // Preserve active storedMarks so this transaction doesn't reset them
+              if (state.storedMarks) tr.setStoredMarks(state.storedMarks);
               dispatch(tr);
             }
             return true;
@@ -279,6 +281,17 @@ function conflictPreviewHtml(html) {
           into.appendChild(el);
           continue;
         }
+      }
+      if (tag === "MARK") {
+        const el = document.createElement("mark");
+        const style = child.getAttribute("style") || "";
+        const keepBg = /(?:^|;)\s*background-color\s*:/i.test(style);
+        if (keepBg && child.style.backgroundColor) {
+          el.style.backgroundColor = child.style.backgroundColor;
+        }
+        walk(child, el);
+        into.appendChild(el);
+        continue;
       }
       if (CONFLICT_PREVIEW_TAGS.has(tag)) {
         const el = document.createElement(
@@ -1669,7 +1682,6 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
     else if (cmd === "italic") active = markIsActive("italic");
     else if (cmd === "underline") active = markIsActive("underline");
     else if (cmd === "strike") active = markIsActive("strike");
-    else if (cmd === "highlight") active = markIsActive("highlight");
     else if (cmd === "link") active = markIsActive("link");
     else if (cmd === "alignLeft") active = editor.isActive({ textAlign: "left" });
     else if (cmd === "alignCenter") active = editor.isActive({ textAlign: "center" });
@@ -1701,6 +1713,22 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
     if (colorSwatch) colorSwatch.style.background = hex || "currentColor";
     colorInput.closest(".toolbar-color")?.classList.toggle("is-active", Boolean(hex));
   }
+  const highlightAttrs = lockedMarks
+    ? lockedMark("highlight")?.attrs || {}
+    : editor.getAttributes("highlight");
+  const highlightInput = toolbarEl.querySelector("[data-highlight-input]");
+  const highlightSwatch = toolbarEl.querySelector(".tb-highlight-swatch");
+  const highlightBtn = toolbarEl.querySelector("[data-highlight-btn]");
+  const hlColor = highlightAttrs.color;
+  if (highlightInput && hlColor) {
+    highlightInput.value = hlColor;
+  }
+  if (highlightSwatch) highlightSwatch.style.background = hlColor || "#75720c";
+  const isHlActive = lockedMarks
+    ? Boolean(lockedMark("highlight"))
+    : editor.isActive("highlight");
+
+  highlightBtn?.classList.toggle("is-active", isHlActive);
   const fontSizeInput = toolbarEl.querySelector("[data-font-size]");
   if (fontSizeInput && document.activeElement !== fontSizeInput) {
     const next = String(fontSizeToToolbarNumber(attrs.fontSize, 16));
@@ -1732,6 +1760,8 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
 export function bindToolbar(editor, toolbarEl) {
   if (!toolbarEl) return () => { };
   const colorInput = toolbarEl.querySelector("[data-color-input]");
+  const highlightInput = toolbarEl.querySelector("[data-highlight-input]");
+  const highlightBtn = toolbarEl.querySelector("[data-highlight-btn]");
   const fontSizeInput = toolbarEl.querySelector("[data-font-size]");
   const fontFamilySelect = toolbarEl.querySelector("[data-font-family]");
   const fontFamilyPicker = fontFamilySelect
@@ -1746,6 +1776,7 @@ export function bindToolbar(editor, toolbarEl) {
   let stashedSelection = null;
   let formatLock = false;
   let lockedMarks = null;
+  let lastHighlightColor = "rgba(117, 114, 12, 1.0)";
 
   const rememberCurrentFormatting = () => {
     const { state } = editor;
@@ -1785,7 +1816,7 @@ export function bindToolbar(editor, toolbarEl) {
   };
   const isKeepTargetActive = () => {
     const el = document.activeElement;
-    if (el && (el === fontSizeInput || el === fontFamilySelect || el === colorInput)) return true;
+    if (el && (el === fontSizeInput || el === fontFamilySelect || el === colorInput || el === highlightInput)) return true;
     if (el && fontFamilyTrigger && (el === fontFamilyTrigger || fontFamilyPanel?.contains(el))) {
       return true;
     }
@@ -1815,21 +1846,17 @@ export function bindToolbar(editor, toolbarEl) {
   };
 
   const onAlignTriggerClick = (e) => {
-    console.log("hi");
-    console.log(alignMenu.hidden);
     e.preventDefault();
     setAlignMenuOpen(alignMenu?.hidden ?? true);
   };
 
   const onDocClick = (e) => {
-    console.log("hello");
     if (alignMenu && !alignMenu.hidden && !alignTrigger?.contains(e.target) && !alignMenu.contains(e.target)) {
       setAlignMenuOpen(false);
     }
   };
 
   const onDocKeydown = (e) => {
-    console.log("hello2");
     if (e.key === "Escape" && alignMenu && !alignMenu.hidden) {
       setAlignMenuOpen(false);
       alignTrigger?.focus();
@@ -1847,7 +1874,6 @@ export function bindToolbar(editor, toolbarEl) {
     else if (cmd === "italic") chain.toggleItalic().run();
     else if (cmd === "underline") chain.toggleUnderline().run();
     else if (cmd === "strike") chain.toggleStrike().run();
-    else if (cmd === "highlight") chain.toggleHighlight().run();
     else if (cmd === "link") {
       const href = window.prompt("Link URL", editor.getAttributes("link").href || "");
       if (href === null) return;
@@ -1895,6 +1921,61 @@ export function bindToolbar(editor, toolbarEl) {
     }
     syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
   };
+  const onHighlightClick = (e) => {
+    e.preventDefault();
+    const chain = editor.chain().focus();
+    if (stashedSelection) chain.setTextSelection(stashedSelection);
+    
+    // Clear kept selection within the SAME chain before setting stored marks
+    chain.clearKeptSelection();
+
+    if (editor.isActive("highlight")) {
+      chain.unsetHighlight().run();
+    } else {
+      chain.setHighlight({ color: lastHighlightColor }).run();
+    }
+
+    if (formatLock) {
+      rememberCurrentFormatting();
+    }
+    syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
+    stashedSelection = null;
+  };
+  const openHighlightPicker = () => {
+    if (!highlightInput || !highlightBtn) return;
+
+    // 1. Measure the exact screen position of the 'H' button
+    const rect = highlightBtn.getBoundingClientRect();
+
+    // 2. Temporarily project the input over the button's exact coordinates
+    Object.assign(highlightInput.style, {
+      position: "fixed",
+      left: `${rect.left}px`,
+      top: `${rect.top}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+      opacity: "0",
+      pointerEvents: "auto",
+      zIndex: "1000",
+    });
+
+    highlightInput.value = lastHighlightColor;
+
+    // 3. Trigger Coloris on the input now anchored to the button
+    highlightInput.focus();
+    highlightInput.click();
+
+    // 4. Reset pointer-events after Coloris reads the bounding rect
+    requestAnimationFrame(() => {
+      highlightInput.style.pointerEvents = "none";
+    });
+  };
+
+  const onHighlightContextMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openHighlightPicker();
+  };
   const onImage = () => {
     const file = imageInput?.files?.[0];
     if (!file?.type.startsWith("image/")) return;
@@ -1909,6 +1990,25 @@ export function bindToolbar(editor, toolbarEl) {
     if (!pickerOpen) chain.focus();
     if (stashedSelection) chain.setTextSelection(stashedSelection);
     chain.setColor(value).run();
+    if (formatLock) {
+      rememberCurrentFormatting();
+    }
+    syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
+    if (pickerOpen && stashedSelection) {
+      editor.commands.setKeptSelection(stashedSelection);
+    } else if (!pickerOpen) {
+      clearStashedSelection();
+    }
+  };
+  const onHighlightColor = (e) => {
+    const value = e.target.value;
+    if (!value) return;
+    lastHighlightColor = value;
+    const pickerOpen = isColorPickerOpen();
+    const chain = editor.chain();
+    if (!pickerOpen) chain.focus();
+    if (stashedSelection) chain.setTextSelection(stashedSelection);
+    chain.setHighlight({ color: value }).run();
     if (formatLock) {
       rememberCurrentFormatting();
     }
@@ -2007,6 +2107,14 @@ export function bindToolbar(editor, toolbarEl) {
   colorInput?.addEventListener("blur", scheduleClearIfNoKeepTarget);
   colorInput?.addEventListener("input", onColor);
   colorInput?.addEventListener("change", onColor);
+  highlightBtn?.addEventListener("mousedown", stashSelection);
+  highlightBtn?.addEventListener("click", onHighlightClick);
+  highlightBtn?.addEventListener("contextmenu", onHighlightContextMenu);
+  highlightInput?.addEventListener("mousedown", stashSelection);
+  highlightInput?.addEventListener("focus", stashSelection);
+  highlightInput?.addEventListener("blur", scheduleClearIfNoKeepTarget);
+  highlightInput?.addEventListener("input", onHighlightColor);
+  highlightInput?.addEventListener("change", onHighlightColor);
   fontSizeInput?.addEventListener("mousedown", stashSelection);
   fontSizeInput?.addEventListener("focus", stashSelection);
   fontSizeInput?.addEventListener("change", onFontSizeChange);
@@ -2046,6 +2154,14 @@ export function bindToolbar(editor, toolbarEl) {
     colorInput?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
     colorInput?.removeEventListener("input", onColor);
     colorInput?.removeEventListener("change", onColor);
+    highlightBtn?.removeEventListener("mousedown", stashSelection);
+    highlightBtn?.removeEventListener("click", onHighlightClick);
+    highlightBtn?.removeEventListener("contextmenu", onHighlightContextMenu);
+    highlightInput?.removeEventListener("mousedown", stashSelection);
+    highlightInput?.removeEventListener("focus", stashSelection);
+    highlightInput?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
+    highlightInput?.removeEventListener("input", onHighlightColor);
+    highlightInput?.removeEventListener("change", onHighlightColor);
     fontSizeInput?.removeEventListener("mousedown", stashSelection);
     fontSizeInput?.removeEventListener("focus", stashSelection);
     fontSizeInput?.removeEventListener("change", onFontSizeChange);

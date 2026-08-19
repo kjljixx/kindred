@@ -59,7 +59,16 @@
           <button type="button" data-cmd="underline" title="Underline" aria-label="Underline"><span
               class="tb-u">U</span></button>
           <button type="button" data-cmd="strike" title="Strikethrough" aria-label="Strikethrough"><s>S</s></button>
-          <button type="button" data-cmd="highlight" title="Highlight" aria-label="Highlight text"><mark>H</mark></button>
+          <div id="highlight-container">
+            <button type="button" class="toolbar-color toolbar-highlight" data-highlight-btn
+              title="Highlight (right-click for color)" aria-label="Highlight text">
+              <span class="tb-highlight-icon" aria-hidden="true">H</span>
+              <span class="tb-highlight-swatch" aria-hidden="true"></span>
+            </button>
+            <input type="text" class="color-field color-field-hidden" data-highlight-input data-coloris
+              value="rgba(255, 235, 59, 1.0)" aria-label="Highlight color picker"
+              autocomplete="off" spellcheck="false" tabindex="-1" />
+          </div>
           <span class="toolbar-sep" aria-hidden="true"></span>
           <select class="toolbar-select" data-font-family title="Font family" aria-label="Font family">
             <option value="'Noto Sans', sans-serif" selected>Noto Sans</option>

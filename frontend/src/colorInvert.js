@@ -3,10 +3,6 @@ function srgbToLinear(c) {
   return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
 }
 
-function linearToSrgb(v) {
-  return v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
-}
-
 function relativeLuminance(r, g, b) {
   const lr = srgbToLinear(r);
   const lg = srgbToLinear(g);
@@ -14,8 +10,55 @@ function relativeLuminance(r, g, b) {
   return lr * 0.2126 + lg * 0.7152 + lb * 0.0722;
 }
 
-function invertLuminance(l) {
-  return Math.min(1, Math.max(0, (1 - l) / (20 * l + 1)));
+export function invertWordLuminanceWindow(r, g, b) {
+  if (r === 0 && g === 0 && b === 0) return { r: 255, g: 255, b: 255 };
+  if (r === 255 && g === 255 && b === 255) return { r: 0, g: 0, b: 0 };
+
+  const y = relativeLuminance(r, g, b);
+
+  if (y > 0.28) {
+    const targetY = 0.095;
+    let low = 0;
+    let high = 1;
+    for (let i = 0; i < 16; i++) {
+      const mid = (low + high) / 2;
+      const curY = relativeLuminance(r * mid, g * mid, b * mid);
+      if (curY > targetY) high = mid;
+      else low = mid;
+    }
+    return {
+      r: Math.round(r * low),
+      g: Math.round(g * low),
+      b: Math.round(b * low),
+    };
+  }
+
+  if (y < 0.25) {
+    const targetY = 0.264;
+    let low = 0;
+    let high = 255;
+    for (let i = 0; i < 16; i++) {
+      const lift = (low + high) / 2;
+      const curY = relativeLuminance(
+        Math.min(255, r + lift),
+        Math.min(255, g + lift),
+        Math.min(255, b + lift)
+      );
+      if (curY < targetY) low = lift;
+      else high = lift;
+    }
+    return {
+      r: Math.round(Math.min(255, r + low)),
+      g: Math.round(Math.min(255, g + low)),
+      b: Math.round(Math.min(255, b + low)),
+    };
+  }
+
+  return {
+    r: Math.min(252, r),
+    g: Math.min(252, g),
+    b: Math.min(252, b),
+  };
 }
 
 function hslToRgbFloat(h, s, l) {
@@ -46,7 +89,9 @@ function hslToRgb(h, s, l) {
 }
 
 function rgbToHsl(r, g, b) {
-  r /= 255; g /= 255; b /= 255;
+  r /= 255;
+  g /= 255;
+  b /= 255;
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
   let h = 0, s = 0, l = (max + min) / 2;
@@ -60,29 +105,6 @@ function rgbToHsl(r, g, b) {
     }
   }
   return { h: h < 0 ? h + 360 : h, s, l };
-}
-
-function withLuminance(r, g, b, targetLuminance) {
-  const { h, s } = rgbToHsl(r, g, b);
-  let upperLightness = 1;
-  let lowerLightness = 0;
-  for (let i = 0; i < 20; i++) {
-    const lightness = (upperLightness + lowerLightness) / 2;
-    const { r: r2, g: g2, b: b2 } = hslToRgbFloat(h, s, lightness);
-    const luminance = relativeLuminance(r2, g2, b2);
-    if (luminance > targetLuminance) {
-      upperLightness = lightness;
-    } else {
-      lowerLightness = lightness;
-    }
-  }
-  return hslToRgb(h, s, lowerLightness);
-}
-
-function invertCP(r, g, b) {
-  const l = relativeLuminance(r, g, b);
-  const targetL = invertLuminance(l);
-  return withLuminance(r, g, b, targetL);
 }
 
 function parseHsl(hslStr) {
@@ -129,7 +151,7 @@ function parseNamedColor(name) {
   return NAMED_COLORS[name.toLowerCase()] || null;
 }
 
-function parseColor(colorStr) {
+export function parseColor(colorStr) {
   const trimmed = colorStr.trim();
   if (trimmed.startsWith('hsl')) return parseHsl(trimmed);
   if (trimmed.startsWith('rgb')) return parseRgb(trimmed);
@@ -137,7 +159,7 @@ function parseColor(colorStr) {
   return parseNamedColor(trimmed);
 }
 
-function formatColor(parsed, originalFormat) {
+export function formatColor(parsed, originalFormat) {
   const { r, g, b, a } = parsed;
   if (originalFormat.startsWith('hsl')) {
     const { h, s, l } = rgbToHsl(r, g, b);
@@ -161,17 +183,21 @@ function formatColor(parsed, originalFormat) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-function invertColorValue(colorStr) {
+export function invertColor(colorStr) {
   const parsed = parseColor(colorStr);
   if (!parsed) return colorStr;
   if (parsed.a === 0) return colorStr;
 
   const { r, g, b } = parsed;
-  const inverted = invertCP(r, g, b);
+  const inverted = invertWordLuminanceWindow(r, g, b);
   return formatColor({ ...inverted, a: parsed.a }, parsed.original || colorStr);
 }
 
-function invertStyleDeclaration(styleStr, invertFn) {
+export function invertColorValue(colorStr) {
+  return invertColor(colorStr);
+}
+
+export function invertStyleDeclaration(styleStr, invertFn = invertColor) {
   if (!styleStr) return styleStr;
 
   return styleStr.replace(
@@ -209,24 +235,17 @@ function invertStyleDeclaration(styleStr, invertFn) {
   );
 }
 
-export function invertHtmlColors(html) {
+export function invertHtmlColors(html, invertFn = invertColor) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   for (const el of doc.querySelectorAll('*')) {
     const style = el.getAttribute('style');
     if (style) {
-      el.setAttribute('style', invertStyleDeclaration(style, invertColorValue));
+      el.setAttribute('style', invertStyleDeclaration(style, invertFn));
     }
   }
   return doc.documentElement.outerHTML;
 }
 
-export function invertHtmlColorsImport(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  for (const el of doc.querySelectorAll('*')) {
-    const style = el.getAttribute('style');
-    if (style) {
-      el.setAttribute('style', invertStyleDeclaration(style, invertColorValue));
-    }
-  }
-  return doc.documentElement.outerHTML;
+export function invertHtmlColorsImport(html, invertFn = invertColor) {
+  return invertHtmlColors(html, invertFn);
 }

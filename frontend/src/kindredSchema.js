@@ -24,15 +24,43 @@ function safeImageSrc(value) {
 
 const Highlight = Mark.create({
   name: "highlight",
-  parseHTML() {
-    return [{ tag: "mark" }];
+  addAttributes() {
+    return {
+      color: {
+        default: null,
+        parseHTML: (element) => element.style.backgroundColor || null,
+        renderHTML: (attributes) => {
+          if (!attributes.color) return {};
+          return { style: `background-color: ${attributes.color}` };
+        },
+      },
+    };
   },
-  renderHTML() {
-    return ["mark", 0];
+  parseHTML() {
+    return [
+      {
+        tag: "mark",
+        getAttrs: (element) => ({ color: element.style.backgroundColor || null }),
+      },
+    ];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["mark", HTMLAttributes, 0];
   },
   addCommands() {
     return {
-      toggleHighlight: () => ({ commands }) => commands.toggleMark(this.name),
+      setHighlight:
+        (attributes) =>
+        ({ commands }) =>
+          commands.setMark(this.name, attributes),
+      toggleHighlight:
+        (attributes) =>
+        ({ commands }) =>
+          commands.toggleMark(this.name, attributes),
+      unsetHighlight:
+        () =>
+        ({ commands }) =>
+          commands.unsetMark(this.name),
     };
   },
 });
