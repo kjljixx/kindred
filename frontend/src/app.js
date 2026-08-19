@@ -1889,13 +1889,13 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
         i++;
         continue;
       }
-
+  
       let run = [];
       while (i < parts.length && parts[i][0] !== DIFF_EQUAL) {
         run.push(parts[i]);
         i++;
       }
-
+  
       while (
         i < parts.length &&
         parts[i][0] === DIFF_EQUAL &&
@@ -1912,16 +1912,16 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
         }
         const L = changeTexts(run);
         const R = changeTexts(next);
-        let del = L.del + (R.del ? eq + R.del : "");
-        let ins = L.ins + (R.ins ? eq + R.ins : "");
-        // Delete then insert across glue → treat glue as part of the replace.
-        if (L.del && !L.ins && R.ins && !R.del) del += eq;
-        if (L.ins && !L.del && R.del && !R.ins) ins += eq;
+        
+        // eq was equal on both sides, so include it in both del (base) and ins (current)
+        let del = L.del + eq + R.del;
+        let ins = L.ins + eq + R.ins;
+  
         run = [];
         if (del) run.push([DIFF_DELETE, del]);
         if (ins) run.push([DIFF_INSERT, ins]);
       }
-
+  
       out.push(...flattenChangeRun(run));
     }
     return out;

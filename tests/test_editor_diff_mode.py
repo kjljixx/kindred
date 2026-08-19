@@ -17,7 +17,6 @@ def _commit_then_edit(kindred: KindredPage, head: str, dirty: str) -> None:
   kindred.switch_to_git()
   kindred.commit()
   kindred.replace_editor_text(dirty)
-  kindred.wait_until_editor_text(dirty)
 
 
 def test_d1_clean_working_tree_keeps_diff_available(kindred: KindredPage) -> None:
@@ -270,3 +269,21 @@ def test_d_multi_table(kindred: KindredPage) -> None:
   assert "test" in kindred.diff_del_texts()
   assert "again" in kindred.diff_ins_texts()
   assert not "second" in kindred.diff_ins_texts()
+
+def test_d_coalesce_short_equals_punctuation_preserves_projection(
+  kindred: KindredPage,
+) -> None:
+  """Regression: coalescing edit runs across punctuation must not drop characters or cause AST mismatch."""
+  head = (
+    "test,again"
+  )
+  dirty = (
+    "again,"
+  )
+  _commit_then_edit(kindred, head, dirty)
+  kindred.enter_dirty_diff()
+
+  assert "ast doc mismatch" not in kindred.status_text().lower() and not "cannot read properties of null" in kindred.status_text().lower()
+  ins = "".join(kindred.diff_ins_texts())
+  assert "again," in ins
+  assert "test" not in ins
