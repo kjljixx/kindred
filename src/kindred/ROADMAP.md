@@ -1,6 +1,5 @@
 Priorities
-- More highlight colors - LCH when converting to pdf
-- Lists
+- More highlight colors
 - Collapsible side bar and/or bottom bar for mobile and thin screen
 - Google Drive
 
@@ -9,7 +8,7 @@ TODO
 - Add highlighting text - improve
 - Image support - improve - Diff doesn't show deleted images, maybe align-style conflict buttons are better?
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
-- Lists
+- Proper list diffs/review
 - Proper table diffs/review - use daff
 - Left margin for editor
 
