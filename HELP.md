@@ -1,5 +1,6 @@
 - Right-Clicking a draft in the "Drafts" pane allows you to rename that draft without entering it
 - Similarly, right-clicking a head commit and right-clicking a branch name allows you to rename it
+- Similarly, right-clicking the highlight button allows you to change the highlight color
 - Actually, right-clicking basically anything that has a name allows you to rename it
 - Ctrl-click a link in the editor to open and switch to it in a new tab
 
