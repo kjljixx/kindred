@@ -314,6 +314,20 @@ function sameTextblock(doc, a, b) {
   return !!(ba && bb && ba.from === bb.from && ba.to === bb.to);
 }
 
+function sameListParent(doc, a, b) {
+  const $a = doc.resolve(a.from);
+  const $b = doc.resolve(b.from);
+  for (let d = $a.depth; d > 0; d--) {
+    const name = $a.node(d).type.name;
+    if (name !== "bulletList" && name !== "orderedList") continue;
+    for (let e = $b.depth; e > 0; e--) {
+      if ($b.node(e) === $a.node(d)) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
 /**
  * Swap selected unit(s) with the neighbor unit in `direction` (edits content).
  * @param {import("@tiptap/pm/model").Node} doc
@@ -340,7 +354,7 @@ export function transposeSelectionRange(doc, from, to, direction) {
   const selStart = ranges[indices.startIdx];
   const selEnd = ranges[indices.endIdx];
 
-  if (unit !== "paragraph" && !sameTextblock(doc, neighbor, selStart)) {
+  if (unit !== "paragraph" && !sameTextblock(doc, neighbor, selStart) && !sameListParent(doc, neighbor, selStart)) {
     return null;
   }
 

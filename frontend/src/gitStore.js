@@ -146,6 +146,18 @@ const VOLUME = "kindred";
       el.removeAttribute("data-kindred-align-label-ours");
       el.removeAttribute("data-kindred-align-label-theirs");
     });
+    root.querySelectorAll("[data-kindred-table-ours]").forEach((el) => {
+      el.removeAttribute("data-kindred-table-ours");
+      el.removeAttribute("data-kindred-table-theirs");
+      el.removeAttribute("data-kindred-table-label-ours");
+      el.removeAttribute("data-kindred-table-label-theirs");
+    });
+    root.querySelectorAll("[data-kindred-list-ours]").forEach((el) => {
+      el.removeAttribute("data-kindred-list-ours");
+      el.removeAttribute("data-kindred-list-theirs");
+      el.removeAttribute("data-kindred-list-label-ours");
+      el.removeAttribute("data-kindred-list-label-theirs");
+    });
     return root.innerHTML;
   }
 

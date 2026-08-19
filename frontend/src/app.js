@@ -11,6 +11,7 @@ import {
   conflictMarkerCount,
   htmlHasAlignConflict,
   htmlHasTableConflict,
+  htmlHasListConflict,
   unresolvedMergeConflictCount,
   joinConflictBoth,
   formatConflictMarkers,
@@ -259,6 +260,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
           formatHunks,
           imageDiffs: imageDiffsFromOps(ops),
           tableDiffs: tableDiffsFromOps(ops),
+          listDiffs: listDiffsFromOps(ops),
         });
         refreshOverlay(tipTap, {
           baseline: basePlain,
@@ -269,6 +271,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
           formatHunks,
           imageDiffs: imageDiffsFromOps(ops),
           tableDiffs: tableDiffsFromOps(ops),
+          listDiffs: listDiffsFromOps(ops),
         });
       } else {
         refreshOverlay(tipTap, {
@@ -281,6 +284,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
           formatHunks: [],
           imageDiffs: null,
           tableDiffs: null,
+          listDiffs: null,
         });
       }
     } finally {
@@ -338,6 +342,33 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
       ) {
         if (op.base?.type === "table") deleted.push(blockToHtml(op.base));
         if (op.theirs?.type === "table") added.push(blockToHtml(op.theirs));
+      }
+    }
+    return added.length || deleted.length ? { added, deleted } : null;
+  }
+
+  function isListNode(node) {
+    return node?.type === "bulletList" || node?.type === "orderedList";
+  }
+
+  function listDiffsFromOps(ops) {
+    const added = [];
+    const deleted = [];
+    for (const op of ops) {
+      if (op.type === "insert" && op.side === "theirs" && isListNode(op.theirs)) {
+        added.push(blockToHtml(op.theirs));
+      } else if (
+        op.type === "delete" &&
+        op.side === "theirs" &&
+        (isListNode(op.base) || isListNode(op.ours))
+      ) {
+        deleted.push(blockToHtml(op.base || op.ours));
+      } else if (
+        op.type === "replace" &&
+        (isListNode(op.base) || isListNode(op.theirs))
+      ) {
+        if (isListNode(op.base)) deleted.push(blockToHtml(op.base));
+        if (isListNode(op.theirs)) added.push(blockToHtml(op.theirs));
       }
     }
     return added.length || deleted.length ? { added, deleted } : null;
@@ -403,6 +434,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     onConflictAction: (action, index) => handleConflictAction(action, index),
     onAlignConflictAction: (action, paraPos) => handleAlignConflictAction(action, paraPos),
     onTableConflictAction: (action, tablePos) => handleTableConflictAction(action, tablePos),
+    onListConflictAction: (action, listPos) => handleListConflictAction(action, listPos),
     onUpdate: () => {
       if (
         suppressEditorUpdate ||
@@ -426,7 +458,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
       pullFromEditor();
       if (store) void store.hydrateImageElements(activeDraftId, editor, viewingOid);
       syncDirtyBodyFromCurrent();
-      if (pendingMerge || hasConflict || htmlHasAlignConflict(currentHtml) || htmlHasTableConflict(currentHtml)) syncMergeStatus();
+      if (pendingMerge || hasConflict || htmlHasAlignConflict(currentHtml) || htmlHasTableConflict(currentHtml) || htmlHasListConflict(currentHtml)) syncMergeStatus();
       refreshStatusLeft();
       workingDirty = true;
       updateCommitBtn();
@@ -720,7 +752,27 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
       }
       return full;
     });
-    
+
+    const listAttr = takeTheirs
+      ? "data-kindred-list-theirs"
+      : "data-kindred-list-ours";
+    const listDoc = new DOMParser().parseFromString(
+      `<div id="__kindred_root">${html}</div>`,
+      "text/html"
+    );
+    const listRoot = listDoc.getElementById("__kindred_root");
+    if (listRoot) {
+      listRoot.querySelectorAll("[data-kindred-list-ours]").forEach((el) => {
+        const chosen = el.getAttribute(listAttr);
+        if (!chosen) return;
+        const wrap = listDoc.createElement("div");
+        wrap.innerHTML = chosen;
+        const replacement = wrap.firstElementChild;
+        if (replacement) el.replaceWith(listDoc.importNode(replacement, true));
+      });
+      html = listRoot.innerHTML;
+    }
+
     return html || "<p></p>";
   }
 
@@ -1197,7 +1249,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     try {
       const hasMarkers = conflictMarkerCount(currentHtml) > 0;
       const unresolved =
-        hasMarkers || htmlHasAlignConflict(currentHtml);
+        hasMarkers || htmlHasAlignConflict(currentHtml) || htmlHasTableConflict(currentHtml) || htmlHasListConflict(currentHtml);
       // Drop stale conflict widgets before setContent so index-0 is not rebound to old sides.
       if (tipTap) {
         refreshOverlay(tipTap, {
@@ -1725,6 +1777,41 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
         tablePos,
         tablePos + node.nodeSize,
         tipTap.schema.nodeFromJSON(chosenTableNode)
+      );
+      tipTap.view.dispatch(tr);
+    } finally {
+      suppressEditorUpdate = false;
+    }
+
+    pullFromEditor();
+    workingDirty = true;
+    syncDirtyBodyFromCurrent();
+    syncOverlayFromState();
+    syncMergeStatus();
+    refreshStatusLeft();
+    syncHeaderTitle();
+    updateCommitBtn();
+    persistActiveDraftSoon();
+  }
+
+  function handleListConflictAction(action, listPos) {
+    if (!tipTap || listPos == null) return;
+    const node = tipTap.state.doc.nodeAt(listPos);
+    if (!node || (node.type.name !== "bulletList" && node.type.name !== "orderedList")) return;
+    const chosenHtml =
+      action === "theirs" ? node.attrs.listTheirs : node.attrs.listOurs;
+    if (!chosenHtml) return;
+
+    const chosenDoc = htmlToDoc(chosenHtml);
+    const chosenListNode = chosenDoc.content?.[0];
+    if (!chosenListNode) return;
+
+    suppressEditorUpdate = true;
+    try {
+      const tr = tipTap.state.tr.replaceWith(
+        listPos,
+        listPos + node.nodeSize,
+        tipTap.schema.nodeFromJSON(chosenListNode)
       );
       tipTap.view.dispatch(tr);
     } finally {

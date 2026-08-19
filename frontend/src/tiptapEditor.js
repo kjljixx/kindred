@@ -54,7 +54,18 @@ const TabIndent = Extension.create({
   name: "tabIndent",
   addKeyboardShortcuts() {
     return {
-      Tab: () => this.editor.commands.insertContent("\t"),
+      Tab: () => {
+        if (this.editor.isActive("listItem")) {
+          return this.editor.commands.sinkListItem();
+        }
+        return this.editor.commands.insertContent("\t");
+      },
+      "Shift-Tab": () => {
+        if (this.editor.isActive("listItem")) {
+          return this.editor.commands.liftListItem();
+        }
+        return false;
+      },
     };
   },
 });
@@ -430,8 +441,24 @@ function tableConflictCount(html) {
   return doc.body.querySelectorAll("[data-kindred-table-ours]").length;
 }
 
+export function htmlHasListConflict(html) {
+  return listConflictCount(html) > 0;
+}
+
+function listConflictCount(html) {
+  const raw = String(html || "");
+  if (!raw || !raw.includes("data-kindred-list-ours")) return 0;
+  const doc = new DOMParser().parseFromString(raw, "text/html");
+  return doc.body.querySelectorAll("[data-kindred-list-ours]").length;
+}
+
 export function unresolvedMergeConflictCount(html) {
-  return conflictMarkerCount(html) + alignConflictCount(html) + tableConflictCount(html);
+  return (
+    conflictMarkerCount(html) +
+    alignConflictCount(html) +
+    tableConflictCount(html) +
+    listConflictCount(html)
+  );
 }
 
 /**
@@ -474,6 +501,12 @@ export function stripKindredProtocol(html) {
     el.removeAttribute("data-kindred-table-theirs");
     el.removeAttribute("data-kindred-table-label-ours");
     el.removeAttribute("data-kindred-table-label-theirs");
+  });
+  root.querySelectorAll("[data-kindred-list-ours]").forEach((el) => {
+    el.removeAttribute("data-kindred-list-ours");
+    el.removeAttribute("data-kindred-list-theirs");
+    el.removeAttribute("data-kindred-list-label-ours");
+    el.removeAttribute("data-kindred-list-label-theirs");
   });
   return root.innerHTML;
 }
@@ -868,6 +901,64 @@ function createTableConflictWidget(attrs, tablePos, onAction, conflictMode = "me
   };
 }
 
+function createListPreviewWidget(listHtml, side) {
+  return () => {
+    const wrap = document.createElement("div");
+    wrap.className = `kindred-list-preview kindred-list-side-${side}`;
+    wrap.contentEditable = "false";
+    wrap.innerHTML = listHtml || "";
+    return wrap;
+  };
+}
+
+function createListConflictWidget(attrs, listPos, onAction, conflictMode = "merge") {
+  return (view) => {
+    const wrap = document.createElement("div");
+    wrap.className = "merge-conflict merge-list-conflict";
+    wrap.contentEditable = "false";
+    const review = conflictMode === "review";
+
+    const oursBtn = document.createElement("button");
+    oursBtn.type = "button";
+    oursBtn.className = "merge-conflict-btn merge-conflict-ours";
+    oursBtn.title = "Keep Current list";
+    oursBtn.textContent = attrs.listLabelOurs || "Current";
+
+    const theirsBtn = document.createElement("button");
+    theirsBtn.type = "button";
+    theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
+    theirsBtn.title = review ? "Keep Dirty list" : "Keep Incoming list";
+    theirsBtn.textContent =
+      attrs.listLabelTheirs || (review ? "Dirty" : "Theirs");
+
+    const setPreview = (side) => {
+      const tr = view.state.tr.setMeta(overlayKey, {
+        type: "listPreview",
+        preview: side ? { listPos, side } : null,
+      });
+      tr.setMeta("addToHistory", false);
+      view.dispatch(tr);
+    };
+
+    theirsBtn.addEventListener("mouseenter", () => setPreview("theirs"));
+    theirsBtn.addEventListener("mouseleave", () => setPreview(null));
+    oursBtn.addEventListener("mouseenter", () => setPreview("ours"));
+    oursBtn.addEventListener("mouseleave", () => setPreview(null));
+
+    const click = (action) => (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setPreview(null);
+      onAction?.(action, listPos);
+    };
+    oursBtn.addEventListener("mousedown", click("ours"));
+    theirsBtn.addEventListener("mousedown", click("theirs"));
+
+    wrap.append(oursBtn, theirsBtn);
+    return wrap;
+  };
+}
+
 function appendAlignConflictDecorations(
   doc,
   decorations,
@@ -972,6 +1063,64 @@ function appendTableConflictDecorations(
   });
 }
 
+function appendListConflictDecorations(
+  doc,
+  decorations,
+  onListConflictAction,
+  listPreview,
+  conflictMode = "merge"
+) {
+  doc.descendants((node, pos) => {
+    if (node.type.name !== "bulletList" && node.type.name !== "orderedList") return;
+    if (!node.attrs.listOurs || !node.attrs.listTheirs) return;
+
+    decorations.push(
+      Decoration.widget(
+        pos,
+        createListConflictWidget(
+          node.attrs,
+          pos,
+          onListConflictAction,
+          conflictMode
+        ),
+        {
+          side: -1,
+          key: `list-conflict-${pos}:${conflictMode}`,
+        }
+      )
+    );
+
+    const isHoverTheirs =
+      listPreview &&
+      listPreview.listPos === pos &&
+      listPreview.side === "theirs";
+
+    if (isHoverTheirs) {
+      decorations.push(
+        Decoration.node(pos, pos + node.nodeSize, {
+          style: "display: none !important;",
+        })
+      );
+      decorations.push(
+        Decoration.widget(
+          pos,
+          createListPreviewWidget(node.attrs.listTheirs, "theirs"),
+          {
+            side: 0,
+            key: `list-theirs-preview-${pos}`,
+          }
+        )
+      );
+    } else {
+      decorations.push(
+        Decoration.node(pos, pos + node.nodeSize, {
+          class: "kindred-list-conflict-node kindred-list-side-ours",
+        })
+      );
+    }
+  });
+}
+
 function createDeletedTableWidget(tableHtml) {
   return () => {
     const wrap = document.createElement("div");
@@ -997,6 +1146,36 @@ function appendTableDiffDecorations(doc, decorations, tableDiffs) {
       Decoration.widget(0, createDeletedTableWidget(html), {
         side: -1,
         key: `deleted-table-${index}`,
+      })
+    );
+  }
+}
+
+function createDeletedListWidget(listHtml) {
+  return () => {
+    const wrap = document.createElement("div");
+    wrap.className = "diff-list-del";
+    wrap.contentEditable = "false";
+    wrap.innerHTML = listHtml || "";
+    return wrap;
+  };
+}
+
+function appendListDiffDecorations(doc, decorations, listDiffs) {
+  if (!listDiffs) return;
+  if (listDiffs.added?.length) {
+    doc.descendants((node, pos) => {
+      if (node.type.name !== "bulletList" && node.type.name !== "orderedList") return;
+      decorations.push(
+        Decoration.node(pos, pos + node.nodeSize, { class: "diff-list-ins" })
+      );
+    });
+  }
+  for (const [index, html] of (listDiffs.deleted || []).entries()) {
+    decorations.push(
+      Decoration.widget(0, createDeletedListWidget(html), {
+        side: -1,
+        key: `deleted-list-${index}`,
       })
     );
   }
@@ -1040,6 +1219,13 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
       meta.tablePreview,
       conflictMode
     );
+    appendListConflictDecorations(
+      doc,
+      decorations,
+      meta.onListConflictAction,
+      meta.listPreview,
+      conflictMode
+    );
     return DecorationSet.create(doc, decorations);
   }
 
@@ -1057,6 +1243,13 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     meta.tablePreview,
     conflictMode
   );
+  appendListConflictDecorations(
+    doc,
+    decorations,
+    meta.onListConflictAction,
+    meta.listPreview,
+    conflictMode
+  );
 
   const baseline = meta.baseline || "";
   const currentPlain = meta.currentPlain || "";
@@ -1065,6 +1258,7 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
   const formatHunks = meta.formatHunks || [];
   const imageDiffs = meta.imageDiffs || null;
   const tableDiffs = meta.tableDiffs || null;
+  const listDiffs = meta.listDiffs || null;
   const hasFormat = showDiffs && formatHunks.length > 0;
   const hasImageDiffs =
     showDiffs &&
@@ -1072,8 +1266,11 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
   const hasTableDiffs =
     showDiffs &&
     ((tableDiffs?.added?.length || 0) + (tableDiffs?.deleted?.length || 0) > 0);
-  
-  if (!diffsFn && !hasFormat && !hasImageDiffs) {
+  const hasListDiffs =
+    showDiffs &&
+    ((listDiffs?.added?.length || 0) + (listDiffs?.deleted?.length || 0) > 0);
+
+  if (!diffsFn && !hasFormat && !hasImageDiffs && !hasTableDiffs && !hasListDiffs) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
       : DecorationSet.empty;
@@ -1085,12 +1282,12 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
       : DecorationSet.empty;
   }
   // Empty baseline + content => whole doc is an insert (e.g. first commit).
-  if (!baseline && !currentPlain && !hl && !hasFormat && !hasImageDiffs && !hasTableDiffs) {
+  if (!baseline && !currentPlain && !hl && !hasFormat && !hasImageDiffs && !hasTableDiffs && !hasListDiffs) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
       : DecorationSet.empty;
   }
-  if (baseline && baseline === currentPlain && !hl && !hasFormat && !hasImageDiffs && !hasTableDiffs) {
+  if (baseline && baseline === currentPlain && !hl && !hasFormat && !hasImageDiffs && !hasTableDiffs && !hasListDiffs) {
     return decorations.length
       ? DecorationSet.create(doc, decorations)
       : DecorationSet.empty;
@@ -1105,6 +1302,7 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     formatHunkCount: formatHunks.length,
     imageDiffs,
     tableDiffs,
+    listDiffs,
   });
 
   const parts = !baseline
@@ -1231,6 +1429,7 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
   if (showDiffs) {
     appendImageDiffDecorations(doc, decorations, imageDiffs);
     appendTableDiffDecorations(doc, decorations, tableDiffs);
+    appendListDiffDecorations(doc, decorations, listDiffs);
   }
   
   return DecorationSet.create(doc, decorations);
@@ -1245,6 +1444,7 @@ const KindredOverlay = Extension.create({
       onConflictAction: null,
       onAlignConflictAction: null,
       onTableConflictAction: null,
+      onListConflictAction: null,
     };
   },
 
@@ -1293,9 +1493,11 @@ const KindredOverlay = Extension.create({
               conflictMode: "merge",
               alignPreview: null,
               tablePreview: null,
+              listPreview: null,
               formatHunks: [],
               imageDiffs: null,
               tableDiffs: null,
+              listDiffs: null,
               decorations: DecorationSet.empty,
             };
           },
@@ -1315,39 +1517,23 @@ const KindredOverlay = Extension.create({
                 formatHunks: next.formatHunks,
                 imageDiffs: next.imageDiffs,
                 tableDiffs: next.tableDiffs,
+                listDiffs: next.listDiffs,
               });
             }
             if (meta?.type === "alignPreview") {
               next.alignPreview = meta.preview || null;
             }
-            if (meta?.type === "set" || meta?.type === "alignPreview" || tr.docChanged) {
-              next.decorations = buildOverlayDecorations(
-                newState.doc,
-                {
-                  baseline: next.baseline,
-                  currentPlain: next.currentPlain,
-                  highlight: next.highlight,
-                  showDiffs: next.showDiffs,
-                  conflicts: next.conflicts,
-                  conflictMode: next.conflictMode,
-                  alignPreview: next.alignPreview,
-                  formatHunks: next.formatHunks,
-                  imageDiffs: next.imageDiffs,
-                  tableDiffs: next.tableDiffs,
-                  onConflictAction: extension.options.onConflictAction,
-                  onAlignConflictAction: extension.options.onAlignConflictAction,
-                  onTableConflictAction: extension.options.onTableConflictAction,
-                },
-                extension.options.diffsFn
-              );
-            }
             if (meta?.type === "tablePreview") {
               next.tablePreview = meta.preview || null;
+            }
+            if (meta?.type === "listPreview") {
+              next.listPreview = meta.preview || null;
             }
             if (
               meta?.type === "set" ||
               meta?.type === "alignPreview" ||
               meta?.type === "tablePreview" ||
+              meta?.type === "listPreview" ||
               tr.docChanged
             ) {
               next.decorations = buildOverlayDecorations(
@@ -1361,12 +1547,15 @@ const KindredOverlay = Extension.create({
                   conflictMode: next.conflictMode,
                   alignPreview: next.alignPreview,
                   tablePreview: next.tablePreview,
+                  listPreview: next.listPreview,
                   formatHunks: next.formatHunks,
                   imageDiffs: next.imageDiffs,
                   tableDiffs: next.tableDiffs,
+                  listDiffs: next.listDiffs,
                   onConflictAction: extension.options.onConflictAction,
                   onAlignConflictAction: extension.options.onAlignConflictAction,
                   onTableConflictAction: extension.options.onTableConflictAction,
+                  onListConflictAction: extension.options.onListConflictAction,
                 },
                 extension.options.diffsFn
               );
@@ -1467,6 +1656,8 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
     else if (cmd === "alignCenter") active = editor.isActive({ textAlign: "center" });
     else if (cmd === "alignRight") active = editor.isActive({ textAlign: "right" });
     else if (cmd === "alignJustify") active = editor.isActive({ textAlign: "justify" });
+    else if (cmd === "bulletList") active = editor.isActive("bulletList");
+    else if (cmd === "orderedList") active = editor.isActive("orderedList");
     btn.classList.toggle("is-active", active);
   });
   const attrs = lockedMarks ? lockedMark("textStyle")?.attrs || {} : editor.getAttributes("textStyle");
@@ -1631,6 +1822,8 @@ export function bindToolbar(editor, toolbarEl) {
     else if (cmd === "alignCenter") chain.setTextAlign("center").run();
     else if (cmd === "alignRight") chain.setTextAlign("right").run();
     else if (cmd === "alignJustify") chain.setTextAlign("justify").run();
+    else if (cmd === "bulletList") chain.toggleBulletList().run();
+    else if (cmd === "orderedList") chain.toggleOrderedList().run();
     if (formatLock) {
       rememberCurrentFormatting();
     }
@@ -1819,6 +2012,7 @@ export function createKindredEditor({
   onConflictAction = null,
   onAlignConflictAction = null,
   onTableConflictAction = null,
+  onListConflictAction = null,
   onUpdate = null,
   placeholder = "Paste or type your text here. Double-click to import.",
 } = {}) {
@@ -1833,7 +2027,7 @@ export function createKindredEditor({
       KeptSelection,
       SelectionUnits,
       Placeholder.configure({ placeholder }),
-      KindredOverlay.configure({ diffsFn, onConflictAction, onAlignConflictAction, onTableConflictAction }),
+      KindredOverlay.configure({ diffsFn, onConflictAction, onAlignConflictAction, onTableConflictAction, onListConflictAction }),
     ],
     content: ensureHtml(content),
     editorProps: {
@@ -1902,6 +2096,7 @@ export function refreshOverlay(editor, {
   formatHunks = [],
   imageDiffs = null,
   tableDiffs = null,
+  listDiffs = null,
 } = {}) {
   if (!editor) return;
   const conflicts = parseConflictSegments(markedHtml);
@@ -1914,6 +2109,7 @@ export function refreshOverlay(editor, {
     formatHunkCount: formatHunks.length,
     imageDiffs,
     tableDiffs,
+    listDiffs,
   });
   setOverlay(editor, {
     baseline: conflicts ? "" : baseline,
@@ -1926,5 +2122,6 @@ export function refreshOverlay(editor, {
     formatHunks: conflicts ? [] : formatHunks,
     imageDiffs: conflicts ? null : imageDiffs,
     tableDiffs: conflicts ? null : tableDiffs,
+    listDiffs: conflicts ? null : listDiffs,
   });
 }

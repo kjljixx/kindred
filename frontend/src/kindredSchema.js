@@ -10,6 +10,7 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import FontFamily from "@tiptap/extension-font-family";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
+import { BulletList, OrderedList } from "@tiptap/extension-list";
 
 function safeLinkHref(value) {
   const href = String(value || "").trim();
@@ -158,6 +159,59 @@ const KindredParagraph = Paragraph.extend({
   },
 });
 
+function listConflictAttributes() {
+  return {
+    listOurs: {
+      default: null,
+      parseHTML: (el) => attrOrNull(el, "data-kindred-list-ours"),
+      renderHTML: (attrs) =>
+        attrs.listOurs ? { "data-kindred-list-ours": attrs.listOurs } : {},
+    },
+    listTheirs: {
+      default: null,
+      parseHTML: (el) => attrOrNull(el, "data-kindred-list-theirs"),
+      renderHTML: (attrs) =>
+        attrs.listTheirs ? { "data-kindred-list-theirs": attrs.listTheirs } : {},
+    },
+    listLabelOurs: {
+      default: null,
+      parseHTML: (el) => attrOrNull(el, "data-kindred-list-label-ours"),
+      renderHTML: (attrs) =>
+        attrs.listLabelOurs
+          ? { "data-kindred-list-label-ours": attrs.listLabelOurs }
+          : {},
+    },
+    listLabelTheirs: {
+      default: null,
+      parseHTML: (el) => attrOrNull(el, "data-kindred-list-label-theirs"),
+      renderHTML: (attrs) =>
+        attrs.listLabelTheirs
+          ? { "data-kindred-list-label-theirs": attrs.listLabelTheirs }
+          : {},
+    },
+  };
+}
+
+/** Bullet list with optional 3-way/review conflict attrs. */
+const KindredBulletList = BulletList.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      ...listConflictAttributes(),
+    };
+  },
+});
+
+/** Ordered list with optional 3-way/review conflict attrs. */
+const KindredOrderedList = OrderedList.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      ...listConflictAttributes(),
+    };
+  },
+});
+
 /** Table node with optional 3-way/review conflict attrs. */
 const KindredTable = Table.extend({
   addAttributes() {
@@ -268,7 +322,7 @@ export function canonicalizeTextHtml(html) {
   const doc = new DOMParser().parseFromString(raw, "text/html");
   const root = doc.body;
   for (const el of root.querySelectorAll(
-    "p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, div, td, th"
+    "p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre, div, td, th"
   )) {
     trimTrailingInsignificant(el);
   }
@@ -290,7 +344,9 @@ export function kindredContentExtensions() {
       code: false,
       horizontalRule: false,
       paragraph: false,
-    
+      bulletList: false,
+      orderedList: false,
+
       link: {
         autolink: true,
         linkOnPaste: true,
@@ -306,6 +362,8 @@ export function kindredContentExtensions() {
       underline: {},
     }),
     KindredParagraph,
+    KindredBulletList,
+    KindredOrderedList,
     Highlight,
     Image,
     KindredTable.configure({

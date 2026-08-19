@@ -1137,7 +1137,7 @@ button.pane-title {
 .editor .ProseMirror .kindred-table-side-ours td,
 .editor .ProseMirror table.kindred-table-side-ours td {
   pointer-events: none;
-  background: var(--orange-bg);
+  background: transparent;
   border-color: var(--orange-text);
 }
 
@@ -1159,7 +1159,7 @@ button.pane-title {
   pointer-events: none;
   border-color: var(--blue-text);
   padding: var(--space-2) var(--space-3);
-  background: var(--blue-bg);
+  background: transparent;
 }
 
 .editor .ProseMirror .kindred-table-preview.kindred-table-side-theirs td p {
@@ -1170,6 +1170,10 @@ button.pane-title {
 .editor .ProseMirror .diff-table-ins,
 .editor .ProseMirror table.diff-table-ins {
   background: var(--color-success-bg);
+}
+
+.editor .ProseMirror .diff-table-ins td {
+  border-color: var(--accent-success-300);
 }
 
 .editor .ProseMirror .diff-table-ins p,
@@ -1188,10 +1192,93 @@ button.pane-title {
   pointer-events: none;
 }
 
+.editor .ProseMirror .diff-table-del table td {
+  border-color: var(--accent-danger-300);
+}
+
 .diff-table-del td p {
   margin: 0;
   text-decoration: line-through;
   color: var(--accent-danger-300);
+}
+
+/* Editor list styling */
+.editor .ProseMirror ul,
+.editor .ProseMirror ol {
+  margin: var(--space-3) 0;
+  padding-left: 1.5em;
+}
+
+.editor .ProseMirror li {
+  line-height: var(--line-height-2);
+}
+
+.editor .ProseMirror li > p {
+  margin: 0;
+}
+
+/* List conflict + preview */
+.merge-list-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-2);
+}
+
+/* List conflict + preview styling */
+.editor .ProseMirror ul.kindred-list-side-ours,
+.editor .ProseMirror ol.kindred-list-side-ours {
+  pointer-events: none;
+  user-select: none;
+  box-sizing: border-box;
+  border-radius: var(--radius-2);
+  padding: var(--space-2) var(--space-3) var(--space-2) 1.75em; /* Keep bullets inside */
+  background: var(--orange-bg);
+}
+
+.editor .ProseMirror .kindred-list-preview.kindred-list-side-theirs {
+  pointer-events: none;
+  user-select: none;
+  box-sizing: border-box;
+  border-radius: var(--radius-2);
+  background: var(--blue-bg);
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3) var(--space-2) 0.25em;
+  pointer-events: none;
+}
+
+.editor .ProseMirror .kindred-list-preview.kindred-list-side-theirs ul,
+.editor .ProseMirror .kindred-list-preview.kindred-list-side-theirs ol {
+  margin: 0;
+  padding-left: 1.5em;
+  background: transparent;
+}
+
+.editor .ProseMirror .kindred-list-preview.kindred-list-side-theirs li > p {
+  margin: 0;
+}
+
+/* Full-list diff styling */
+.editor .ProseMirror .diff-list-ins,
+.editor .ProseMirror ul.diff-list-ins,
+.editor .ProseMirror ol.diff-list-ins {
+  background: var(--color-success-bg);
+  color: var(--accent-success-300);
+}
+
+.diff-list-del {
+  display: block;
+  margin: var(--space-4) 0;
+  opacity: var(--opacity-2);
+  background: var(--color-danger-bg);  
+  color: var(--accent-danger-300);
+  pointer-events: none;
+}
+
+.diff-list-del li > p {
+  margin: 0;
+  text-decoration: line-through;
 }
 
 /* Inline mark styles (color/font-size/font-family) beat .diff-del color. */
