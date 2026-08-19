@@ -183,3 +183,20 @@ def test_r_format_only_bold_keep_head(kindred: KindredPage) -> None:
   assert not kindred.editor_has_tag("b")
   assert "hello" in kindred.editor_body_text()
 
+from selenium.webdriver.common.keys import Keys
+
+def test_r_format_table_conflict(kindred: KindredPage) -> None:
+  table_html = (
+    """<table style="min-width: 75px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><td colspan="1" rowspan="1"><p>test</p></td><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td></tr><tr><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td></tr><tr><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td></tr></tbody></table>"""
+  )
+  kindred.paste_html(table_html)
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  kindred.delete_table()
+  kindred.enter_dirty_review(expect_conflicts=True)
+  assert kindred.has_merge_conflict_ui()
+  kindred.click_conflict_keep_theirs()
+  kindred.exit_to_dirty_text()
+  assert not "test" in kindred.status_text()

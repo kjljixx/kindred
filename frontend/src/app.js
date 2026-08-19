@@ -1756,24 +1756,29 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     if (!node || node.type.name !== "table") return;
     const chosenHtml =
       action === "theirs" ? node.attrs.tableTheirs : node.attrs.tableOurs;
-    if (!chosenHtml) return;
-
-    const chosenDoc = htmlToDoc(chosenHtml);
-    const chosenTableNode = chosenDoc.content?.[0];
-    if (!chosenTableNode) return;
-
+  
     suppressEditorUpdate = true;
     try {
-      const tr = tipTap.state.tr.replaceWith(
-        tablePos,
-        tablePos + node.nodeSize,
-        tipTap.schema.nodeFromJSON(chosenTableNode)
-      );
-      tipTap.view.dispatch(tr);
+      let tr;
+      if (chosenHtml && chosenHtml.trim()) {
+        const chosenDoc = htmlToDoc(chosenHtml);
+        const chosenTableNode = chosenDoc.content?.[0];
+        if (chosenTableNode) {
+          tr = tipTap.state.tr.replaceWith(
+            tablePos,
+            tablePos + node.nodeSize,
+            tipTap.schema.nodeFromJSON(chosenTableNode)
+          );
+        }
+      } else {
+        // Table was deleted on chosen side: delete the node from the doc
+        tr = tipTap.state.tr.delete(tablePos, tablePos + node.nodeSize);
+      }
+      if (tr) tipTap.view.dispatch(tr);
     } finally {
       suppressEditorUpdate = false;
     }
-
+  
     pullFromEditor();
     workingDirty = true;
     syncDirtyBodyFromCurrent();
@@ -1791,24 +1796,29 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     if (!node || (node.type.name !== "bulletList" && node.type.name !== "orderedList")) return;
     const chosenHtml =
       action === "theirs" ? node.attrs.listTheirs : node.attrs.listOurs;
-    if (!chosenHtml) return;
-
-    const chosenDoc = htmlToDoc(chosenHtml);
-    const chosenListNode = chosenDoc.content?.[0];
-    if (!chosenListNode) return;
-
+  
     suppressEditorUpdate = true;
     try {
-      const tr = tipTap.state.tr.replaceWith(
-        listPos,
-        listPos + node.nodeSize,
-        tipTap.schema.nodeFromJSON(chosenListNode)
-      );
-      tipTap.view.dispatch(tr);
+      let tr;
+      if (chosenHtml && chosenHtml.trim()) {
+        const chosenDoc = htmlToDoc(chosenHtml);
+        const chosenListNode = chosenDoc.content?.[0];
+        if (chosenListNode) {
+          tr = tipTap.state.tr.replaceWith(
+            listPos,
+            listPos + node.nodeSize,
+            tipTap.schema.nodeFromJSON(chosenListNode)
+          );
+        }
+      } else {
+        // List was deleted on chosen side: delete the node from the doc
+        tr = tipTap.state.tr.delete(listPos, listPos + node.nodeSize);
+      }
+      if (tr) tipTap.view.dispatch(tr);
     } finally {
       suppressEditorUpdate = false;
     }
-
+  
     pullFromEditor();
     workingDirty = true;
     syncDirtyBodyFromCurrent();

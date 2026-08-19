@@ -679,7 +679,7 @@ class KindredPage:
 
   def select_all_in_editor(self) -> None:
     self.press_keys(Keys.CONTROL + "a")
-
+    
   def paragraph_text_align(self, index: int = 0) -> str:
     return (
       self.driver.execute_script(
@@ -694,3 +694,20 @@ class KindredPage:
       )
       or ""
     )
+
+  def click_in_table(self) -> None:
+    """Clicks into the first table cell to activate table controls in the toolbar."""
+    cell = self.wait.until(
+      EC.element_to_be_clickable((By.CSS_SELECTOR, "#editor .ProseMirror td"))
+    )
+    cell.click()
+    self.wait.until(
+      EC.visibility_of_element_located(
+        (By.CSS_SELECTOR, '#editor-toolbar button[data-cmd="deleteTable"]')
+      )
+    )
+  
+  def delete_table(self) -> None:
+    """Clicks into the table and triggers the deleteTable toolbar command."""
+    self.click_in_table()
+    self.toolbar_click("deleteTable")

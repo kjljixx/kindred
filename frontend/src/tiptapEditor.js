@@ -1012,7 +1012,13 @@ function appendTableConflictDecorations(
 ) {
   doc.descendants((node, pos) => {
     if (node.type.name !== "table") return;
-    if (!node.attrs.tableOurs || !node.attrs.tableTheirs) return;
+    
+    // Check if conflict attributes exist (even if one side is an empty string for deletion)
+    const hasConflict =
+      node.attrs.tableOurs !== null ||
+      node.attrs.tableTheirs !== null ||
+      Boolean(node.attrs.tableLabelOurs || node.attrs.tableLabelTheirs);
+    if (!hasConflict) return;
 
     decorations.push(
       Decoration.widget(
@@ -1036,24 +1042,24 @@ function appendTableConflictDecorations(
       tablePreview.side === "theirs";
 
     if (isHoverTheirs) {
-      // Hide live (ours) table and display the incoming (theirs) table preview
       decorations.push(
         Decoration.node(pos, pos + node.nodeSize, {
           style: "display: none !important;",
         })
       );
-      decorations.push(
-        Decoration.widget(
-          pos,
-          createTablePreviewWidget(node.attrs.tableTheirs, "theirs"),
-          {
-            side: 0,
-            key: `table-theirs-preview-${pos}`,
-          }
-        )
-      );
+      if (node.attrs.tableTheirs && node.attrs.tableTheirs.trim()) {
+        decorations.push(
+          Decoration.widget(
+            pos,
+            createTablePreviewWidget(node.attrs.tableTheirs, "theirs"),
+            {
+              side: 0,
+              key: `table-theirs-preview-${pos}`,
+            }
+          )
+        );
+      }
     } else {
-      // Show live (ours) table with orange side styling
       decorations.push(
         Decoration.node(pos, pos + node.nodeSize, {
           class: "kindred-table-conflict-node kindred-table-side-ours",
@@ -1072,7 +1078,12 @@ function appendListConflictDecorations(
 ) {
   doc.descendants((node, pos) => {
     if (node.type.name !== "bulletList" && node.type.name !== "orderedList") return;
-    if (!node.attrs.listOurs || !node.attrs.listTheirs) return;
+
+    const hasConflict =
+      node.attrs.listOurs !== null ||
+      node.attrs.listTheirs !== null ||
+      Boolean(node.attrs.listLabelOurs || node.attrs.listLabelTheirs);
+    if (!hasConflict) return;
 
     decorations.push(
       Decoration.widget(
@@ -1101,16 +1112,18 @@ function appendListConflictDecorations(
           style: "display: none !important;",
         })
       );
-      decorations.push(
-        Decoration.widget(
-          pos,
-          createListPreviewWidget(node.attrs.listTheirs, "theirs"),
-          {
-            side: 0,
-            key: `list-theirs-preview-${pos}`,
-          }
-        )
-      );
+      if (node.attrs.listTheirs && node.attrs.listTheirs.trim()) {
+        decorations.push(
+          Decoration.widget(
+            pos,
+            createListPreviewWidget(node.attrs.listTheirs, "theirs"),
+            {
+              side: 0,
+              key: `list-theirs-preview-${pos}`,
+            }
+          )
+        );
+      }
     } else {
       decorations.push(
         Decoration.node(pos, pos + node.nodeSize, {
