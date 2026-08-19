@@ -2979,7 +2979,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     } finally {
       converting = false;
       updateCommitBtn();
-      clearChatState(slowTimer);
+      clearTimeout(slowTimer);
     }
   }
 
