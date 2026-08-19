@@ -1178,7 +1178,8 @@ button.pane-title {
   border-radius: var(--radius-1);
 }
 
-.editor .ProseMirror table td {
+.editor .ProseMirror table td,
+.editor .ProseMirror table th {
   min-width: 1em;
   border: 1px solid var(--color-border);
   padding: var(--space-2) var(--space-3);
@@ -1187,12 +1188,14 @@ button.pane-title {
   position: relative;
 }
 
-.editor .ProseMirror table td > p {
+.editor .ProseMirror table td > p,
+.editor .ProseMirror table th > p {
   margin: 0;
   min-height: 1.0em;
 }
 
-.editor .ProseMirror table td.selectedCell {
+.editor .ProseMirror table td.selectedCell,
+.editor .ProseMirror table th.selectedCell {
   background: var(--blue-bg);
 }
 
@@ -1207,7 +1210,9 @@ button.pane-title {
 }
 
 .editor .ProseMirror .kindred-table-side-ours td,
-.editor .ProseMirror table.kindred-table-side-ours td {
+.editor .ProseMirror table.kindred-table-side-ours td,
+.editor .ProseMirror .kindred-table-side-ours th,
+.editor .ProseMirror table.kindred-table-side-ours th {
   pointer-events: none;
   background: transparent;
   border-color: var(--orange-text);
@@ -1227,14 +1232,16 @@ button.pane-title {
   background: var(--blue-bg);
 }
 
-.editor .ProseMirror .kindred-table-preview.kindred-table-side-theirs td {
+.editor .ProseMirror .kindred-table-preview.kindred-table-side-theirs td,
+.editor .ProseMirror .kindred-table-preview.kindred-table-side-theirs th {
   pointer-events: none;
   border-color: var(--blue-text);
   padding: var(--space-2) var(--space-3);
   background: transparent;
 }
 
-.editor .ProseMirror .kindred-table-preview.kindred-table-side-theirs td p {
+.editor .ProseMirror .kindred-table-preview.kindred-table-side-theirs td p,
+.editor .ProseMirror .kindred-table-preview.kindred-table-side-theirs th p {
   margin: 0;
 }
 
@@ -1244,7 +1251,10 @@ button.pane-title {
   background: var(--color-success-bg);
 }
 
-.editor .ProseMirror .diff-table-ins td {
+.editor .ProseMirror .diff-table-ins td,
+.editor .ProseMirror table.diff-table-ins td,
+.editor .ProseMirror .diff-table-ins th,
+.editor .ProseMirror table.diff-table-ins th {
   border-color: var(--accent-success-300);
 }
 
@@ -1264,11 +1274,13 @@ button.pane-title {
   pointer-events: none;
 }
 
-.editor .ProseMirror .diff-table-del table td {
+.editor .ProseMirror .diff-table-del table td,
+.editor .ProseMirror .diff-table-del table th {
   border-color: var(--accent-danger-300);
 }
 
-.diff-table-del td p {
+.diff-table-del td p,
+.diff-table-del th p {
   margin: 0;
   text-decoration: line-through;
   color: var(--accent-danger-300);
