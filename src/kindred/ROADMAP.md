@@ -1,5 +1,4 @@
 Priorities
-- More highlight colors
 - Collapsible side bar and/or bottom bar for mobile and thin screen
 - Google Drive
 
