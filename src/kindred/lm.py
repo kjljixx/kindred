@@ -310,6 +310,8 @@ def reflect_chat(
   return _responses_output_text(response)
 
 
+import time
+
 def reflect_chat_stream(
   *,
   model: str,
@@ -356,8 +358,20 @@ def reflect_chat_stream(
       kwargs["reasoning"] = {"effort": resolved, "summary": "auto"}
       request_summary = "auto"
 
+  t_start = time.perf_counter()
+  t_first_event: float | None = None
+  t_first_thinking: float | None = None
+  t_first_text: float | None = None
+  thinking_chunks = 0
+  text_chunks = 0
+
   final_response: Any = None
   for event in litellm.responses(**kwargs):
+    now = time.perf_counter()
+    if t_first_event is None:
+      t_first_event = now
+
+    print(event)
     event_type_str = str(
       event.get("type", "") if isinstance(event, dict) else getattr(event, "type", "")
     ).lower()
@@ -373,7 +387,30 @@ def reflect_chat_stream(
 
     delta_type, delta_text = _response_stream_delta(event)
     if delta_text:
+      if delta_type == "thinking":
+        if t_first_thinking is None:
+          t_first_thinking = now
+        thinking_chunks += 1
+      elif delta_type == "text":
+        if t_first_text is None:
+          t_first_text = now
+        text_chunks += 1
       yield delta_type, delta_text
+
+  t_end = time.perf_counter()
+  total_dur = t_end - t_start
+  ttft = (t_first_event - t_start) if t_first_event else total_dur
+  think_dur = ((t_first_text or t_end) - (t_first_thinking or t_first_event or t_start)) if (t_first_thinking or thinking_chunks) else 0.0
+  gen_dur = (t_end - t_first_text) if t_first_text else 0.0
+
+  usage = getattr(final_response, "usage", None) or (final_response.get("usage") if isinstance(final_response, dict) else None)
+  prompt_toks = getattr(usage, "prompt_tokens", None) or (usage.get("prompt_tokens") if isinstance(usage, dict) else "?")
+  compl_toks = getattr(usage, "completion_tokens", None) or (usage.get("completion_tokens") if isinstance(usage, dict) else "?")
+
+  print(
+    f"\n[LATENCY REPORT] total={total_dur:.2f}s | ttft={ttft:.2f}s | thinking={think_dur:.2f}s ({thinking_chunks} chunks) | output_gen={gen_dur:.2f}s ({text_chunks} chunks) | tokens=(in:{prompt_toks}, out:{compl_toks})",
+    file=sys.stderr,
+  )
 
   if final_response is not None:
     _log_full_response(
