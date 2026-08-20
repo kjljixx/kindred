@@ -2614,31 +2614,31 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
 
   function renderCoachReply(content, stackIndex, msgIndex) {
     const anchored = String(content || "")
-      .replace(/\[\[mention:(\{[\s\S]*?\})\]\]/g, (token, payload) => {
+      .replace(/\[{1,2}mention:(\{[\s\S]*?\})\]{1,2}/g, (token, payload) => {
         const anchor = parseTextAnchor(payload);
         return anchor ? renderVerifiedTextAnchor(anchor, "mention", stackIndex, msgIndex, token) : token;
       })
-      .replace(/\[\[suggest:(\{[\s\S]*?\})\]\]/g, (token, payload) => {
+      .replace(/\[{1,2}suggest:(\{[\s\S]*?\})\]{1,2}/g, (token, payload) => {
         const anchor = parseTextAnchor(payload);
         return anchor && typeof anchor.replacement === "string"
           ? renderVerifiedTextAnchor(anchor, "suggest", stackIndex, msgIndex, token)
           : token;
       });
-    return renderMarkdown(anchored).replace(/\[\[mention:(\d+):(\d+)\]\]/g, (_, start, end) =>
+    return renderMarkdown(anchored).replace(/\[{1,2}mention:(\d+):(\d+)\]{1,2}/g, (_, start, end) =>
       `<span class="chat-mention">` +
       `<button type="button" class="btn btn-tertiary" data-chat-action="mention" data-preview="current" data-start="${start}" data-end="${end}">${escapeHtml(currentText.slice(Number(start), Number(end)))}</button>` +
       `</span>`
-    ).replace(/\[\[suggest:(\d+):(\d+)=(?:>|&gt;)([\s\S]*?)\]\]/g, (_, start, end, replacement) =>
+    ).replace(/\[{1,2}suggest:(\d+):(\d+)=(?:>|&gt;)([\s\S]*?)\]{1,2}/g, (_, start, end, replacement) =>
       `<span class="chat-suggestion">` +
       `<button type="button" class="btn btn-tertiary suggestion-current" data-chat-action="current" data-preview="current" data-start="${start}" data-end="${end}">${escapeHtml(currentText.slice(Number(start), Number(end)))}</button>` +
-      `<button type="button" class="btn btn-tertiary" data-chat-action="suggest" data-preview="replacement" data-stack-index="${stackIndex}" data-msg-index="${msgIndex}" data-start="${start}" data-end="${end}" data-replacement="${escapeHtml(replacement)}">${escapeHtml(replacement)}</button>` +
+      `<button type="button" class="btn btn-tertiary" data-chat-action="suggest" data-preview="replacement" data-stack-index="${stackIdx}" data-msg-index="${msgIndex}" data-start="${start}" data-end="${end}" data-replacement="${escapeHtml(replacement)}">${escapeHtml(replacement)}</button>` +
       `</span>`
-    ).replace(/\[\[replaced:(?!\d+:\d+:)([^\]]*?)=(?:>|&gt;)([\s\S]*?)\]\]/g, (_, current, replacement) =>
+    ).replace(/\[{1,2}replaced:(?!\d+:\d+:)([^\]]*?)=(?:>|&gt;)([\s\S]*?)\]{1,2}/g, (_, current, replacement) =>
       '<span class="chat-suggestion chat-suggestion-replaced">' +
       '<span class="suggestion-static suggestion-current">' + escapeHtml(current) + '</span>' +
       '<span class="suggestion-static suggestion-replacement">' + escapeHtml(replacement) + '</span>' +
       '</span>'
-    ).replace(/\[\[replaced:(\d+):(\d+):([\s\S]*?)=(?:>|&gt;)([\s\S]*?)\]\]/g, (_, _start, _end, current, replacement) =>
+    ).replace(/\[{1,2}replaced:(\d+):(\d+):([\s\S]*?)=(?:>|&gt;)([\s\S]*?)\]{1,2}/g, (_, _start, _end, current, replacement) =>
       `<span class="chat-suggestion chat-suggestion-replaced">` +
       `<span class="suggestion-static suggestion-current">${escapeHtml(current)}</span>` +
       `<span class="suggestion-static suggestion-replacement">${escapeHtml(replacement)}</span>` +
