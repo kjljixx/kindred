@@ -2260,6 +2260,9 @@ export function createKindredEditor({
   onUpdate = null,
   placeholder = "Paste or type your text here. Double-click to import.",
 } = {}) {
+  const pendingGDocsSteps = [];
+  let isRecordingSteps = false;
+
   const editor = new Editor({
     element,
     autofocus: true,
@@ -2284,9 +2287,11 @@ export function createKindredEditor({
           return openModifiedClickLink(event);
         },
       },
-      // Remove handlePaste and handleDrop to let TipTap parse HTML & paragraphs natively
     },
     onTransaction: ({ editor: ed, transaction }) => {
+      if (isRecordingSteps && transaction.docChanged) {
+        pendingGDocsSteps.push(...transaction.steps);
+      }
       if (!transaction.docChanged && !transaction.selectionSet) return;
       debugEvent("editor", "transaction", {
         transaction: summarizeTransaction(transaction),
@@ -2298,6 +2303,10 @@ export function createKindredEditor({
       onUpdate?.(ed);
     },
   });
+
+  editor.startRecordingGDocsSteps = () => { isRecordingSteps = true; };
+  editor.getPendingGDocsSteps = () => [...pendingGDocsSteps];
+  editor.clearPendingGDocsSteps = () => { pendingGDocsSteps.length = 0; };
 
   return editor;
 }

@@ -28,6 +28,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { CONFIG } from "./config.js";
 import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.js";
+import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
 
 (() => {
   const DIFF_EQUAL = 0;
@@ -177,6 +178,61 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
 
   let tipTap = null;
   let suppressEditorUpdate = false;
+
+  const gdocsSyncBtn = document.getElementById("gdocs-sync-btn");
+  
+  async function syncActiveDraftToGoogleDocs() {
+    if (!tipTap) return;
+  
+    const steps = tipTap.getPendingGDocsSteps();
+    if (!steps.length) {
+      setStatus("No new changes to sync.", "warn");
+      return;
+    }
+  
+    const requests = stepsToGoogleDocsRequests(steps);
+    if (!requests.length) {
+      tipTap.clearPendingGDocsSteps();
+      setStatus("No applicable formatting/text changes to sync.");
+      return;
+    }
+  
+    // Target Google Doc ID (can be prompted or stored in draft metadata)
+    const docId = window.prompt("Enter Google Doc ID (from URL):");
+    if (!docId) return;
+  
+    setStatus("Syncing to Google Docs...");
+    gdocsSyncBtn.disabled = true;
+  
+    try {
+      console.log({documentId: docId.trim(), requests});
+      const res = await fetch("/api/google-docs/batch-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: docId.trim(),
+          requests,
+        }),
+      });
+  
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Google Docs sync failed");
+      }
+  
+      tipTap.clearPendingGDocsSteps();
+      setStatus("Synced successfully to Google Docs!");
+    } catch (err) {
+      console.error(err);
+      setStatus(String(err.message || err), "danger");
+    } finally {
+      gdocsSyncBtn.disabled = false;
+    }
+  }
+  
+  gdocsSyncBtn?.addEventListener("click", () => {
+    void syncActiveDraftToGoogleDocs();
+  });
 
   function getChatStacks(chat) {
     if (!chat) return [];
@@ -505,6 +561,8 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   tipTap.on("selectionUpdate", refreshStatusLeft);
   bindToolbar(tipTap, toolbarEl);
   resetEditorState({ text: "" });
+  tipTap.clearPendingGDocsSteps();
+  tipTap.startRecordingGDocsSteps();
   requestAnimationFrame(() => tipTap?.commands.focus());
   toolbarEl.querySelectorAll(".toolbar-color")?.forEach((el) => {
     el.addEventListener("pointerdown", () => {

@@ -125,6 +125,42 @@ def index() -> FileResponse:
 if STATIC_DIR.is_dir():
   app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+from google.auth import default as google_auth_default
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+
+class GoogleDocsBatchUpdateRequest(BaseModel):
+  document_id: str = Field(alias="documentId")
+  requests: list[dict[str, Any]]
+
+  model_config = {"populate_by_name": True}
+
+
+@app.post("/api/google-docs/batch-update")
+async def api_google_docs_batch_update(body: GoogleDocsBatchUpdateRequest) -> dict[str, Any]:
+  if not body.document_id:
+    raise HTTPException(status_code=400, detail="documentId is required")
+  if not body.requests:
+    return {"status": "ok", "message": "No requests to process"}
+
+  def execute_batch() -> dict[str, Any]:
+    try:
+      credentials, _ = google_auth_default(
+        scopes=["https://www.googleapis.com/auth/documents"]
+      )
+      service = build("docs", "v1", credentials=credentials, cache_discovery=False)
+      return (
+        service.documents()
+        .batchUpdate(documentId=body.document_id, body={"requests": body.requests})
+        .execute()
+      )
+    except HttpError as err:
+      reason = err._get_reason() if hasattr(err, "_get_reason") else str(err)
+      raise HTTPException(status_code=err.resp.status, detail=reason) from err
+    except Exception as exc:
+      raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+  return await asyncio.to_thread(execute_batch)
 
 def run_server(*, host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True) -> None:
   import threading
