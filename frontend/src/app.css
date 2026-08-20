@@ -807,6 +807,7 @@ button.pane-title {
   cursor: text;
   -moz-appearance: textfield;
   appearance: textfield;
+  border-radius: var(--radius-2);
 }
 
 .editor-toolbar .toolbar-font-size::-webkit-outer-spin-button,
@@ -836,6 +837,7 @@ button.pane-title {
   position: relative;
   display: inline-flex;
   vertical-align: middle;
+  border-radius: var(--radius-2);
 }
 
 .editor-toolbar .font-family-select-hidden {
@@ -856,6 +858,7 @@ button.pane-title {
   align-items: center;
   max-width: 11rem;
   min-width: 7.5rem;
+  border-radius: var(--radius-2);
 }
 
 .editor-toolbar .font-family-trigger [data-font-family-label] {
@@ -940,7 +943,7 @@ button.pane-title {
   height: 2.25rem;
   padding: 0.2rem var(--space-3) 0.25rem;
   border: 1px solid transparent;
-  border-radius: var(--radius-1);
+  border-radius: var(--radius-2);
   color: var(--color-text-body);
   cursor: pointer;
   line-height: 1;
