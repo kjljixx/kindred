@@ -121,7 +121,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   const draftPane = document.getElementById("draft-pane");
   const divider = document.getElementById("divider");
 
-  const DEFAULT_MODEL = "openai/gpt-5.6-luna";
+  const DEFAULT_MODEL = "openrouter/google/gemini-3.7-flash";
   // HtmlDiff treats "<...>" as tags; shield raw "<" in plain text.
   const HTMLDIFF_LT = "\uE000";
   const HTMLDIFF_ACTION = { equal: 0, delete: 1, insert: 2, none: 3, replace: 4 };
