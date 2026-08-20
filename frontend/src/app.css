@@ -1661,6 +1661,7 @@ button.pane-title {
 
 .chat-stack-header svg {
   flex-shrink: 0;
+  transform: rotate(180deg);
 }
 
 .chat-stack.is-collapsed .chat-stack-header svg {
@@ -1672,6 +1673,51 @@ button.pane-title {
   flex-direction: column;
   gap: var(--space-6);
   font-family: var(--font-content);
+}
+
+.chat-thinking {
+  margin-bottom: var(--space-4);
+  padding: var(--space-2) 0;
+  border-left: 2px solid var(--color-border);
+  padding-left: var(--space-3);
+}
+
+.chat-thinking.is-collapsed {
+  margin-bottom: var(--space-3);
+  padding: 0;
+  border-left: none;
+}
+
+.chat-thinking.is-collapsed .chat-thinking-btn svg {
+  transform: rotate(-90deg);
+}
+
+.chat-thinking svg {
+  transform: rotate(180deg);
+}
+
+.chat-thinking-body {
+  margin-bottom: var(--space-2);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-3);
+}
+
+.chat-thinking-body p {
+  margin: 0 0 var(--space-2);
+}
+
+.chat-thinking-body p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-thinking-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-1);
+  color: var(--color-text-muted);
+  padding: var(--space-1) var(--space-2);
 }
 
 .chat-msg {

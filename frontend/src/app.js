@@ -48,7 +48,19 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     { id: "pdf", label: "PDF" },
   ];
   let pandocModulePromise = null;
-
+  const CHEVRON_SVG = `
+    <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        stroke-width="3"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        d="M 2.5 4.5 L 6 8 L 9.5 4.5"
+      />
+    </svg>
+  `.trim();
+  
   function loadPandocModule() {
     if (!pandocModulePromise) pandocModulePromise = import("./pandocConvert.js");
     return pandocModulePromise;
@@ -958,10 +970,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   async function persistChatsNow() {
     if (!activeDraftId || !store) return;
     try {
-      const next = await store.saveChats(activeDraftId, chatsState());
-      activeChatId = next.activeChatId;
-      chatRecords = next.chats;
-      draftCost = Number(next.totalCost) || 0;
+      await store.saveChats(activeDraftId, chatsState());
     } catch (err) {
       console.warn("kindred: failed to save chats", err);
     }
@@ -2162,7 +2171,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
       chatInput.value = composerDraft;
       resizeTextarea(chatInput);
     }
-    chatInput.disabled = !enabled;
+    chatInput.disabled = false; //the input text box itself should always be enabled.
     chatSend.disabled = !enabled || !(chatInput.value || "").trim();
     if (finishStackBtn) {
       const active = activeChat();
@@ -2289,18 +2298,6 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
         stacks
           .map((stack, stackIdx) => {
             const msgs = stack.messages || [];
-            const chevronSvg = `
-              <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
-                <path
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="3"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M 2.5 4.5 L 6 8 L 9.5 4.5"
-                />
-              </svg>
-            `.trim();
 
             const isRenaming = renamingStackIndex === stackIdx;
             const titleHtml = isRenaming
@@ -2310,13 +2307,13 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
             const headerHtml =
               `<div class="chat-stack-header" data-chat-action="toggle-stack" data-stack-index="${stackIdx}">` +
               `<button type="button" class="btn btn-tertiary" data-chat-action="toggle-stack" data-stack-index="${stackIdx}">` +
-              `${chevronSvg}${titleHtml}</span>` +
+              `${CHEVRON_SVG}${titleHtml}</span>` +
               `</button>` +
               `</div>`;
             // const headerHtml =
             //   `<div class="chat-stack-header" data-chat-action="toggle-stack" data-stack-index="${stackIdx}">` +
             //   `<button type="button" class="btn btn-tertiary" data-chat-action="toggle-stack" data-stack-index="${stackIdx}">` +
-            //   `${chevronSvg}<span>${escapeHtml(stack.title || `Current Stack`)}</span>` +
+            //   `${CHEVRON_SVG}<span>${escapeHtml(stack.title || `Current Stack`)}</span>` +
             //   `</button>` +
             //   `</div>`;
             if (stack.collapsed) {
@@ -2330,10 +2327,25 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
                   editingChatMessage?.stackIndex === stackIdx &&
                   editingChatMessage?.msgIndex === index &&
                   role === "user";
+  
+                let thinkingHtml = "";
+                if (role === "assistant" && m.thinking) {
+                  const isCollapsed = m.thinkingCollapsed !== false;
+                  const btnHtml =
+                    `<button type="button" class="btn btn-tertiary chat-thinking-btn" data-chat-action="toggle-thinking" data-stack-index="${stackIdx}" data-msg-index="${index}">` +
+                    `${CHEVRON_SVG}<span>Thinking</span>` +
+                    `</button>`;
+                  if (isCollapsed) {
+                    thinkingHtml = `<div class="chat-thinking is-collapsed">${btnHtml}</div>`;
+                  } else {
+                    thinkingHtml = `<div class="chat-thinking"><div class="chat-thinking-body">${renderMarkdown(m.thinking)}</div>${btnHtml}</div>`;
+                  }
+                }
+  
                 const body = editing
                   ? `<div class="chat-message-edit" data-chat-edit-stack="${stackIdx}" data-chat-edit-msg="${index}" contenteditable="true" role="textbox" aria-label="Edit message">${escapeHtml(m.content || "")}</div>`
                   : role === "assistant"
-                    ? renderCoachReply(m.content || "", stackIdx, index)
+                    ? `${thinkingHtml}${renderCoachReply(m.content || "", stackIdx, index)}`
                     : escapeHtml(m.content || "");
                 const actions = editing
                   ? `<div class="chat-msg-actions"><button type="button" class="btn btn-tertiary" data-chat-action="save-edit" data-stack-index="${stackIdx}" data-msg-index="${index}">Send</button><button type="button" class="btn btn-tertiary" data-chat-action="cancel-edit">Cancel</button></div>`
@@ -3389,7 +3401,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     }, 0);
   });
 
-  async function readChatStream(res, onDelta = null) {
+  async function readChatStream(res, onDelta = null, onThinkingDelta = null) {
     if (!res.body) {
       throw new Error(res.statusText || "Chat failed");
     }
@@ -3411,7 +3423,9 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
         } catch {
           throw new Error("Invalid chat event from server");
         }
-        if (event.type === "delta") {
+        if (event.type === "thinking_delta") {
+          if (typeof onThinkingDelta === "function") onThinkingDelta(String(event.delta || ""));
+        } else if (event.type === "delta") {
           if (typeof onDelta === "function") onDelta(String(event.delta || ""));
         } else if (event.type === "done") {
           doneEvent = event;
@@ -3452,6 +3466,11 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     if (!canUseComposer()) return;
     const chat = activeChat();
     if (!chat) return;
+
+    const targetChatId = chat.id;
+    const isViewingThisChat = () =>
+      paneMode === "chat" && chatView === "thread" && activeChatId === targetChatId;
+
     const isRetrying = Number.isInteger(retryStackIndex) && Number.isInteger(retryUserIndex);
     const targetStack = isRetrying ? chat.stacks?.[retryStackIndex] : getActiveStack(chat);
     const source = isRetrying ? targetStack?.messages?.[retryUserIndex] : null;
@@ -3530,25 +3549,42 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
         );
       }
       const pendingReply = targetStack.messages[targetStack.messages.length - 1];
-      const data = await readChatStream(res, (delta) => {
-        pendingReply.content += delta;
-        renderChatThread({ stickBottom: true });
-      });
+      const data = await readChatStream(
+        res,
+        (delta) => {
+          pendingReply.content += delta;
+          if (isViewingThisChat()) renderChatThread({ stickBottom: true });
+        },
+        (thinkingDelta) => {
+          pendingReply.thinking = (pendingReply.thinking || "") + thinkingDelta;
+          if (isViewingThisChat()) renderChatThread({ stickBottom: true });
+        }
+      );
       const reply = String(data.reply || "");
       const cost = Number(data.cost) || 0;
       pendingReply.content = reply || pendingReply.content;
+      if (data.reasoning_summary) {
+        pendingReply.thinking = data.reasoning_summary;
+      }
       chat.lastBranch = currentBranchName || chat.lastBranch || "main";
       chat.updatedAt = Date.now();
       draftCost += cost;
       updateMeta();
       setStatus("");
-      renderChatThread({ stickBottom: true });
+
+      if (isViewingThisChat()) {
+        renderChatThread({ stickBottom: true });
+      } else if (paneMode === "chat" && chatView === "list") {
+        renderChatList();
+      }
       await persistChatsNow();
     } catch (err) {
       targetStack.messages.pop();
       if (!isRetrying) targetStack.messages.pop();
-      renderChatThread({ stickBottom: true });
-      setStatus(String(err.message || err), "danger");
+      if (isViewingThisChat()) {
+        renderChatThread({ stickBottom: true });
+        setStatus(String(err.message || err), "danger");
+      }
       await persistChatsNow();
     } finally {
       chatBusy = false;
@@ -3630,7 +3666,8 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   feedbackEl.addEventListener("click", (e) => {
     if (e.target.closest(".stack-title-input")) return;
     const button = e.target.closest("[data-chat-action]");
-    if (!button || !feedbackEl.contains(button) || chatBusy) return;
+    if (!button || !feedbackEl.contains(button)) return;
+
     const action = button.dataset.chatAction;
     const stackIndex = Number(button.dataset.stackIndex);
     const msgIndex = Number(button.dataset.msgIndex);
@@ -3641,13 +3678,21 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
 
     if (action === "toggle-stack") {
       const chat = activeChat();
-      if (chat) {
-        const stacks = getChatStacks(chat);
-        if (stacks[stackIndex]) {
-          stacks[stackIndex].collapsed = !stacks[stackIndex].collapsed;
-          renderChatThread();
-          void persistChatsNow();
-        }
+      if (chat && chat.stacks?.[stackIndex]) {
+        chat.stacks[stackIndex].collapsed = !chat.stacks[stackIndex].collapsed;
+        renderChatThread();
+        if (!chatBusy) void persistChatsNow();
+      }
+      return;
+    }
+    
+    if (action === "toggle-thinking") {
+      const chat = activeChat();
+      const msg = chat?.stacks?.[stackIndex]?.messages?.[msgIndex];
+      if (msg) {
+        msg.thinkingCollapsed = msg.thinkingCollapsed === false;
+        renderChatThread();
+        if (!chatBusy) void persistChatsNow();
       }
       return;
     }
@@ -3678,6 +3723,8 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
           decodeURIComponent(button.dataset.suggestionToken || "")
         );
       }
+    } else if (chatBusy) {
+      return;
     } else if (action === "edit" && Number.isInteger(stackIndex) && Number.isInteger(msgIndex)) {
       editingChatMessage = { stackIndex, msgIndex };
       renderChatThread();

@@ -352,7 +352,14 @@ const VOLUME = "kindred";
     const content = String(msg.content || "");
     if (role !== "user" && role !== "assistant") return null;
     if (role === "assistant") {
-      return { role, content };
+      const out = { role, content };
+      if (typeof msg.thinking === "string" && msg.thinking) {
+        out.thinking = msg.thinking;
+      }
+      if (typeof msg.thinkingCollapsed === "boolean") {
+        out.thinkingCollapsed = msg.thinkingCollapsed;
+      }
+      return out;
     }
     return {
       role,
