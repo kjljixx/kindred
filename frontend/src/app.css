@@ -1646,6 +1646,7 @@ button.pane-title {
 .chat-stack-header {
   position: sticky;
   top: 0;
+  z-index: 2;
   background: var(--color-bg);
   padding: var(--space-2) 0;
   border-bottom: 1px solid transparent;

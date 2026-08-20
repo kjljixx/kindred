@@ -2307,7 +2307,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
             const headerHtml =
               `<div class="chat-stack-header" data-chat-action="toggle-stack" data-stack-index="${stackIdx}">` +
               `<button type="button" class="btn btn-tertiary" data-chat-action="toggle-stack" data-stack-index="${stackIdx}">` +
-              `${CHEVRON_SVG}${titleHtml}</span>` +
+              `${CHEVRON_SVG}${titleHtml}` +
               `</button>` +
               `</div>`;
             // const headerHtml =
