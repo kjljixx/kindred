@@ -71,8 +71,9 @@ async def api_chat(body: ChatRequest) -> StreamingResponse:
       if body.selection is not None:
         sel = {"from": body.selection.from_, "to": body.selection.to}
       cost_out: dict[str, float] = {}
+      summary_out: dict[str, str | None] = {}
       reply = ""
-      for delta in chat_draft_stream(
+      for kind, delta in chat_draft_stream(
         draft_text=body.draft_text,
         message=message,
         messages=prior,
@@ -80,11 +81,17 @@ async def api_chat(body: ChatRequest) -> StreamingResponse:
         conflict_context=body.conflict_context,
         model=body.model,
         _cost_out=cost_out,
+        _summary_out=summary_out,
       ):
-        reply += delta
-        emit({"type": "delta", "delta": delta})
+        if kind == "thinking":
+          emit({"type": "thinking_delta", "delta": delta})
+        elif kind == "text":
+          reply += delta
+          emit({"type": "delta", "delta": delta})
+      
       cost = float(cost_out.get("cost", 0.0))
-      emit({"type": "done", "reply": reply, "cost": cost})
+      summary = summary_out.get("summary")
+      emit({"type": "done", "reply": reply, "cost": cost, "reasoning_summary": summary})
     except Exception as exc:  # noqa: BLE001 — surface LM/runtime errors to UI
       emit({"type": "error", "detail": str(exc)})
 

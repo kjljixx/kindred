@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from cmath import log
 import json
 import os
 import re
@@ -316,19 +317,14 @@ def reflect_chat_stream(
   temperature: float | None = None,
   max_tokens: int = 40000,
   purpose: str = "reflection",
+  reasoning_effort: str | dict[str, Any] | None = None,
   _cost_out: dict[str, float] | None = None,
+  _summary_out: dict[str, str | None] | None = None,
 ) -> Any:
-  """Yield text deltas from a LiteLLM Responses request.
-
-  Kept separate from ``reflect_chat`` so callers that need a single reply keep
-  the existing cost/tracing behaviour.  Responses providers expose deltas with
-  slightly different object shapes; ``_response_stream_delta`` intentionally
-  accepts the common variants.
-  """
   if is_human_model(model):
     if _cost_out is not None:
       _cost_out["cost"] = 0.0
-    yield _prompt_human(_format_prompt_payload(prompt), role="chat")
+    yield "text", _prompt_human(_format_prompt_payload(prompt), role="chat")
     return
 
   configure_tracing()
@@ -338,27 +334,59 @@ def reflect_chat_stream(
     "input": input_payload,
     "max_output_tokens": max_tokens,
     "stream": True,
+    "text": {"format": {"type": "text"}},
     "metadata": litellm_metadata(
       generation_name=f"kindred.{purpose}", tags=["kindred", purpose]
     ),
-    "tools": [{"type": "web_search_preview"}],
   }
   if instructions:
     kwargs["instructions"] = instructions
   if temperature is not None:
     kwargs["temperature"] = temperature
+
+  resolved = resolve_reasoning_effort(model, reasoning_effort)
+  request_summary: str | None = None
+  if resolved is not None:
+    if isinstance(resolved, dict):
+      kwargs["reasoning"] = resolved
+      summary_mode = resolved.get("summary")
+      if summary_mode is not None:
+        request_summary = str(summary_mode)
+    else:
+      kwargs["reasoning"] = {"effort": resolved, "summary": "auto"}
+      request_summary = "auto"
+
   final_response: Any = None
   for event in litellm.responses(**kwargs):
-    if isinstance(event, dict):
-      if event.get("type") in ("response.completed", "response.done") or "response" in event:
-        final_response = event.get("response") or event
-    else:
-      event_type = getattr(event, "type", "")
-      if event_type in ("response.completed", "response.done") or hasattr(event, "response"):
-        final_response = getattr(event, "response", None) or event
-    delta = _response_stream_delta(event)
-    if delta:
-      yield delta
+    event_type_str = str(
+      event.get("type", "") if isinstance(event, dict) else getattr(event, "type", "")
+    ).lower()
+
+    if (
+      "completed" in event_type_str
+      or "response_done" in event_type_str
+      or "response.done" in event_type_str
+    ):
+      final_response = (
+        event.get("response") if isinstance(event, dict) else getattr(event, "response", None)
+      ) or event
+
+    delta_type, delta_text = _response_stream_delta(event)
+    if delta_text:
+      yield delta_type, delta_text
+
+  if final_response is not None:
+    _log_full_response(
+      purpose=purpose,
+      model=model,
+      request_summary=request_summary,
+      response=final_response,
+      kwargs=kwargs,
+    )
+    record_reasoning_summary(final_response, request_summary=request_summary)
+    if _summary_out is not None:
+      from kindred.tracing import extract_reasoning_summary
+      _summary_out["summary"] = extract_reasoning_summary(final_response)
 
   if _cost_out is not None:
     cost = 0.0
@@ -370,21 +398,52 @@ def reflect_chat_stream(
     _cost_out["cost"] = cost
 
 
-def _response_stream_delta(event: Any) -> str:
-  """Return a text delta from a LiteLLM/OpenAI Responses stream event."""
+def _response_stream_delta(event: Any) -> tuple[str, str]:
+  """Extract (kind, text) from a LiteLLM / Responses stream event."""
+  choices = getattr(event, "choices", None) if not isinstance(event, dict) else event.get("choices")
+  if choices and len(choices) > 0:
+    choice_delta = getattr(choices[0], "delta", None) if not isinstance(choices[0], dict) else choices[0].get("delta")
+    if choice_delta:
+      r_content = getattr(choice_delta, "reasoning_content", None) if not isinstance(choice_delta, dict) else choice_delta.get("reasoning_content")
+      if r_content:
+        return "thinking", str(r_content)
+      content = getattr(choice_delta, "content", None) if not isinstance(choice_delta, dict) else choice_delta.get("content")
+      if content:
+        return "text", str(content)
+
   if isinstance(event, dict):
-    kind = event.get("type", "")
-    delta = event.get("delta", "")
+    raw_kind = str(event.get("type", ""))
+    delta = event.get("delta")
   else:
-    kind = getattr(event, "type", "")
-    delta = getattr(event, "delta", "")
-  if kind not in ("response.output_text.delta", "output_text.delta", ""):
-    return ""
+    raw_kind = str(getattr(event, "type", ""))
+    delta = getattr(event, "delta", None)
+
+  kind = raw_kind.lower()
+
+  if (
+    kind.endswith((".done", "_done", ".completed", "_completed"))
+    or "item_done" in kind
+    or "part_done" in kind
+  ):
+    return "", ""
+
+  text = ""
   if isinstance(delta, str):
-    return delta
-  if isinstance(delta, dict):
-    return str(delta.get("text", "") or "")
-  return ""
+    text = delta
+  elif isinstance(delta, dict):
+    text = str(delta.get("text", "") or delta.get("content", "") or "")
+  elif hasattr(delta, "text"):
+    text = str(getattr(delta, "text", "") or "")
+
+  if not text:
+    return "", ""
+
+  if "reasoning" in kind:
+    return "thinking", text
+  if "output_text" in kind or "text_delta" in kind or "text.delta" in kind or kind == "":
+    return "text", text
+
+  return "", ""
 
 
 def _message_content_as_text(content: Any) -> str:

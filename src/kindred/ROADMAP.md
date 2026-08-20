@@ -15,6 +15,8 @@ Chat
 - Thinking Summaries
 - RAG message stacks
 - Make streaming less laggy
+- Allow typing new messages/opening closing stacks while replying
+- FIx logging
 
 Settings
 TODO

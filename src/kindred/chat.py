@@ -99,6 +99,7 @@ def chat_draft_stream(
   temperature: float | None = None,
   max_tokens: int = 40000,
   _cost_out: dict[str, float] | None = None,
+  _summary_out: dict[str, str | None] | None = None,
 ):
   """Yield a draft-scoped response as model text becomes available."""
   user_message = message.strip()
@@ -125,7 +126,11 @@ def chat_draft_stream(
     message=user_message, conflict_context=conflict_context,
   )})
   yield from reflect_chat_stream(
-    model=model, prompt=prompt, temperature=temperature, max_tokens=max_tokens,
+    model=model,
+    prompt=prompt,
+    temperature=temperature,
+    max_tokens=max_tokens,
     purpose="draft_chat",
     _cost_out=_cost_out,
+    _summary_out=_summary_out,
   )
