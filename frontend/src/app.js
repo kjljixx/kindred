@@ -88,7 +88,6 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
 
   const editor = document.getElementById("editor");
   const toolbarEl = document.getElementById("editor-toolbar");
-  const pullGoogleDocsBtn = document.getElementById("pull-google-docs-btn");
   const feedbackEl = document.getElementById("feedback");
   const chatListEl = document.getElementById("chat-list");
   const draftListEl = document.getElementById("draft-list");
@@ -182,11 +181,11 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
 
   let googleDocsPushing = false;
   let googleDocsPulling = false;
+  let googleDocsRevisionChecking = false;
   let lastGoogleRevisionId = null;
   const GOOGLE_DOCS_POLL_INTERVAL_MS = 200;
 
   async function pullFromGoogleDocs() {
-    pullGoogleDocsBtn.disabled = true;
     googleDocsPulling = true;
     try {
       const response = await fetch("/api/google-docs/document");
@@ -203,12 +202,12 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
     } finally {
       suppressEditorUpdate = false;
       googleDocsPulling = false;
-      pullGoogleDocsBtn.disabled = false;
     }
   }
 
   async function pollGoogleDocsRevision() {
-    if (googleDocsPulling) return;
+    if (googleDocsPulling || googleDocsRevisionChecking) return;
+    googleDocsRevisionChecking = true;
     try {
       const response = await fetch("/api/google-docs/revision");
       if (!response.ok) throw new Error(`Google Docs revision check failed (${response.status})`);
@@ -217,6 +216,8 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
       void pullFromGoogleDocs();
     } catch (error) {
       console.error("[gdocs-downsync] revision polling failed", error);
+    } finally {
+      googleDocsRevisionChecking = false;
     }
   }
   
@@ -592,8 +593,11 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   });
   tipTap.on("selectionUpdate", refreshStatusLeft);
   bindToolbar(tipTap, toolbarEl);
-  pullGoogleDocsBtn.addEventListener("click", () => void pullFromGoogleDocs());
-  window.setInterval(() => void pollGoogleDocsRevision(), GOOGLE_DOCS_POLL_INTERVAL_MS);
+  const googleDocsPollTimer = window.setInterval(
+    () => void pollGoogleDocsRevision(),
+    GOOGLE_DOCS_POLL_INTERVAL_MS,
+  );
+  window.addEventListener("beforeunload", () => window.clearInterval(googleDocsPollTimer), { once: true });
   resetEditorState({ text: "" });
   tipTap.clearPendingSyncEditorSteps();
   tipTap.startRecordingEditorSteps();
