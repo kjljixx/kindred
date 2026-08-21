@@ -1,3 +1,5 @@
+import { docToPlainText } from "./kindredSchema"
+
 /**
  * Maps ProseMirror transaction steps to Google Docs batchUpdate requests.
  */
@@ -9,7 +11,7 @@ export function stepsToGoogleDocsRequests(steps) {
 
     if (json.stepType === 'replace') {
       const { from, to, slice } = json
-      const insertedText = extractSliceText(slice)
+      const insertedText = docToPlainText(slice?.content)
 
       // Ignore structural root paragraph setup (e.g., 0 -> 2)
       if (from === 0 && to <= 2 && !insertedText) {
