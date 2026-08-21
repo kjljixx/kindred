@@ -180,11 +180,14 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   let tipTap = null;
   let suppressEditorUpdate = false;
 
-  let googleDocsSyncing = false;
+  let googleDocsPushing = false;
+  let googleDocsPulling = false;
   let lastGoogleRevisionId = null;
+  const GOOGLE_DOCS_POLL_INTERVAL_MS = 200;
 
   async function pullFromGoogleDocs() {
     pullGoogleDocsBtn.disabled = true;
+    googleDocsPulling = true;
     try {
       const response = await fetch("/api/google-docs/document");
       if (!response.ok) throw new Error(`Google Docs fetch failed (${response.status})`);
@@ -195,18 +198,30 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
       lastGoogleRevisionId = revisionId;
       pullFromEditor();
       console.info("[gdocs-downsync] document applied", { revisionId });
-      setStatus("Pulled from Google Docs", "success");
     } catch (error) {
       console.error("[gdocs-downsync] manual pull failed", error);
-      setStatus(String(error.message || error), "danger");
     } finally {
       suppressEditorUpdate = false;
+      googleDocsPulling = false;
       pullGoogleDocsBtn.disabled = false;
     }
   }
+
+  async function pollGoogleDocsRevision() {
+    if (googleDocsPulling) return;
+    try {
+      const response = await fetch("/api/google-docs/revision");
+      if (!response.ok) throw new Error(`Google Docs revision check failed (${response.status})`);
+      const { revisionId } = await response.json();
+      if (revisionId === lastGoogleRevisionId) return;
+      void pullFromGoogleDocs();
+    } catch (error) {
+      console.error("[gdocs-downsync] revision polling failed", error);
+    }
+  }
   
-  async function syncActiveDraftToGoogleDocs() {
-    if (googleDocsSyncing) return;
+  async function pushActiveDraftToGoogleDocs() {
+    if (googleDocsPushing) return;
     if (!tipTap) return;
   
     const requests = tipTap.getPendingSyncEditorSteps();
@@ -221,7 +236,7 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
     if (!docId) return;
   
     tipTap.clearPendingSyncEditorSteps();
-    googleDocsSyncing = true;
+    googleDocsPushing = true;
     
     try {
       console.log({documentId: docId.trim(), requests});
@@ -242,11 +257,11 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
       console.error(err);
       tipTap.prependPendingSyncEditorSteps(requests);
     } finally {
-      googleDocsSyncing = false;
+      googleDocsPushing = false;
     }
 
     if (tipTap.getPendingSyncEditorSteps().length > 0) {
-      syncActiveDraftToGoogleDocs();
+      pushActiveDraftToGoogleDocs();
     }
   }
 
@@ -547,7 +562,7 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
         return;
       }
       debugEvent("app", "editorUpdate", { editor: summarizeEditor(tipTap) });
-      syncActiveDraftToGoogleDocs();
+      pushActiveDraftToGoogleDocs();
       pullFromEditor();
       if (store) void store.hydrateImageElements(activeDraftId, editor, viewingOid);
       syncDirtyBodyFromCurrent();
@@ -578,6 +593,7 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   tipTap.on("selectionUpdate", refreshStatusLeft);
   bindToolbar(tipTap, toolbarEl);
   pullGoogleDocsBtn.addEventListener("click", () => void pullFromGoogleDocs());
+  window.setInterval(() => void pollGoogleDocsRevision(), GOOGLE_DOCS_POLL_INTERVAL_MS);
   resetEditorState({ text: "" });
   tipTap.clearPendingSyncEditorSteps();
   tipTap.startRecordingEditorSteps();
