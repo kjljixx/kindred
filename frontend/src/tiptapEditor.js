@@ -9,7 +9,7 @@ import {
   prettyPrintHtml,
   blockToHtml
 } from "./kindredSchema.js";
-import { stepToGoogleDocsRequests } from './googleDocsSync.js'
+import { stepToGoogleDocsRequests } from './googleDocsUpsync.js'
 import {
   DEFAULT_FONT_FAMILY,
   fontNameFromCssValue,
