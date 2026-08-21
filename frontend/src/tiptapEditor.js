@@ -9,6 +9,7 @@ import {
   prettyPrintHtml,
   blockToHtml
 } from "./kindredSchema.js";
+import { stepToGoogleDocsRequests } from './googleDocsSync.js'
 import {
   DEFAULT_FONT_FAMILY,
   fontNameFromCssValue,
@@ -2290,7 +2291,15 @@ export function createKindredEditor({
     },
     onTransaction: ({ editor: ed, transaction }) => {
       if (isRecordingSteps && transaction.docChanged) {
-        pendingSyncEditorSteps.push(...transaction.steps);
+        let currentDoc = transaction.before
+        for (const step of transaction.steps) {
+          // Translate immediately using the active doc in scope
+          const reqs = stepToGoogleDocsRequests(step, currentDoc)
+          pendingSyncEditorSteps.push(...reqs)
+
+          const result = step.apply(currentDoc)
+          if (result.doc) currentDoc = result.doc
+        }
       }
       if (!transaction.docChanged && !transaction.selectionSet) return;
       debugEvent("editor", "transaction", {

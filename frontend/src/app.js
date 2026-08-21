@@ -28,7 +28,6 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { CONFIG } from "./config.js";
 import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.js";
-import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
 
 (() => {
   const DIFF_EQUAL = 0;
@@ -185,12 +184,8 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
     if (googleDocsSyncing) return;
     if (!tipTap) return;
   
-    const steps = tipTap.getPendingSyncEditorSteps();
-    if (!steps.length) {
-      return;
-    }
-  
-    const requests = stepsToGoogleDocsRequests(steps);
+    const requests = tipTap.getPendingSyncEditorSteps();
+
     if (!requests.length) {
       tipTap.clearPendingSyncEditorSteps();
       return;
@@ -220,7 +215,7 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
       }
     } catch (err) {
       console.error(err);
-      tipTap.prependPendingSyncEditorSteps(steps);
+      tipTap.prependPendingSyncEditorSteps(requests);
     } finally {
       googleDocsSyncing = false;
     }
