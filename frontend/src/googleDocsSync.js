@@ -1,5 +1,3 @@
-import { docToPlainText } from "./kindredSchema"
-
 function pmPosToDocsIndex(doc, pos) {
   if (!doc || pos <= 1) return 1
   const clamped = Math.min(pos, doc.content.size)
@@ -10,81 +8,82 @@ function pmPosToDocsIndex(doc, pos) {
 /**
  * Maps ProseMirror transaction step to Google Docs batchUpdate request.
  */
-export function stepToGoogleDocsRequests(step, doc) {
-  const requests = []
-  const json = step.toJSON ? step.toJSON() : step
-  console.log('stepToGoogleDocsRequests', json)
-  
-  if (json.stepType === 'replace') {
-    const { from, to, slice } = json
-    let insertedText = docToPlainText(slice?.content)
-
-    console.log('replace step', { from, to, slice, insertedText })
-    if (!insertedText && slice?.openStart > 0 && slice?.openEnd > 0 && slice?.content?.length > 1) {
-      insertedText = '\n'
-    }
-
-    // ProseMirror pos 1 inside paragraph maps to Docs index 1
-    const startIndex = pmPosToDocsIndex(doc, from)
-    const endIndex = pmPosToDocsIndex(doc, to)
-
-    if (endIndex > startIndex) {
-      requests.push({
-        deleteContentRange: {
-          range: {
-            startIndex,
-            endIndex,
-          },
-        },
-      })
-    }
-
-    if (insertedText.length > 0) {
-      requests.push({
-        insertText: {
-          location: { index: startIndex },
-          text: insertedText,
-        },
-      })
-    }
-  }
-
-  if (json.stepType === 'addMark') {
-    const { from, to, mark } = json
-    const { textStyle, fields } = mapMarkToDocsStyle(mark)
-    if (fields && to > from) {
-      requests.push({
-        updateTextStyle: {
-          range: {
-            startIndex: Math.max(1, from),
-            endIndex: Math.max(1, to),
-          },
-          textStyle,
-          fields,
-        },
-      })
-    }
-  }
-
-  if (json.stepType === 'removeMark') {
-    const { from, to, mark } = json
-    const { textStyle, fields } = mapMarkRemovalToDocsStyle(mark)
-    if (fields && to > from) {
-      requests.push({
-        updateTextStyle: {
-          range: {
-            startIndex: Math.max(1, from),
-            endIndex: Math.max(1, to),
-          },
-          textStyle,
-          fields,
-        },
-      })
-    }
-  }
-
-  return requests
-}
+ export function stepToGoogleDocsRequests(step, doc) {
+   const requests = []
+   const json = step.toJSON();
+   console.log('Mapping step to Google Docs requests:', step)
+   // 1. Text Insertions and Deletions
+   if (json.stepType === 'replace') {
+     const { from, to } = step
+     const nextDoc = step.apply(doc).doc
+ 
+     // Read inserted text directly from the new document using native textBetween
+     const newEnd = nextDoc.content.size - (doc.content.size - to)
+     const insertedText = nextDoc.textBetween(from, newEnd, '\n')
+ 
+     const startIndex = pmPosToDocsIndex(doc, from)
+     const endIndex = pmPosToDocsIndex(doc, to)
+     console.log(`Replace step: from ${from} to ${to}, startIndex ${startIndex}, endIndex ${endIndex}, insertedText: "${insertedText}"`)
+     if (endIndex > startIndex) {
+       requests.push({
+         deleteContentRange: {
+           range: { startIndex, endIndex },
+         },
+       })
+     }
+ 
+     if (insertedText.length > 0) {
+       requests.push({
+         insertText: {
+           location: { index: startIndex },
+           text: insertedText,
+         },
+       })
+     }
+   }
+ 
+   // 2. Mark Additions (Formatting)
+   if (json.stepType === 'addMark') {
+     const { from, to, mark } = step
+     const markName = mark.type?.name || mark.type
+     const field = markName === 'strike' ? 'strikethrough' : markName
+ 
+     if (to > from && ['bold', 'italic', 'underline', 'strikethrough'].includes(field)) {
+       requests.push({
+         updateTextStyle: {
+           range: {
+             startIndex: pmPosToDocsIndex(doc, from),
+             endIndex: pmPosToDocsIndex(doc, to),
+           },
+           textStyle: { [field]: true },
+           fields: field,
+         },
+       })
+     }
+   }
+ 
+   // 3. Mark Removals
+   if (json.stepType === 'removeMark') {
+     const { from, to, mark } = step
+     const markName = mark.type?.name || mark.type
+     const field = markName === 'strike' ? 'strikethrough' : markName
+ 
+     if (to > from && ['bold', 'italic', 'underline', 'strikethrough'].includes(field)) {
+       requests.push({
+         updateTextStyle: {
+           range: {
+             startIndex: pmPosToDocsIndex(doc, from),
+             endIndex: pmPosToDocsIndex(doc, to),
+           },
+           textStyle: { [field]: false },
+           fields: field,
+         },
+       })
+     }
+   }
+ 
+   return requests
+ }
 
 function mapMarkToDocsStyle(mark) {
   const type = mark.type || mark
