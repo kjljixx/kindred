@@ -180,8 +180,11 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
   let suppressEditorUpdate = false;
 
   const gdocsSyncBtn = document.getElementById("gdocs-sync-btn");
+
+  let gdocsSyncing = false;
   
   async function syncActiveDraftToGoogleDocs() {
+    if (gdocsSyncing) return;
     if (!tipTap) return;
   
     const steps = tipTap.getPendingGDocsSteps();
@@ -196,15 +199,17 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
       setStatus("No applicable formatting/text changes to sync.");
       return;
     }
-  
+
     // Target Google Doc ID (can be prompted or stored in draft metadata)
-    const docId = window.prompt("Enter Google Doc ID (from URL):");
+    const docId = "1sADU8OrbDmZW1VyuaARqjVNjmWLHl2wWl3R71WkCEDI";
     if (!docId) return;
   
     setStatus("Syncing to Google Docs...");
     gdocsSyncBtn.disabled = true;
   
     try {
+      tipTap.clearPendingGDocsSteps();
+      gdocsSyncing = true;
       console.log({documentId: docId.trim(), requests});
       const res = await fetch("/api/google-docs/batch-update", {
         method: "POST",
@@ -219,14 +224,17 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || "Google Docs sync failed");
       }
-  
-      tipTap.clearPendingGDocsSteps();
       setStatus("Synced successfully to Google Docs!");
     } catch (err) {
       console.error(err);
       setStatus(String(err.message || err), "danger");
     } finally {
+      gdocsSyncing = false;
       gdocsSyncBtn.disabled = false;
+    }
+
+    if (tipTap.getPendingGDocsSteps().length > 0) {
+      syncActiveDraftToGoogleDocs();
     }
   }
   
@@ -531,6 +539,7 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
         return;
       }
       debugEvent("app", "editorUpdate", { editor: summarizeEditor(tipTap) });
+      syncActiveDraftToGoogleDocs();
       pullFromEditor();
       if (store) void store.hydrateImageElements(activeDraftId, editor, viewingOid);
       syncDirtyBodyFromCurrent();
