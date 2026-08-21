@@ -94,11 +94,37 @@ async def fetch_google_document() -> dict[str, Any]:
   return response.json()
 
 
+async def fetch_google_revision() -> str | None:
+  token = get_access_token()
+  response = await get_http_client().get(
+    f"https://docs.googleapis.com/v1/documents/{GOOGLE_DOCS_DOCUMENT_ID}",
+    params={"fields": "revisionId"},
+    headers={"Authorization": f"Bearer {token}"},
+  )
+  if response.is_error:
+    try:
+      detail = response.json().get("error", {}).get("message", response.text)
+    except Exception:
+      detail = response.text
+    raise HTTPException(status_code=response.status_code, detail=detail)
+  return response.json().get("revisionId")
+
+
 @app.get("/api/google-docs/document")
 async def api_google_docs_document() -> dict[str, Any]:
   try:
     document = await fetch_google_document()
     return {"revisionId": document.get("revisionId"), "document": document}
+  except HTTPException:
+    raise
+  except Exception as exc:
+    raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/google-docs/revision")
+async def api_google_docs_revision() -> dict[str, str | None]:
+  try:
+    return {"revisionId": await fetch_google_revision()}
   except HTTPException:
     raise
   except Exception as exc:

@@ -181,16 +181,20 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   let suppressEditorUpdate = false;
 
   let googleDocsSyncing = false;
+  let lastGoogleRevisionId = null;
+
   async function pullFromGoogleDocs() {
     pullGoogleDocsBtn.disabled = true;
     try {
       const response = await fetch("/api/google-docs/document");
       if (!response.ok) throw new Error(`Google Docs fetch failed (${response.status})`);
-      const { document: googleDocument } = await response.json();
+      const { revisionId, document: googleDocument } = await response.json();
       const tipTapDocument = googleDocsToTipTap(googleDocument);
       suppressEditorUpdate = true;
       tipTap.commands.setContent(tipTapDocument);
+      lastGoogleRevisionId = revisionId;
       pullFromEditor();
+      console.info("[gdocs-downsync] document applied", { revisionId });
       setStatus("Pulled from Google Docs", "success");
     } catch (error) {
       console.error("[gdocs-downsync] manual pull failed", error);
