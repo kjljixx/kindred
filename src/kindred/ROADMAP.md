@@ -4,7 +4,6 @@ Priorities
 
 Editor
 TODO
-- Add highlighting text - improve
 - Image support - improve - Diff doesn't show deleted images, maybe align-style conflict buttons are better?
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
 - Proper list diffs/review
@@ -13,8 +12,6 @@ TODO
 
 Chat
 - RAG message stacks
-- Make streaming less laggy
-- FIx logging
 
 Settings
 TODO
