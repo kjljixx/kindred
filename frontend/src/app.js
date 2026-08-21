@@ -179,20 +179,20 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
   let tipTap = null;
   let suppressEditorUpdate = false;
 
-  let gdocsSyncing = false;
+  let googleDocsSyncing = false;
   
   async function syncActiveDraftToGoogleDocs() {
-    if (gdocsSyncing) return;
+    if (googleDocsSyncing) return;
     if (!tipTap) return;
   
-    const steps = tipTap.getPendingGDocsSteps();
+    const steps = tipTap.getPendingSyncEditorSteps();
     if (!steps.length) {
       return;
     }
   
     const requests = stepsToGoogleDocsRequests(steps);
     if (!requests.length) {
-      tipTap.clearPendingGDocsSteps();
+      tipTap.clearPendingSyncEditorSteps();
       return;
     }
 
@@ -201,8 +201,8 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
     if (!docId) return;
   
     try {
-      tipTap.clearPendingGDocsSteps();
-      gdocsSyncing = true;
+      tipTap.clearPendingSyncEditorSteps();
+      googleDocsSyncing = true;
       console.log({documentId: docId.trim(), requests});
       const res = await fetch("/api/google-docs/batch-update", {
         method: "POST",
@@ -220,10 +220,10 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
     } catch (err) {
       console.error(err);
     } finally {
-      gdocsSyncing = false;
+      googleDocsSyncing = false;
     }
 
-    if (tipTap.getPendingGDocsSteps().length > 0) {
+    if (tipTap.getPendingSyncEditorSteps().length > 0) {
       syncActiveDraftToGoogleDocs();
     }
   }
@@ -556,8 +556,8 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
   tipTap.on("selectionUpdate", refreshStatusLeft);
   bindToolbar(tipTap, toolbarEl);
   resetEditorState({ text: "" });
-  tipTap.clearPendingGDocsSteps();
-  tipTap.startRecordingGDocsSteps();
+  tipTap.clearPendingSyncEditorSteps();
+  tipTap.startRecordingEditorSteps();
   requestAnimationFrame(() => tipTap?.commands.focus());
   toolbarEl.querySelectorAll(".toolbar-color")?.forEach((el) => {
     el.addEventListener("pointerdown", () => {

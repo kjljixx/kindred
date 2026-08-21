@@ -2260,7 +2260,7 @@ export function createKindredEditor({
   onUpdate = null,
   placeholder = "Paste or type your text here. Double-click to import.",
 } = {}) {
-  const pendingGDocsSteps = [];
+  const pendingSyncEditorSteps = [];
   let isRecordingSteps = false;
 
   const editor = new Editor({
@@ -2290,7 +2290,7 @@ export function createKindredEditor({
     },
     onTransaction: ({ editor: ed, transaction }) => {
       if (isRecordingSteps && transaction.docChanged) {
-        pendingGDocsSteps.push(...transaction.steps);
+        pendingSyncEditorSteps.push(...transaction.steps);
       }
       if (!transaction.docChanged && !transaction.selectionSet) return;
       debugEvent("editor", "transaction", {
@@ -2304,9 +2304,9 @@ export function createKindredEditor({
     },
   });
 
-  editor.startRecordingGDocsSteps = () => { isRecordingSteps = true; };
-  editor.getPendingGDocsSteps = () => [...pendingGDocsSteps];
-  editor.clearPendingGDocsSteps = () => { pendingGDocsSteps.length = 0; };
+  editor.startRecordingEditorSteps = () => { isRecordingSteps = true; };
+  editor.getPendingSyncEditorSteps = () => [...pendingSyncEditorSteps];
+  editor.clearPendingSyncEditorSteps = () => { pendingSyncEditorSteps.length = 0; };
 
   return editor;
 }
