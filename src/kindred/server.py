@@ -76,6 +76,35 @@ class GoogleDocsBatchUpdateRequest(BaseModel):
   model_config = {"populate_by_name": True}
 
 
+GOOGLE_DOCS_DOCUMENT_ID = "1sADU8OrbDmZW1VyuaARqjVNjmWLHl2wWl3R71WkCEDI"
+
+
+async def fetch_google_document() -> dict[str, Any]:
+  token = get_access_token()
+  response = await get_http_client().get(
+    f"https://docs.googleapis.com/v1/documents/{GOOGLE_DOCS_DOCUMENT_ID}",
+    headers={"Authorization": f"Bearer {token}"},
+  )
+  if response.is_error:
+    try:
+      detail = response.json().get("error", {}).get("message", response.text)
+    except Exception:
+      detail = response.text
+    raise HTTPException(status_code=response.status_code, detail=detail)
+  return response.json()
+
+
+@app.get("/api/google-docs/document")
+async def api_google_docs_document() -> dict[str, Any]:
+  try:
+    document = await fetch_google_document()
+    return {"revisionId": document.get("revisionId"), "document": document}
+  except HTTPException:
+    raise
+  except Exception as exc:
+    raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.post("/api/chat")
 async def api_chat(body: ChatRequest) -> StreamingResponse:
   message = body.message.strip()

@@ -28,6 +28,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { CONFIG } from "./config.js";
 import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.js";
+import { googleDocsToTipTap } from "./googleDocsDownsync.js";
 
 (() => {
   const DIFF_EQUAL = 0;
@@ -87,6 +88,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
 
   const editor = document.getElementById("editor");
   const toolbarEl = document.getElementById("editor-toolbar");
+  const pullGoogleDocsBtn = document.getElementById("pull-google-docs-btn");
   const feedbackEl = document.getElementById("feedback");
   const chatListEl = document.getElementById("chat-list");
   const draftListEl = document.getElementById("draft-list");
@@ -179,6 +181,25 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   let suppressEditorUpdate = false;
 
   let googleDocsSyncing = false;
+  async function pullFromGoogleDocs() {
+    pullGoogleDocsBtn.disabled = true;
+    try {
+      const response = await fetch("/api/google-docs/document");
+      if (!response.ok) throw new Error(`Google Docs fetch failed (${response.status})`);
+      const { document: googleDocument } = await response.json();
+      const tipTapDocument = googleDocsToTipTap(googleDocument);
+      suppressEditorUpdate = true;
+      tipTap.commands.setContent(tipTapDocument);
+      pullFromEditor();
+      setStatus("Pulled from Google Docs", "success");
+    } catch (error) {
+      console.error("[gdocs-downsync] manual pull failed", error);
+      setStatus(String(error.message || error), "danger");
+    } finally {
+      suppressEditorUpdate = false;
+      pullGoogleDocsBtn.disabled = false;
+    }
+  }
   
   async function syncActiveDraftToGoogleDocs() {
     if (googleDocsSyncing) return;
@@ -552,6 +573,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   });
   tipTap.on("selectionUpdate", refreshStatusLeft);
   bindToolbar(tipTap, toolbarEl);
+  pullGoogleDocsBtn.addEventListener("click", () => void pullFromGoogleDocs());
   resetEditorState({ text: "" });
   tipTap.clearPendingSyncEditorSteps();
   tipTap.startRecordingEditorSteps();
