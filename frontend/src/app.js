@@ -179,8 +179,6 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
   let tipTap = null;
   let suppressEditorUpdate = false;
 
-  const gdocsSyncBtn = document.getElementById("gdocs-sync-btn");
-
   let gdocsSyncing = false;
   
   async function syncActiveDraftToGoogleDocs() {
@@ -189,23 +187,18 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
   
     const steps = tipTap.getPendingGDocsSteps();
     if (!steps.length) {
-      setStatus("No new changes to sync.", "warn");
       return;
     }
   
     const requests = stepsToGoogleDocsRequests(steps);
     if (!requests.length) {
       tipTap.clearPendingGDocsSteps();
-      setStatus("No applicable formatting/text changes to sync.");
       return;
     }
 
     // Target Google Doc ID (can be prompted or stored in draft metadata)
     const docId = "1sADU8OrbDmZW1VyuaARqjVNjmWLHl2wWl3R71WkCEDI";
     if (!docId) return;
-  
-    setStatus("Syncing to Google Docs...");
-    gdocsSyncBtn.disabled = true;
   
     try {
       tipTap.clearPendingGDocsSteps();
@@ -224,23 +217,16 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || "Google Docs sync failed");
       }
-      setStatus("Synced successfully to Google Docs!");
     } catch (err) {
       console.error(err);
-      setStatus(String(err.message || err), "danger");
     } finally {
       gdocsSyncing = false;
-      gdocsSyncBtn.disabled = false;
     }
 
     if (tipTap.getPendingGDocsSteps().length > 0) {
       syncActiveDraftToGoogleDocs();
     }
   }
-  
-  gdocsSyncBtn?.addEventListener("click", () => {
-    void syncActiveDraftToGoogleDocs();
-  });
 
   function getChatStacks(chat) {
     if (!chat) return [];

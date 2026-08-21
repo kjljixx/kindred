@@ -1,3 +1,30 @@
+# Google Docs Sync
+
+Enable the API: Go to Google Cloud Console: APIs & Services and click Enable for Google Docs API.
+
+Create Service Account:
+
+    Go to IAM & Admin → Service Accounts → Create Service Account.
+
+    Name it (e.g., `docs-sync`) and click Done.
+
+Download Key JSON:
+
+    Click on the new service account → Keys tab → Add Key → Create new key → choose JSON.
+
+    Save the downloaded .json file in your project folder (e.g. service_account.json).
+
+Share your Google Doc:
+
+    Open the Google Doc in your browser.
+
+    Click Share and invite the service account email (found in the JSON as client_email, ending in ...iam.gserviceaccount.com) as an Editor.
+
+Set Environment Variable:
+Add this to your .env file
+
+GOOGLE_APPLICATION_CREDENTIALS="C:\path\to\service_account.json"
+
 # Kindred
 
 Document editor in the browser that uses Git for version control and integrates AI. The goal is an app that is Google Docs mixed with VSCode mixed with Pastebin.
