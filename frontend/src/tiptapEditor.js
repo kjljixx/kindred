@@ -2307,6 +2307,7 @@ export function createKindredEditor({
   editor.startRecordingEditorSteps = () => { isRecordingSteps = true; };
   editor.getPendingSyncEditorSteps = () => [...pendingSyncEditorSteps];
   editor.clearPendingSyncEditorSteps = () => { pendingSyncEditorSteps.length = 0; };
+  editor.prependPendingSyncEditorSteps = (failedSteps) => {pendingSyncEditorSteps.unshift(...failedSteps);};
 
   return editor;
 }

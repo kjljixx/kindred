@@ -200,9 +200,10 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
     const docId = "1sADU8OrbDmZW1VyuaARqjVNjmWLHl2wWl3R71WkCEDI";
     if (!docId) return;
   
+    tipTap.clearPendingSyncEditorSteps();
+    googleDocsSyncing = true;
+    
     try {
-      tipTap.clearPendingSyncEditorSteps();
-      googleDocsSyncing = true;
       console.log({documentId: docId.trim(), requests});
       const res = await fetch("/api/google-docs/batch-update", {
         method: "POST",
@@ -219,6 +220,7 @@ import { stepsToGoogleDocsRequests } from "./googleDocsSync.js";
       }
     } catch (err) {
       console.error(err);
+      tipTap.prependPendingSyncEditorSteps(steps);
     } finally {
       googleDocsSyncing = false;
     }
