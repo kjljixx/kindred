@@ -264,6 +264,10 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || "Google Docs sync failed");
       }
+      else {
+        let data = await res.json();
+        lastGoogleRevisionId = data.writeControl.requiredRevisionId;
+      }
     } catch (err) {
       console.error(err);
       tipTap.prependPendingSyncEditorSteps(requests);
