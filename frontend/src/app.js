@@ -228,7 +228,10 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   }
   
   async function pushActiveDraftToGoogleDocs() {
-    if (googleDocsPushing || googleDocsPulling || googleDocsRevisionChecking) return;
+    if (googleDocsPushing || googleDocsPulling) return; // return b/c these will clear pending editor steps
+    while (googleDocsRevisionChecking) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     if (!tipTap) return;
   
     const requests = tipTap.getPendingSyncEditorSteps();
@@ -255,6 +258,7 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
           requests,
         }),
       });
+      console.log("Google Docs push response:", res);
   
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
