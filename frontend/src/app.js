@@ -253,6 +253,7 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   }
 
   async function pushActiveDraftToGoogleDocs() {
+    if(syncPausedForTest) return;
     if (googleDocsPushing || googleDocsPulling) return; // return b/c these will clear pending editor steps
     while (googleDocsRevisionChecking) {
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -275,18 +276,16 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
     
     try {
       console.log({documentId: docId.trim(), requests});
-      if (!syncPausedForTest) {
-        const res = await fetch("/api/google-docs/batch-update", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            documentId: docId.trim(),
-            requests,
-          }),
-        });
-        console.log("Google Docs push response:", res);
-      }
-  
+      const res = await fetch("/api/google-docs/batch-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: docId.trim(),
+          requests,
+        }),
+      });
+      console.log("Google Docs push response:", res);
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || "Google Docs sync failed");
