@@ -193,10 +193,16 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
       const { revisionId, document: googleDocument } = await response.json();
       const tipTapDocument = googleDocsToTipTap(googleDocument);
       suppressEditorUpdate = true;
-      tipTap.commands.setContent(tipTapDocument);
-      lastGoogleRevisionId = revisionId;
-      pullFromEditor();
-      console.info("[gdocs-downsync] document applied", { revisionId });
+      tipTap.setSuppressStepRecording?.(true);
+      try {
+        tipTap.commands.setContent(tipTapDocument);
+        tipTap.clearPendingSyncEditorSteps();
+        lastGoogleRevisionId = revisionId;
+        pullFromEditor();
+        console.info("[gdocs-downsync] document applied", { revisionId });
+      } finally {
+        tipTap.setSuppressStepRecording?.(false);
+      }
     } catch (error) {
       console.error("[gdocs-downsync] manual pull failed", error);
     } finally {
@@ -206,7 +212,7 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   }
 
   async function pollGoogleDocsRevision() {
-    if (googleDocsPulling || googleDocsRevisionChecking) return;
+    if (googleDocsPulling || googleDocsRevisionChecking || googleDocsPushing) return;
     googleDocsRevisionChecking = true;
     try {
       const response = await fetch("/api/google-docs/revision");
@@ -222,7 +228,7 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   }
   
   async function pushActiveDraftToGoogleDocs() {
-    if (googleDocsPushing) return;
+    if (googleDocsPushing || googleDocsPulling || googleDocsRevisionChecking) return;
     if (!tipTap) return;
   
     const requests = tipTap.getPendingSyncEditorSteps();

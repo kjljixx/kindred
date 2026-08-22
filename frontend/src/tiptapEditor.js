@@ -2263,6 +2263,7 @@ export function createKindredEditor({
 } = {}) {
   const pendingSyncEditorSteps = [];
   let isRecordingSteps = false;
+  let suppressStepRecording = false;
 
   const editor = new Editor({
     element,
@@ -2290,7 +2291,9 @@ export function createKindredEditor({
       },
     },
     onTransaction: ({ editor: ed, transaction }) => {
-      if (isRecordingSteps && transaction.docChanged) {
+      // Skip programmatic (e.g. downsync) transactions so remote changes are
+      // never echoed back into the upsync queue.
+      if (isRecordingSteps && !suppressStepRecording && transaction.docChanged) {
         let currentDoc = transaction.before
         for (const step of transaction.steps) {
           // Translate immediately using the active doc in scope
@@ -2314,6 +2317,7 @@ export function createKindredEditor({
   });
 
   editor.startRecordingEditorSteps = () => { isRecordingSteps = true; };
+  editor.setSuppressStepRecording = (value) => { suppressStepRecording = Boolean(value); };
   editor.getPendingSyncEditorSteps = () => [...pendingSyncEditorSteps];
   editor.clearPendingSyncEditorSteps = () => { pendingSyncEditorSteps.length = 0; };
   editor.prependPendingSyncEditorSteps = (failedSteps) => {pendingSyncEditorSteps.unshift(...failedSteps);};
