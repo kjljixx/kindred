@@ -4,6 +4,8 @@ import asyncio
 import json
 import re
 import time
+from collections import deque
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +46,40 @@ def get_http_client() -> httpx.AsyncClient:
   if _http_client is None or _http_client.is_closed:
     _http_client = httpx.AsyncClient(timeout=15.0)
   return _http_client
+
+
+WRITE_RATE_WINDOW_S = 60.0
+
+_write_times: deque[float] = deque()
+_write_slot_lock = asyncio.Lock()
+
+
+def earliest_write_time(
+  times: Iterable[float], now: float, window_s: float = WRITE_RATE_WINDOW_S
+) -> float:
+  earliest = now
+  covered = 1
+  for r in sorted((t for t in times if t > now - window_s and t <= now), reverse=True):
+    candidate = r + covered * covered / window_s
+    if candidate > earliest:
+      earliest = candidate
+    covered += 1
+  return earliest
+
+
+async def acquire_write_slot() -> float:
+  """Wait until the square-root write budget allows another send; returns seconds waited."""
+  async with _write_slot_lock:
+    arrived = time.perf_counter()
+    send_at = earliest_write_time(_write_times, arrived)
+    if send_at > arrived:
+      await asyncio.sleep(send_at - arrived)
+    sent_at = time.perf_counter()
+    _write_times.append(sent_at)
+    cutoff = sent_at - WRITE_RATE_WINDOW_S
+    while _write_times[0] <= cutoff:
+      _write_times.popleft()
+    return sent_at - arrived
 
 
 class SelectionOffsets(BaseModel):
@@ -216,13 +252,16 @@ async def api_google_docs_batch_update(body: GoogleDocsBatchUpdateRequest) -> di
       "Content-Type": "application/json",
     }
 
+    t_gate_start = time.perf_counter()
+    rate_waited = await acquire_write_slot()
     t_req_start = time.perf_counter()
     response = await client.post(url, json={"requests": body.requests}, headers=headers)
     t_req_done = time.perf_counter()
 
     print(
       f"[GDocs Sync BE] Total: {(t_req_done - t_start)*1000:.1f}ms | "
-      f"Token Check: {(t_req_start - t_start)*1000:.1f}ms | "
+      f"Token Check: {(t_gate_start - t_start)*1000:.1f}ms | "
+      f"Rate Wait: {rate_waited*1000:.1f}ms | "
       f"Google REST API: {(t_req_done - t_req_start)*1000:.1f}ms"
     )
 
