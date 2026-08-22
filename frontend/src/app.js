@@ -300,10 +300,6 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
     } finally {
       googleDocsPushing = false;
     }
-
-    if (tipTap.getPendingSyncEditorSteps().length > 0) {
-      pushActiveDraftToGoogleDocs();
-    }
   }
 
   function getChatStacks(chat) {
@@ -634,7 +630,12 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   tipTap.on("selectionUpdate", refreshStatusLeft);
   bindToolbar(tipTap, toolbarEl);
   const googleDocsPollTimer = window.setInterval(
-    () => void pollGoogleDocsRevision(),
+    () => {
+      void pollGoogleDocsRevision();
+      if (tipTap && tipTap.getPendingSyncEditorSteps().length > 0) {
+        pushActiveDraftToGoogleDocs();
+      }
+    },
     GOOGLE_DOCS_POLL_INTERVAL_MS,
   );
   window.addEventListener("beforeunload", () => window.clearInterval(googleDocsPollTimer), { once: true });
