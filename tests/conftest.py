@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import socket
+import sys
 import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pytest
 import uvicorn
@@ -13,6 +17,15 @@ from selenium.webdriver.chrome.options import Options
 
 from debug_dump import save_failure_artifacts
 from pages.kindred import KindredPage
+
+
+def pytest_addoption(parser):
+  parser.addoption(
+    "--headed",
+    action="store_true",
+    default=False,
+    help="Run Selenium tests with a visible Chrome browser.",
+  )
 
 
 def _free_port() -> int:
@@ -64,19 +77,23 @@ def base_url() -> str:
 
 
 @pytest.fixture
-def driver():
-  """Fresh headless Chrome per test (empty IndexedDB / home pane)."""
+def driver(request):
+  """Fresh Chrome per test (empty IndexedDB / home pane)."""
   options = Options()
-  options.add_argument("--headless=new")
+  if not request.config.getoption("--headed"):
+    options.add_argument("--headless=new")
   options.add_argument("--disable-gpu")
   options.add_argument("--window-size=1280,800")
   options.add_argument("--no-sandbox")
   options.add_argument("--incognito")
+  options.set_capability("goog:loggingPrefs", {"browser": "ALL"})
 
   browser = webdriver.Chrome(options=options)
   try:
     yield browser
   finally:
+    for entry in browser.get_log("browser"):
+      print(f"[browser] {entry}".encode("ascii", "backslashreplace").decode("ascii"))
     browser.quit()
 
 

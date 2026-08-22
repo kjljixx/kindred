@@ -362,6 +362,27 @@ class KindredPage:
       """
     ) or ""
 
+  def sync_state(self) -> dict:
+    return self.driver.execute_script(
+      "return window.__syncTest && window.__syncTest.getState();"
+    ) or {}
+
+  def pause_sync(self) -> None:
+    self.driver.execute_script("window.__syncTest.pause();")
+
+  def resume_sync(self) -> None:
+    self.driver.execute_script("window.__syncTest.resume();")
+
+  def wait_for_sync_idle(self) -> None:
+    self.wait.until(
+      lambda d: (
+        state := self.sync_state()
+      )
+      and not state.get("localDirty")
+      and not state.get("pushing")
+      and not state.get("pulling")
+    )
+
   def dump_fs_tree(self, root: str = "/") -> dict:
     """Readable LightningFS tree via window.__kindredDebug (text files as strings)."""
     return self.driver.execute_async_script(

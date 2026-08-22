@@ -183,9 +183,33 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   let googleDocsPulling = false;
   let googleDocsRevisionChecking = false;
   let lastGoogleRevisionId = null;
+  let syncPausedForTest = false;
   const GOOGLE_DOCS_POLL_INTERVAL_MS = 200;
 
+  function getSyncState() {
+    return {
+      baseRevisionId: lastGoogleRevisionId,
+      localDirty: Boolean(tipTap?.getPendingSyncEditorSteps?.().length),
+      pushing: googleDocsPushing,
+      pulling: googleDocsPulling,
+      paused: syncPausedForTest,
+    };
+  }
+
+  window.__syncTest = {
+    pause() {
+      syncPausedForTest = true;
+    },
+    resume() {
+      syncPausedForTest = false;
+    },
+    getState() {
+      return getSyncState();
+    },
+  };
+
   async function pullFromGoogleDocs() {
+    if (syncPausedForTest) return;
     googleDocsPulling = true;
     try {
       const response = await fetch("/api/google-docs/document");
@@ -212,6 +236,7 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   }
 
   async function pollGoogleDocsRevision() {
+    if (syncPausedForTest) return;
     if (googleDocsPulling || googleDocsRevisionChecking || googleDocsPushing) return;
     googleDocsRevisionChecking = true;
     try {
@@ -226,7 +251,7 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
       googleDocsRevisionChecking = false;
     }
   }
-  
+
   async function pushActiveDraftToGoogleDocs() {
     if (googleDocsPushing || googleDocsPulling) return; // return b/c these will clear pending editor steps
     while (googleDocsRevisionChecking) {
@@ -250,15 +275,17 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
     
     try {
       console.log({documentId: docId.trim(), requests});
-      const res = await fetch("/api/google-docs/batch-update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          documentId: docId.trim(),
-          requests,
-        }),
-      });
-      console.log("Google Docs push response:", res);
+      if (!syncPausedForTest) {
+        const res = await fetch("/api/google-docs/batch-update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            documentId: docId.trim(),
+            requests,
+          }),
+        });
+        console.log("Google Docs push response:", res);
+      }
   
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
