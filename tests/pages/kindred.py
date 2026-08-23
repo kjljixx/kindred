@@ -185,6 +185,15 @@ class KindredPage:
     self.press_keys(Keys.CONTROL + "a")
     self.paste_text(text)
 
+  def insert_text_before(self, marker: str, text: str) -> None:
+    """Insert plain text immediately before the first occurrence of a marker."""
+    editor_text = self.editor_text()
+    index = editor_text.find(marker)
+    if index < 0:
+      raise AssertionError(f"marker not found in editor text: {marker!r}")
+    self.select_editor_text(index, index)
+    self.paste_text(text)
+
   def view_commit_at(self, index: int) -> None:
     """Click a commit row. List is newest-first (0 = newest)."""
     self.wait.until(lambda d: len(d.find_elements(*self.GIT_COMMIT_ROWS)) > index)
@@ -361,6 +370,27 @@ class KindredPage:
       return el ? el.innerHTML : '';
       """
     ) or ""
+
+  def sync_state(self) -> dict:
+    return self.driver.execute_script(
+      "return window.__syncTest && window.__syncTest.getState();"
+    ) or {}
+
+  def pause_sync(self) -> None:
+    self.driver.execute_script("window.__syncTest.pause();")
+
+  def resume_sync(self) -> None:
+    self.driver.execute_script("window.__syncTest.resume();")
+
+  def wait_for_sync_idle(self) -> None:
+    self.wait.until(
+      lambda d: (
+        state := self.sync_state()
+      )
+      and not state.get("localDirty")
+      and not state.get("pushing")
+      and not state.get("pulling")
+    )
 
   def dump_fs_tree(self, root: str = "/") -> dict:
     """Readable LightningFS tree via window.__kindredDebug (text files as strings)."""

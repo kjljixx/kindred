@@ -10,6 +10,7 @@ import {
   blockToHtml
 } from "./kindredSchema.js";
 import { bindLongPress } from "./longPress.js";
+import { stepToGoogleDocsRequests } from './googleDocsUpsync.js'
 import {
   DEFAULT_FONT_FAMILY,
   fontNameFromCssValue,
@@ -2271,6 +2272,10 @@ export function createKindredEditor({
   onUpdate = null,
   placeholder = "Paste or type your text here. Double-click to import.",
 } = {}) {
+  const pendingSyncEditorSteps = [];
+  let isRecordingSteps = false;
+  let suppressStepRecording = false;
+
   const editor = new Editor({
     element,
     autofocus: true,
@@ -2295,9 +2300,21 @@ export function createKindredEditor({
           return openModifiedClickLink(event);
         },
       },
-      // Remove handlePaste and handleDrop to let TipTap parse HTML & paragraphs natively
     },
     onTransaction: ({ editor: ed, transaction }) => {
+      // Skip programmatic (e.g. downsync) transactions so remote changes are
+      // never echoed back into the upsync queue.
+      if (isRecordingSteps && !suppressStepRecording && transaction.docChanged) {
+        let currentDoc = transaction.before
+        for (const step of transaction.steps) {
+          // Translate immediately using the active doc in scope
+          const reqs = stepToGoogleDocsRequests(step, currentDoc)
+          pendingSyncEditorSteps.push(...reqs)
+
+          const result = step.apply(currentDoc)
+          if (result.doc) currentDoc = result.doc
+        }
+      }
       if (!transaction.docChanged && !transaction.selectionSet) return;
       debugEvent("editor", "transaction", {
         transaction: summarizeTransaction(transaction),
@@ -2309,6 +2326,12 @@ export function createKindredEditor({
       onUpdate?.(ed);
     },
   });
+
+  editor.startRecordingEditorSteps = () => { isRecordingSteps = true; };
+  editor.setSuppressStepRecording = (value) => { suppressStepRecording = Boolean(value); };
+  editor.getPendingSyncEditorSteps = () => [...pendingSyncEditorSteps];
+  editor.clearPendingSyncEditorSteps = () => { pendingSyncEditorSteps.length = 0; };
+  editor.prependPendingSyncEditorSteps = (failedSteps) => {pendingSyncEditorSteps.unshift(...failedSteps);};
 
   return editor;
 }

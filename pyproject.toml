@@ -29,6 +29,9 @@ kindred = "kindred.cli:app"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests"]
+markers = [
+  "integration: tests requiring browser and external Google Docs services",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kindred"]

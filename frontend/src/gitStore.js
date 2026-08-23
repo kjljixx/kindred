@@ -2,6 +2,7 @@ import LightningFS from "@isomorphic-git/lightning-fs";
 import git from "isomorphic-git";
 import { mergeHtmlViaAst } from "./docMerge.js";
 import { canonicalizeTextHtml, htmlToPlainText } from "./kindredSchema.js";
+import { debugEvent } from "./debug.js";
 
 const VOLUME = "kindred";
   const ROOT = "/texts";
@@ -11,6 +12,7 @@ const VOLUME = "kindred";
   const TRACKED = [TEXT_FILE, "meta.json"];
   const TITLE_FILE = "title.txt";
   const BRANCH_ACCESS_FILE = "branch-access.json";
+  const BRANCH_SYNC_FILE = "branch-sync.json";
   const CHATS_FILE = "draft-chats.json";
   const DEFAULT_MODEL = "openai/gpt-5.6-luna";
   const DEFAULT_CHAT_TITLE = "New Chat";
@@ -489,6 +491,22 @@ const VOLUME = "kindred";
     await writeBranchAccess(dir, map);
   }
 
+  async function getBranchSync(id, branch) {
+    const raw = await readJson(`${textDir(id)}/${BRANCH_SYNC_FILE}`, {});
+    return raw?.[branch] || null;
+  }
+
+  async function setBranchSync(id, branch, documentId) {
+    const dir = textDir(id);
+    const raw = await readJson(`${dir}/${BRANCH_SYNC_FILE}`, {});
+    const map = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    if (documentId) map[branch] = { documentId, updatedAt: Date.now() };
+    else delete map[branch];
+    await writeJson(`${dir}/${BRANCH_SYNC_FILE}`, map);
+    await flush();
+    return map[branch] || null;
+  }
+
   async function resolveTitle(dir, text, preferred, customTitle = false) {
     // Pinned titles (explicit rename) win; otherwise always derive from body.
     if (customTitle) {
@@ -625,18 +643,22 @@ const VOLUME = "kindred";
   }
 
   async function listDrafts() {
+    debugEvent("git-store", "list-drafts:start", { root: ROOT });
     await ensureDir(ROOT);
     let names = [];
     try {
       names = await pfs.readdir(ROOT);
     } catch {
+      debugEvent("git-store", "list-drafts:root-unreadable", { root: ROOT });
       return [];
     }
+    debugEvent("git-store", "list-drafts:root-read", { count: names.length });
     const drafts = [];
     for (const name of names) {
       const dir = textDir(name);
       if (!(await pathExists(`${dir}/.git`))) continue;
       try {
+        debugEvent("git-store", "list-drafts:read", { id: name });
         const state = await readWorkingFiles(name);
         const branch =
           (await git.currentBranch({ fs, dir, test: true })) ||
@@ -654,11 +676,17 @@ const VOLUME = "kindred";
           commitCount,
           hasConflict: state.hasConflict,
         });
+        debugEvent("git-store", "list-drafts:loaded", { id: name, branch, commitCount });
       } catch (err) {
         console.warn("kindred: skip draft", name, err);
+        debugEvent("git-store", "list-drafts:skipped", {
+          id: name,
+          error: String(err?.message || err),
+        });
       }
     }
     drafts.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    debugEvent("git-store", "list-drafts:complete", { count: drafts.length });
     return drafts;
   }
 
@@ -1047,6 +1075,12 @@ const VOLUME = "kindred";
     delete access[oldref];
     access[ref] = checkout ? Date.now() : prevTs || Date.now();
     await writeBranchAccess(dir, access);
+    const syncMap = await readJson(`${dir}/${BRANCH_SYNC_FILE}`, {});
+    if (syncMap?.[oldref]) {
+      syncMap[ref] = syncMap[oldref];
+      delete syncMap[oldref];
+      await writeJson(`${dir}/${BRANCH_SYNC_FILE}`, syncMap);
+    }
     if (checkout) {
       await saveWorkingTree(id, { activeBranch: ref });
     }
@@ -1138,6 +1172,9 @@ const VOLUME = "kindred";
       delete access[ref];
       await writeBranchAccess(dir, access);
     }
+    const syncMap = await readJson(`${dir}/${BRANCH_SYNC_FILE}`, {});
+    delete syncMap[ref];
+    await writeJson(`${dir}/${BRANCH_SYNC_FILE}`, syncMap);
     await flush();
   }
 
@@ -3029,8 +3066,11 @@ const VOLUME = "kindred";
   }
 
   async function init() {
+    debugEvent("git-store", "init:start", { root: ROOT });
     await ensureDir(ROOT);
+    debugEvent("git-store", "init:root-ready", { root: ROOT });
     await flush();
+    debugEvent("git-store", "init:complete", { root: ROOT });
   }
 
   function looksBinaryText(text) {
@@ -3121,6 +3161,8 @@ const KindredGitStore = {
   readWorkingFiles,
   readChats,
   saveChats,
+  getBranchSync,
+  setBranchSync,
   autoMessage,
   nextSequentialName,
   titleFromText,

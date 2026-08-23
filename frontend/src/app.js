@@ -29,6 +29,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { CONFIG } from "./config.js";
 import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.js";
+import { googleDocsToTipTap } from "./googleDocsDownsync.js";
 
 (() => {
   const DIFF_EQUAL = 0;
@@ -194,6 +195,164 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
 
   let tipTap = null;
   let suppressEditorUpdate = false;
+
+  let googleDocsPushing = false;
+  let googleDocsPulling = false;
+  let googleDocsRevisionChecking = false;
+  let googleDocsMerging = false;
+  let lastGoogleRevisionId = null;
+  let syncPausedForTest = false;
+  let googleDocsPollTimer = null;
+  const GOOGLE_DOCS_POLL_INTERVAL_MS = 200;
+
+  function getSyncState() {
+    return {
+      baseRevisionId: lastGoogleRevisionId,
+      localDirty: Boolean(tipTap?.getPendingSyncEditorSteps?.().length),
+      pushing: googleDocsPushing,
+      pulling: googleDocsPulling,
+      paused: syncPausedForTest,
+    };
+  }
+
+  window.__syncTest = {
+    pause() {
+      syncPausedForTest = true;
+    },
+    resume() {
+      syncPausedForTest = false;
+    },
+    getState() {
+      return getSyncState();
+    },
+  };
+
+  async function activeGoogleDocsSyncTarget() {
+    if (!store || !activeDraftId || !currentBranchName) return null;
+    return store.getBranchSync(activeDraftId, currentBranchName);
+  }
+
+  async function pullFromGoogleDocs({ allowDuringMerge = false } = {}) {
+    if (!store || !activeDraftId || syncPausedForTest || (googleDocsMerging && !allowDuringMerge)) return;
+    googleDocsPulling = true;
+    try {
+      const syncTarget = await activeGoogleDocsSyncTarget();
+      if (!syncTarget?.documentId) return;
+      const response = await fetch(`/api/google-docs/document?documentId=${encodeURIComponent(syncTarget.documentId)}`);
+      if (!response.ok) throw new Error(`Google Docs fetch failed (${response.status})`);
+      const { revisionId, document: googleDocument } = await response.json();
+      const tipTapDocument = googleDocsToTipTap(googleDocument);
+      suppressEditorUpdate = true;
+      tipTap.setSuppressStepRecording?.(true);
+      try {
+        tipTap.commands.setContent(tipTapDocument);
+        tipTap.clearPendingSyncEditorSteps();
+        lastGoogleRevisionId = revisionId;
+        pullFromEditor();
+        debugEvent("gdocs-sync", "document applied", { revisionId });
+      } finally {
+        tipTap.setSuppressStepRecording?.(false);
+      }
+    } catch (error) {
+      console.error("[gdocs-downsync] manual pull failed", error);
+    } finally {
+      suppressEditorUpdate = false;
+      googleDocsPulling = false;
+    }
+  }
+
+  async function pollGoogleDocsRevision() {
+    if (!store || !activeDraftId || syncPausedForTest || googleDocsMerging) return;
+    if (googleDocsPulling || googleDocsRevisionChecking || googleDocsPushing) return;
+    googleDocsRevisionChecking = true;
+    try {
+      const syncTarget = await activeGoogleDocsSyncTarget();
+      if (!syncTarget?.documentId) return;
+      const response = await fetch(`/api/google-docs/revision?documentId=${encodeURIComponent(syncTarget.documentId)}`);
+      if (!response.ok) throw new Error(`Google Docs revision check failed (${response.status})`);
+      const { revisionId } = await response.json();
+      const localChanged = Boolean(tipTap?.getPendingSyncEditorSteps?.().length);
+      const remoteChanged = revisionId !== lastGoogleRevisionId;
+      debugEvent("gdocs-sync", "revision-poll", { localChanged, remoteChanged, lastGoogleRevisionId, revisionId });
+      if (localChanged && remoteChanged) await mergeWithGoogleDocs();
+      else if (localChanged) await pushActiveDraftToGoogleDocs();
+      else if (remoteChanged) await pullFromGoogleDocs();
+    } catch (error) {
+      console.error("[gdocs-downsync] revision polling failed", error);
+    } finally {
+      googleDocsRevisionChecking = false;
+    }
+  }
+
+  async function pushActiveDraftToGoogleDocs({ targetRevisionId = null, updateBaseRevision = true, allowDuringMerge = false } = {}) {
+    if (!store || !activeDraftId || syncPausedForTest || (googleDocsMerging && !allowDuringMerge)) return false; // return b/c these will clear pending editor steps
+    if (googleDocsPushing || googleDocsPulling) return false;
+    if (!tipTap) return false;
+  
+    const requests = tipTap.getPendingSyncEditorSteps();
+
+    if (!requests.length) {
+      tipTap.clearPendingSyncEditorSteps();
+      return false;
+    }
+
+    // Target Google Doc ID (can be prompted or stored in draft metadata)
+    const syncTarget = await activeGoogleDocsSyncTarget();
+    const docId = syncTarget?.documentId;
+    if (!docId) return false;
+  
+    tipTap.clearPendingSyncEditorSteps();
+    googleDocsPushing = true;
+    
+    try {
+      debugEvent("gdocs-sync", "upsync-batch-update", {documentId: docId.trim(), requests});
+      const res = await fetch("/api/google-docs/batch-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: docId.trim(),
+          requests,
+          ...(targetRevisionId ? { targetRevisionId } : {}),
+        }),
+      });
+      debugEvent("gdocs-sync", "upsync-batch-update-response", {status: res.status, ok: res.ok});
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Google Docs sync failed");
+      }
+      else {
+        let data = await res.json();
+        if (updateBaseRevision) lastGoogleRevisionId = data.writeControl.requiredRevisionId;
+        return true;
+      }
+    } catch (err) {
+      console.error(err);
+      tipTap.prependPendingSyncEditorSteps(requests);
+      return false;
+    } finally {
+      googleDocsPushing = false;
+    }
+  }
+
+  async function mergeWithGoogleDocs() {
+    if (googleDocsMerging) return;
+    googleDocsMerging = true;
+    const targetRevisionId = lastGoogleRevisionId;
+    debugEvent("gdocs-sync", "merge-start", { targetRevisionId });
+    try {
+      const accepted = await pushActiveDraftToGoogleDocs({ targetRevisionId, updateBaseRevision: false, allowDuringMerge: true });
+      debugEvent("gdocs-sync", "merge-push-result", { accepted });
+      if (!accepted) return;
+      debugEvent("gdocs-sync", "merge-pull-start", { targetRevisionId });
+      await pullFromGoogleDocs({ allowDuringMerge: true });
+      debugEvent("gdocs-sync", "merge-pull-complete", { targetRevisionId });
+    } catch (error) {
+      console.error("[gdocs-sync] merge failed", error);
+    } finally {
+      googleDocsMerging = false;
+    }
+  }
 
   function getChatStacks(chat) {
     if (!chat) return [];
@@ -521,7 +680,18 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   });
   tipTap.on("selectionUpdate", refreshStatusLeft);
   bindToolbar(tipTap, toolbarEl);
+  function startGoogleDocsPolling() {
+    if (googleDocsPollTimer != null) return;
+    googleDocsPollTimer = window.setInterval(() => {
+      void pollGoogleDocsRevision();
+    }, GOOGLE_DOCS_POLL_INTERVAL_MS);
+  }
+  window.addEventListener("beforeunload", () => {
+    if (googleDocsPollTimer != null) window.clearInterval(googleDocsPollTimer);
+  }, { once: true });
   resetEditorState({ text: "" });
+  tipTap.clearPendingSyncEditorSteps();
+  tipTap.startRecordingEditorSteps();
   requestAnimationFrame(() => tipTap?.commands.focus());
   toolbarEl.querySelectorAll(".toolbar-color")?.forEach((el) => {
     el.addEventListener("pointerdown", () => {
@@ -2879,7 +3049,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
           ? `<input class="git-row-title-input" data-git="rename-input" value="${escapeHtml(name)}" aria-label="Branch name" />`
           : `<span class="git-row-title">${escapeHtml(name)}</span>`;
         const actions = current
-          ? ""
+          ? `<div class="git-row-actions"><button type="button" class="btn btn-tertiary" data-git="sync" data-branch="${escapeHtml(name)}">Sync</button></div>`
           : `<div class="git-row-actions">` +
             `<button type="button" class="btn btn-tertiary" data-git="merge" data-branch="${escapeHtml(name)}">Merge</button>` +
             `<button type="button" class="draft-item-delete" data-git="delete" data-branch="${escapeHtml(name)}" title="Delete branch" aria-label="Delete branch">×</button>` +
@@ -3329,6 +3499,23 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     await refreshWorkingDirty();
   }
 
+  function googleDocIdFromPrompt(value) {
+    const match = /^https:\/\/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/.exec(String(value || "").trim());
+    if (!match) throw new Error("Paste a Google Docs link");
+    return match[1];
+  }
+
+  async function syncCurrentBranch() {
+    const link = window.prompt("Paste Google Docs link for this branch:");
+    if (link == null) return;
+    const documentId = googleDocIdFromPrompt(link);
+    await store.setBranchSync(activeDraftId, currentBranchName, documentId);
+    const oauthWindow = window.open("/api/google-docs/oauth/start", "kindred-google-oauth", "popup,width=520,height=650");
+    if (!oauthWindow) throw new Error("Allow popups to connect Google Docs");
+    setStatus(`sync connected to ${documentId}`);
+    renderGitPane();
+  }
+
   async function deleteBranchNamed(name) {
     const ok = window.confirm(`Delete branch “${name}”?`);
     if (!ok) return;
@@ -3451,6 +3638,8 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
       runGit(() => switchBranch(actionEl.dataset.branch));
     } else if (action === "merge") {
       runGit(() => mergeIntoCurrent(actionEl.dataset.branch));
+    } else if (action === "sync") {
+      runGit(syncCurrentBranch);
     } else if (action === "delete") {
       runGit(() => deleteBranchNamed(actionEl.dataset.branch));
     } else if (action === "dirty") {
@@ -4126,6 +4315,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     try {
       setStatus("Loading drafts...");
       await storeReady;
+      startGoogleDocsPolling();
       await refreshDraftList();
       updateMeta();
       setStatus("");

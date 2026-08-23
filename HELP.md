@@ -30,3 +30,14 @@ Editor Keyboard Shortcuts
 - Ctrl+9: Switch to Diff view mode
 - Ctrl+0: Switch to Review view mode
 - Ctrl+/: Focus chat input box
+
+
+
+# Google Docs Sync Setup Guide
+Enable the API: Go to Google Cloud Console: APIs & Services and click Enable for Google Docs API.
+
+Go to Google Auth Platform. Go to clients. Add new client, put your domain inside Authorized JavaScript origins. Copy client ID and secret to .env
+
+In Data Access, add Google Docs API.
+
+In Audience, scroll down and add your Google Account to Test Users.

@@ -1,6 +1,6 @@
-Priorities
-- Collapsible side bar and/or bottom bar for mobile and thin screen
-- Google Drive
+GOOGLE DRIVE SYNC
+-Max out 300 writes/min
+-Bidirectional sync
 
 Editor
 TODO
