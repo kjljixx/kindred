@@ -127,6 +127,14 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   const touchInput = window.matchMedia("(hover: none), (pointer: coarse)");
 
   const DEFAULT_MODEL = "openrouter/google/gemini-3.7-flash";
+  const EPHEMERAL_STATUS_MESSAGES = new Set([
+    "suggestion applied.",
+    "restored into working tree",
+    "nothing to commit",
+    "nothing to export.",
+    "the requested character range is invalid.",
+    "suggestion could not be safely located in the current draft.",
+  ]);
   // HtmlDiff treats "<...>" as tags; shield raw "<" in plain text.
   const HTMLDIFF_LT = "\uE000";
   const HTMLDIFF_ACTION = { equal: 0, delete: 1, insert: 2, none: 3, replace: 4 };
@@ -160,6 +168,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   let draftCost = 0;
   let statusMessage = "";
   let statusLevel = "";
+  let statusClearTimer = null;
   let drafts = [];
   let activeDraftId = null;
   let saveTimer = null;
@@ -718,9 +727,19 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   syncWorkspaceNavigation();
 
   function setStatus(msg, level = "") {
+    if (statusClearTimer !== null) {
+      clearTimeout(statusClearTimer);
+      statusClearTimer = null;
+    }
     statusMessage = (msg || "").toLowerCase();
     statusLevel = statusMessage ? level : "";
     refreshStatusLeft();
+    if (EPHEMERAL_STATUS_MESSAGES.has(statusMessage)) {
+      statusClearTimer = setTimeout(() => {
+        statusClearTimer = null;
+        setStatus("");
+      }, 5000);
+    }
   }
 
   function countStats(html) {
