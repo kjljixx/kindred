@@ -20,6 +20,7 @@ import {
   mergeCleanEditsIntoMarked,
   stripKindredProtocol,
 } from "./tiptapEditor.js";
+import { bindLongPress } from "./longPress.js";
 import { loadColoris, loadHtmlDiff } from "./optionalAssets.js";
 import { warmPopularGoogleFonts } from "./fontCatalog.js";
 import { alignTwoWay } from "./docAlign.js";
@@ -85,6 +86,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     else window.setTimeout(warm, 1000);
   }
 
+  const appRoot = document.getElementById("app");
   const editor = document.getElementById("editor");
   const toolbarEl = document.getElementById("editor-toolbar");
   const feedbackEl = document.getElementById("feedback");
@@ -120,6 +122,9 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   const panes = document.getElementById("panes");
   const draftPane = document.getElementById("draft-pane");
   const divider = document.getElementById("divider");
+  const workspaceActions = document.querySelectorAll("[data-workspace-action]");
+  const compactLayout = window.matchMedia("(max-width: 770px)");
+  const touchInput = window.matchMedia("(hover: none), (pointer: coarse)");
 
   const DEFAULT_MODEL = "openrouter/google/gemini-3.7-flash";
   // HtmlDiff treats "<...>" as tags; shield raw "<" in plain text.
@@ -137,6 +142,9 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   let dirtyHtml = "";
   let dirtyText = "";
   let paneMode = "chat";
+  let activeWorkspace = "draft";
+  let wasCompactLayout = compactLayout.matches;
+  let openingDraftId = null;
   let chatRecords = [];
   let activeChatId = null;
   /** @type {"list"|"thread"} */
@@ -661,6 +669,54 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     });
   }
 
+  function getLayoutMode() {
+    if (!compactLayout.matches) return "wide";
+    return touchInput.matches ? "touch" : "narrowDesktop";
+  }
+
+  function syncWorkspaceNavigation() {
+    if (getLayoutMode() === "wide") {
+      delete appRoot.dataset.workspace;
+      delete appRoot.dataset.homeWorkspace;
+      return;
+    }
+    appRoot.dataset.homeWorkspace = String(!activeDraftId);
+    appRoot.dataset.workspace = activeWorkspace;
+    workspaceActions.forEach((tab) => {
+      const workspace = tab.dataset.workspaceAction;
+      const active = workspace === activeWorkspace;
+      const home = !activeDraftId;
+      tab.hidden = home && workspace === "history";
+      if (workspace === "draft") tab.textContent = home ? "New" : "Draft";
+      if (workspace === "chat") tab.textContent = home ? "Drafts" : "Chat";
+      if (workspace === "history") tab.textContent = "Git";
+      tab.setAttribute("aria-current", active ? "page" : "false");
+      if (tab.getAttribute("role") === "tab") tab.setAttribute("aria-selected", active ? "true" : "false");
+      tab.classList.toggle("active", active);
+    });
+  }
+
+  function setWorkspace(next) {
+    if (next !== "draft" && next !== "chat" && next !== "history") return;
+    activeWorkspace = next;
+    if (next === "chat") setPaneMode("chat");
+    if (next === "history") setPaneMode("git");
+    syncWorkspaceNavigation();
+  }
+
+  workspaceActions.forEach((tab) => {
+    tab.addEventListener("click", () => setWorkspace(tab.dataset.workspaceAction));
+  });
+
+  compactLayout.addEventListener("change", (event) => {
+    if (event.matches && !wasCompactLayout) activeWorkspace = "draft";
+    wasCompactLayout = event.matches;
+    syncWorkspaceNavigation();
+  });
+  touchInput.addEventListener("change", syncWorkspaceNavigation);
+
+  syncWorkspaceNavigation();
+
   function setStatus(msg, level = "") {
     statusMessage = (msg || "").toLowerCase();
     statusLevel = statusMessage ? level : "";
@@ -1071,6 +1127,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
         : currentHtml || plainToHtml(text || "");
     const draft = await store.createDraft({ html, text: html });
     activeDraftId = draft.id;
+    syncWorkspaceNavigation();
     commits = [];
     activeCommitIndex = -1;
     viewingOid = null;
@@ -1251,6 +1308,16 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     }
   }
 
+  function startDraftListRename(item) {
+    if (!item) return false;
+    renamingDraftId = item.dataset.id;
+    renameSource = "list";
+    if (draftHeaderTitleInput) draftHeaderTitleInput.hidden = true;
+    syncHeaderTitle();
+    renderDraftList();
+    return true;
+  }
+
   function applyRevisionToEditor() {
     debugEvent("app", "applyRevisionToEditor:start", { currentHtml });
     suppressEditorUpdate = true;
@@ -1369,31 +1436,43 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     await flushSaveTimer();
     activeDraftId = null;
     paneMode = "chat";
+    activeWorkspace = "draft";
     clearChatState();
     resetEditorState({ text: "" });
+    syncWorkspaceNavigation();
     syncHeaderTitle();
     tipTap?.commands.focus();
   }
 
   async function openDraft(id) {
-    await flushSaveTimer();
-    const draft = findDraft(id) || (await store.readWorkingFiles(id));
-    if (!draft) return;
-    activeDraftId = id;
-    paneMode = "chat";
-    viewingOid = null;
-    renamingGit = null;
-    const wt = await store.readWorkingFiles(id);
-    hasConflict = !!wt.hasConflict;
-    pendingMerge = wt.pendingMerge || null;
-    if (hasConflict) paneMode = "git";
-    await refreshCommits();
-    await loadChatsForDraft(id);
-    loadSnapshotState(wt, { historical: false });
-    if (commits.length) activeCommitIndex = commits.length - 1;
-    await refreshDraftList();
-    if (paneMode === "git") renderGitPane();
-    await refreshWorkingDirty();
+    if (openingDraftId) return;
+    openingDraftId = id;
+    activeWorkspace = "draft";
+    syncWorkspaceNavigation();
+    try {
+      await flushSaveTimer();
+      const draft = findDraft(id) || (await store.readWorkingFiles(id));
+      if (!draft) return;
+      activeDraftId = id;
+      paneMode = "chat";
+      viewingOid = null;
+      renamingGit = null;
+      const wt = await store.readWorkingFiles(id);
+      hasConflict = !!wt.hasConflict;
+      pendingMerge = wt.pendingMerge || null;
+      if (hasConflict) paneMode = "git";
+      if (compactLayout.matches && paneMode === "git") activeWorkspace = "history";
+      syncWorkspaceNavigation();
+      await refreshCommits();
+      await loadChatsForDraft(id);
+      loadSnapshotState(wt, { historical: false });
+      if (commits.length) activeCommitIndex = commits.length - 1;
+      await refreshDraftList();
+      if (paneMode === "git") renderGitPane();
+      await refreshWorkingDirty();
+    } finally {
+      openingDraftId = null;
+    }
   }
 
   async function deleteDraft(id) {
@@ -1406,8 +1485,10 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     await store.deleteDraft(id);
     if (activeDraftId === id) {
       activeDraftId = null;
+      activeWorkspace = "draft";
       clearChatState();
       resetEditorState({ text: "" });
+      syncWorkspaceNavigation();
     }
     await refreshDraftList();
   }
@@ -1448,11 +1529,12 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     if (e.target.closest("[data-action='delete']")) return;
     if (e.target.closest(".draft-item-title-input")) return;
     e.preventDefault();
-    renamingDraftId = item.dataset.id;
-    renameSource = "list";
-    if (draftHeaderTitleInput) draftHeaderTitleInput.hidden = true;
-    syncHeaderTitle();
-    renderDraftList();
+    startDraftListRename(item);
+  });
+  bindLongPress(draftListEl, (e) => {
+    const item = e.target.closest(".draft-item");
+    if (!item || e.target.closest("[data-action='delete']") || e.target.closest(".draft-item-title-input")) return false;
+    return startDraftListRename(item);
   });
 
   draftListEl.addEventListener("keydown", (e) => {
@@ -2739,11 +2821,15 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   function setPaneMode(next) {
     if (next !== "chat" && next !== "git") return;
     if (paneMode === next) {
+      if (compactLayout.matches) activeWorkspace = next === "git" ? "history" : "chat";
       syncPaneModeTabs();
+      syncWorkspaceNavigation();
       return;
     }
     paneMode = next;
+    if (compactLayout.matches) activeWorkspace = next === "git" ? "history" : "chat";
     syncPaneModeTabs();
+    syncWorkspaceNavigation();
     updateCommitBtn();
     syncRightPane();
     syncOverlayFromState();
@@ -2865,6 +2951,8 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   async function runGit(fn) {
     if (!activeDraftId || gitBusy) return;
     gitBusy = true;
+    gitPane.classList.add("is-busy");
+    gitPane.setAttribute("aria-busy", "true");
     updateCommitBtn();
     try {
       await fn();
@@ -2872,6 +2960,8 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
       setStatus(String(err.message || err), "danger");
     } finally {
       gitBusy = false;
+      gitPane.classList.remove("is-busy");
+      gitPane.setAttribute("aria-busy", "false");
       updateCommitBtn();
       if (paneMode === "git") renderGitPane();
     }
@@ -3211,6 +3301,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     const result = await store.mergeBranch(activeDraftId, name);
     viewingOid = null;
     paneMode = "git";
+    if (compactLayout.matches) activeWorkspace = "history";
     loadSnapshotState(result.state, { historical: false });
     await refreshDraftList();
     syncPaneModeTabs();
@@ -3374,6 +3465,20 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
       e.preventDefault();
       startGitRename("commit", commitRow.dataset.oid);
     }
+  });
+  bindLongPress(gitPane, (e) => {
+    if (e.target.closest(".git-row-title-input") || e.target.closest(".git-row-actions")) return false;
+    const branchRow = e.target.closest("#git-branch-list .git-row[data-branch]");
+    if (branchRow) {
+      startGitRename("branch", branchRow.dataset.branch);
+      return true;
+    }
+    const commitRow = e.target.closest('#git-commit-list .git-row[data-git="view"]');
+    if (commitRow && commitRow.dataset.oid === headOid) {
+      startGitRename("commit", commitRow.dataset.oid);
+      return true;
+    }
+    return false;
   });
 
   gitPane.addEventListener("keydown", (e) => {
@@ -3629,6 +3734,13 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     renamingChatId = item.dataset.id;
     renderChatList();
   });
+  bindLongPress(chatListEl, (e) => {
+    const item = e.target.closest(".draft-item");
+    if (!item || e.target.closest("[data-action='delete']") || e.target.closest(".draft-item-title-input")) return false;
+    renamingChatId = item.dataset.id;
+    renderChatList();
+    return true;
+  });
 
   chatListEl?.addEventListener("keydown", (e) => {
     const input = e.target.closest(".draft-item-title-input");
@@ -3784,6 +3896,23 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     editingChatMessage = { stackIndex, msgIndex };
     renderChatThread();
   });
+  bindLongPress(feedbackEl, (e) => {
+    const header = e.target.closest(".chat-stack-header");
+    if (header && !chatBusy) {
+      renamingStackIndex = Number(header.dataset.stackIndex);
+      renderChatThread();
+      return true;
+    }
+    const message = e.target.closest(".chat-msg.user");
+    if (!message || chatBusy) return false;
+    const stackEl = message.closest(".chat-stack");
+    const stackIndex = Number(stackEl?.querySelector("[data-stack-index]")?.dataset.stackIndex);
+    const msgIndex = [...(stackEl?.querySelectorAll(".chat-msg") || [])].indexOf(message);
+    if (!Number.isInteger(stackIndex) || msgIndex < 0) return false;
+    editingChatMessage = { stackIndex, msgIndex };
+    renderChatThread();
+    return true;
+  });
 
   feedbackEl.addEventListener("keydown", (e) => {
     const input = e.target.closest(".stack-title-input");
@@ -3863,6 +3992,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   }
 
   divider.addEventListener("pointerdown", (e) => {
+    if (compactLayout.matches) return;
     if (e.button !== 0) return;
     e.preventDefault();
     resizing = true;
@@ -3873,6 +4003,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   });
 
   divider.addEventListener("pointermove", (e) => {
+    if (compactLayout.matches) return;
     if (!resizing) return;
     setSplitFromClientX(e.clientX);
   });
@@ -3881,6 +4012,7 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   divider.addEventListener("pointercancel", endResize);
 
   divider.addEventListener("keydown", (e) => {
+    if (compactLayout.matches) return;
     const step = e.shiftKey ? 40 : 16;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
@@ -3916,7 +4048,13 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
   
       const key = e.key.toLowerCase();
 
-      if (key === "[") {
+      if (key === ";" && compactLayout.matches) {
+        e.preventDefault();
+        e.stopPropagation();
+        setWorkspace("draft");
+        requestAnimationFrame(() => tipTap?.commands.focus());
+      }
+      else if (key === "[") {
         if (activeDraftId) {
           e.preventDefault();
           e.stopPropagation();

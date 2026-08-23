@@ -9,6 +9,7 @@ import {
   prettyPrintHtml,
   blockToHtml
 } from "./kindredSchema.js";
+import { bindLongPress } from "./longPress.js";
 import {
   DEFAULT_FONT_FAMILY,
   fontNameFromCssValue,
@@ -800,6 +801,42 @@ function createConflictWidget(seg, index, onAction, conflictMode = "merge") {
   };
 }
 
+function isTouchConflictInput() {
+  return window.matchMedia("(hover: none), (pointer: coarse)").matches;
+}
+
+function bindConflictChoice({ view, oursBtn, theirsBtn, currentSide = "ours", preview, commit }) {
+  let activeSide = currentSide;
+  const buttons = { ours: oursBtn, theirs: theirsBtn };
+  for (const [key, button] of Object.entries(buttons)) {
+    button.dataset.conflictState = key === currentSide ? "current" : "";
+  }
+  const setState = (side) => {
+    activeSide = side || currentSide;
+    for (const [key, button] of Object.entries(buttons)) {
+      button.dataset.conflictState = key === activeSide ? (key === currentSide ? "current" : "preview") : "";
+    }
+    preview?.(side);
+  };
+  const choose = (side) => (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isTouchConflictInput()) {
+      if (side === activeSide) commit?.(side);
+      else setState(side);
+      return;
+    }
+    commit?.(side);
+  };
+  oursBtn.addEventListener("click", choose("ours"));
+  theirsBtn.addEventListener("click", choose("theirs"));
+  return () => {
+    oursBtn.removeEventListener("click", choose("ours"));
+    theirsBtn.removeEventListener("click", choose("theirs"));
+    if (view) setState(null);
+  };
+}
+
 function createAlignConflictWidget(attrs, paraPos, onAction, conflictMode = "merge") {
   return (view) => {
     const wrap = document.createElement("span");
@@ -831,27 +868,12 @@ function createAlignConflictWidget(attrs, paraPos, onAction, conflictMode = "mer
       view.dispatch(tr);
     };
 
-    theirsBtn.addEventListener("mouseenter", () => {
-      setPreview(theirsAlign, "theirs");
-    });
-    theirsBtn.addEventListener("mouseleave", () => {
-      setPreview(oursAlign, "ours");
-    });
-    oursBtn.addEventListener("mouseenter", () => {
-      setPreview(oursAlign, "ours");
-    });
-    oursBtn.addEventListener("mouseleave", () => {
-      setPreview(oursAlign, "ours");
-    });
-
-    const click = (action) => (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setPreview(oursAlign, "ours");
-      onAction?.(action, paraPos);
-    };
-    oursBtn.addEventListener("mousedown", click("ours"));
-    theirsBtn.addEventListener("mousedown", click("theirs"));
+    const desktopPreview = (side) => setPreview(side === "theirs" ? theirsAlign : oursAlign, side);
+    theirsBtn.addEventListener("mouseenter", () => { if (!isTouchConflictInput()) desktopPreview("theirs"); });
+    theirsBtn.addEventListener("mouseleave", () => { if (!isTouchConflictInput()) desktopPreview("ours"); });
+    oursBtn.addEventListener("mouseenter", () => { if (!isTouchConflictInput()) desktopPreview("ours"); });
+    oursBtn.addEventListener("mouseleave", () => { if (!isTouchConflictInput()) desktopPreview("ours"); });
+    bindConflictChoice({ view, oursBtn, theirsBtn, preview: desktopPreview, commit: (side) => { setPreview(oursAlign, "ours"); onAction?.(side, paraPos); } });
 
     wrap.append(oursBtn, theirsBtn);
     return wrap;
@@ -896,19 +918,11 @@ function createTableConflictWidget(attrs, tablePos, onAction, conflictMode = "me
       view.dispatch(tr);
     };
 
-    theirsBtn.addEventListener("mouseenter", () => setPreview("theirs"));
-    theirsBtn.addEventListener("mouseleave", () => setPreview(null));
-    oursBtn.addEventListener("mouseenter", () => setPreview("ours"));
-    oursBtn.addEventListener("mouseleave", () => setPreview(null));
-
-    const click = (action) => (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setPreview(null);
-      onAction?.(action, tablePos);
-    };
-    oursBtn.addEventListener("mousedown", click("ours"));
-    theirsBtn.addEventListener("mousedown", click("theirs"));
+    theirsBtn.addEventListener("mouseenter", () => { if (!isTouchConflictInput()) setPreview("theirs"); });
+    theirsBtn.addEventListener("mouseleave", () => { if (!isTouchConflictInput()) setPreview(null); });
+    oursBtn.addEventListener("mouseenter", () => { if (!isTouchConflictInput()) setPreview("ours"); });
+    oursBtn.addEventListener("mouseleave", () => { if (!isTouchConflictInput()) setPreview(null); });
+    bindConflictChoice({ view, oursBtn, theirsBtn, preview: setPreview, commit: (side) => { setPreview(null); onAction?.(side, tablePos); } });
 
     wrap.append(oursBtn, theirsBtn);
     return wrap;
@@ -954,19 +968,11 @@ function createListConflictWidget(attrs, listPos, onAction, conflictMode = "merg
       view.dispatch(tr);
     };
 
-    theirsBtn.addEventListener("mouseenter", () => setPreview("theirs"));
-    theirsBtn.addEventListener("mouseleave", () => setPreview(null));
-    oursBtn.addEventListener("mouseenter", () => setPreview("ours"));
-    oursBtn.addEventListener("mouseleave", () => setPreview(null));
-
-    const click = (action) => (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setPreview(null);
-      onAction?.(action, listPos);
-    };
-    oursBtn.addEventListener("mousedown", click("ours"));
-    theirsBtn.addEventListener("mousedown", click("theirs"));
+    theirsBtn.addEventListener("mouseenter", () => { if (!isTouchConflictInput()) setPreview("theirs"); });
+    theirsBtn.addEventListener("mouseleave", () => { if (!isTouchConflictInput()) setPreview(null); });
+    oursBtn.addEventListener("mouseenter", () => { if (!isTouchConflictInput()) setPreview("ours"); });
+    oursBtn.addEventListener("mouseleave", () => { if (!isTouchConflictInput()) setPreview(null); });
+    bindConflictChoice({ view, oursBtn, theirsBtn, preview: setPreview, commit: (side) => { setPreview(null); onAction?.(side, listPos); } });
 
     wrap.append(oursBtn, theirsBtn);
     return wrap;
@@ -2032,6 +2038,10 @@ export function bindToolbar(editor, toolbarEl) {
     e.stopPropagation();
     openHighlightPicker();
   };
+  const removeHighlightLongPress = bindLongPress(highlightBtn, () => {
+    openHighlightPicker();
+    return true;
+  });
   const onImage = () => {
     const file = imageInput?.files?.[0];
     if (!file?.type.startsWith("image/")) return;
@@ -2213,6 +2223,7 @@ export function bindToolbar(editor, toolbarEl) {
     highlightBtn?.removeEventListener("mousedown", stashSelection);
     highlightBtn?.removeEventListener("click", onHighlightClick);
     highlightBtn?.removeEventListener("contextmenu", onHighlightContextMenu);
+    removeHighlightLongPress();
     highlightInput?.removeEventListener("mousedown", stashSelection);
     highlightInput?.removeEventListener("focus", stashSelection);
     highlightInput?.removeEventListener("blur", scheduleClearIfNoKeepTarget);

@@ -14,6 +14,11 @@
 
 <body>
   <div id="app">
+    <nav id="tablet-workspace-nav" class="workspace-nav workspace-nav-tablet" aria-label="Workspace">
+      <button type="button" class="workspace-tab" data-workspace-action="draft" aria-current="page">Draft</button>
+      <button type="button" class="workspace-tab" data-workspace-action="chat">Chat</button>
+      <button type="button" class="workspace-tab" data-workspace-action="history">Git</button>
+    </nav>
     <div id="panes">
       <section id="draft-pane">
         <header class="pane-header">
@@ -45,6 +50,14 @@
               </button>
               <div id="export-menu" class="export-menu" role="menu" hidden></div>
             </div>
+            <span id="narrow-workspace-sep" class="draft-header-sep" aria-hidden="true"></span>
+            <nav id="narrow-workspace-nav" class="workspace-nav" aria-label="Workspace">
+              <div class="tabs tabs-primary" role="tablist" aria-label="Workspace">
+                <button type="button" class="tab btn btn-secondary" data-workspace-action="draft" role="tab">Draft</button>
+                <button type="button" class="tab btn btn-secondary" data-workspace-action="chat" role="tab">Chat</button>
+                <button type="button" class="tab btn btn-secondary" data-workspace-action="history" role="tab">Git</button>
+              </div>
+            </nav>
           </div>
         </header>
         <div id="editor-toolbar" class="editor-toolbar" role="toolbar" aria-label="Formatting">
@@ -166,6 +179,11 @@
         <div id="draft-list" class="draft-list" role="list"></div>
       </section>
     </div>
+    <nav id="mobile-workspace-nav" class="workspace-nav workspace-nav-mobile" aria-label="Workspace">
+      <button type="button" class="workspace-tab" data-workspace-action="draft" aria-current="page">Draft</button>
+      <button type="button" class="workspace-tab" data-workspace-action="chat">Chat</button>
+      <button type="button" class="workspace-tab" data-workspace-action="history">Git</button>
+    </nav>
     <footer id="statusbar">
       <span id="status" class="status-left"></span>
       <span id="meta" class="status-right"></span>
