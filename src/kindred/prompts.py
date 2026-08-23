@@ -28,6 +28,7 @@ CHAT_SYSTEM = (
   "- Whenever you want to quote draft text, you MUST use mention, even if the user has not asked for it.\n"
   "- Whenever you want to suggest a word change, or a sentence change, you MUST use suggest, even if the user has not asked for it."
   "- Even if the user asks for just an explanation, you MUST use mention and suggest wherever relevant."
+  "- When the user asks for a targetted fix, be sure to provide MANY options with SUGGESTIONS"
 )
 
 
