@@ -108,6 +108,7 @@ class ChatRequest(BaseModel):
 class GoogleDocsBatchUpdateRequest(BaseModel):
   document_id: str = Field(alias="documentId")
   requests: list[dict[str, Any]] = Field(default_factory=list)
+  target_revision_id: str | None = Field(default=None, alias="targetRevisionId")
 
   model_config = {"populate_by_name": True}
 
@@ -255,7 +256,10 @@ async def api_google_docs_batch_update(body: GoogleDocsBatchUpdateRequest) -> di
     t_gate_start = time.perf_counter()
     rate_waited = await acquire_write_slot()
     t_req_start = time.perf_counter()
-    response = await client.post(url, json={"requests": body.requests}, headers=headers)
+    google_body: dict[str, Any] = {"requests": body.requests}
+    if body.target_revision_id:
+      google_body["writeControl"] = {"targetRevisionId": body.target_revision_id}
+    response = await client.post(url, json=google_body, headers=headers)
     t_req_done = time.perf_counter()
 
     print(

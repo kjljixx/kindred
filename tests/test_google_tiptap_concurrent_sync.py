@@ -185,6 +185,7 @@ def test_concurrent_edit_matrix(
   kindred.resume_sync()
   WebDriverWait(kindred.driver, 30).until(lambda _: not kindred.sync_state().get("localDirty"))
   wait_for_sync_idle(kindred)
+  wait_for_editor_text(kindred, google_docs.text())
   final_text = kindred.editor_text()
   merged_text = google_docs.text()
   for marker in expected_markers:

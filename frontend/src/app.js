@@ -182,6 +182,7 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   let googleDocsPushing = false;
   let googleDocsPulling = false;
   let googleDocsRevisionChecking = false;
+  let googleDocsMerging = false;
   let lastGoogleRevisionId = null;
   let syncPausedForTest = false;
   const GOOGLE_DOCS_POLL_INTERVAL_MS = 200;
@@ -208,8 +209,8 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
     },
   };
 
-  async function pullFromGoogleDocs() {
-    if (syncPausedForTest) return;
+  async function pullFromGoogleDocs({ allowDuringMerge = false } = {}) {
+    if (syncPausedForTest || (googleDocsMerging && !allowDuringMerge)) return;
     googleDocsPulling = true;
     try {
       const response = await fetch("/api/google-docs/document");
@@ -236,15 +237,24 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   }
 
   async function pollGoogleDocsRevision() {
-    if (syncPausedForTest) return;
+    if (syncPausedForTest || googleDocsMerging) return;
     if (googleDocsPulling || googleDocsRevisionChecking || googleDocsPushing) return;
     googleDocsRevisionChecking = true;
     try {
       const response = await fetch("/api/google-docs/revision");
       if (!response.ok) throw new Error(`Google Docs revision check failed (${response.status})`);
       const { revisionId } = await response.json();
-      if (revisionId === lastGoogleRevisionId) return;
-      void pullFromGoogleDocs();
+      const localChanged = Boolean(tipTap?.getPendingSyncEditorSteps?.().length);
+      const remoteChanged = revisionId !== lastGoogleRevisionId;
+      console.info("[gdocs-sync] reconcile", {
+        localChanged,
+        remoteChanged,
+        baseRevisionId: lastGoogleRevisionId,
+        remoteRevisionId: revisionId,
+      });
+      if (localChanged && remoteChanged) await mergeWithGoogleDocs();
+      else if (localChanged) await pushActiveDraftToGoogleDocs();
+      else if (remoteChanged) await pullFromGoogleDocs();
     } catch (error) {
       console.error("[gdocs-downsync] revision polling failed", error);
     } finally {
@@ -252,24 +262,24 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
     }
   }
 
-  async function pushActiveDraftToGoogleDocs() {
-    if(syncPausedForTest) return;
-    if (googleDocsPushing || googleDocsPulling) return; // return b/c these will clear pending editor steps
-    while (googleDocsRevisionChecking) {
+  async function pushActiveDraftToGoogleDocs({ targetRevisionId = null, updateBaseRevision = true, allowDuringMerge = false } = {}) {
+    if (syncPausedForTest || (googleDocsMerging && !allowDuringMerge)) return false; // return b/c these will clear pending editor steps
+    if (googleDocsPushing || googleDocsPulling) return false;
+    while (googleDocsRevisionChecking && !allowDuringMerge) { // when called directly from editor, wait for revision checking to finish
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    if (!tipTap) return;
+    if (!tipTap) return false;
   
     const requests = tipTap.getPendingSyncEditorSteps();
 
     if (!requests.length) {
       tipTap.clearPendingSyncEditorSteps();
-      return;
+      return false;
     }
 
     // Target Google Doc ID (can be prompted or stored in draft metadata)
     const docId = "1sADU8OrbDmZW1VyuaARqjVNjmWLHl2wWl3R71WkCEDI";
-    if (!docId) return;
+    if (!docId) return false;
   
     tipTap.clearPendingSyncEditorSteps();
     googleDocsPushing = true;
@@ -282,6 +292,7 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
         body: JSON.stringify({
           documentId: docId.trim(),
           requests,
+          ...(targetRevisionId ? { targetRevisionId } : {}),
         }),
       });
       console.log("Google Docs push response:", res);
@@ -292,13 +303,34 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
       }
       else {
         let data = await res.json();
-        lastGoogleRevisionId = data.writeControl.requiredRevisionId;
+        if (updateBaseRevision) lastGoogleRevisionId = data.writeControl.requiredRevisionId;
+        return true;
       }
     } catch (err) {
       console.error(err);
       tipTap.prependPendingSyncEditorSteps(requests);
+      return false;
     } finally {
       googleDocsPushing = false;
+    }
+  }
+
+  async function mergeWithGoogleDocs() {
+    if (googleDocsMerging) return;
+    googleDocsMerging = true;
+    const targetRevisionId = lastGoogleRevisionId;
+    console.info("[gdocs-sync] merge starting", { targetRevisionId });
+    try {
+      const accepted = await pushActiveDraftToGoogleDocs({ targetRevisionId, updateBaseRevision: false, allowDuringMerge: true });
+      consoel.info("[gdocs-sync] merge push result", { accepted });
+      if (!accepted) return;
+      console.info("[gdocs-sync] merge push accepted");
+      await pullFromGoogleDocs({ allowDuringMerge: true });
+      console.info("[gdocs-sync] merge complete", { revisionId: lastGoogleRevisionId });
+    } catch (error) {
+      console.error("[gdocs-sync] merge failed", error);
+    } finally {
+      googleDocsMerging = false;
     }
   }
 
@@ -632,9 +664,6 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   const googleDocsPollTimer = window.setInterval(
     () => {
       void pollGoogleDocsRevision();
-      if (tipTap && tipTap.getPendingSyncEditorSteps().length > 0) {
-        pushActiveDraftToGoogleDocs();
-      }
     },
     GOOGLE_DOCS_POLL_INTERVAL_MS,
   );
