@@ -232,6 +232,17 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
     return store.getBranchSync(activeDraftId, currentBranchName);
   }
 
+  async function reportGoogleDocsSyncConnection(documentId) {
+    let documentTitle = "";
+    try {
+      const response = await fetch(`/api/google-docs/title?documentId=${encodeURIComponent(documentId)}`);
+      if (response.ok) ({ title: documentTitle = "" } = await response.json());
+    } catch (error) {
+      console.warn("[gdocs-sync] title lookup failed", error);
+    }
+    setStatus(`syncing to “${documentTitle || "Google Docs document"}”`);
+  }
+
   async function pullFromGoogleDocs({ allowDuringMerge = false } = {}) {
     if (!store || !activeDraftId || syncPausedForTest || (googleDocsMerging && !allowDuringMerge)) return;
     googleDocsPulling = true;
@@ -901,7 +912,7 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
       clearTimeout(statusClearTimer);
       statusClearTimer = null;
     }
-    statusMessage = (msg || "").toLowerCase();
+    statusMessage = msg || "";
     statusLevel = statusMessage ? level : "";
     refreshStatusLeft();
     if (EPHEMERAL_STATUS_MESSAGES.has(statusMessage)) {
@@ -3506,13 +3517,17 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   }
 
   async function syncCurrentBranch() {
-    const link = window.prompt("Paste Google Docs link for this branch:");
+    const syncTarget = await activeGoogleDocsSyncTarget();
+    const currentLink = syncTarget?.documentId
+      ? `https://docs.google.com/document/d/${syncTarget.documentId}/edit`
+      : "";
+    const link = window.prompt("Paste Google Docs link for this branch:", currentLink);
     if (link == null) return;
     const documentId = googleDocIdFromPrompt(link);
     await store.setBranchSync(activeDraftId, currentBranchName, documentId);
     const oauthWindow = window.open("/api/google-docs/oauth/start", "kindred-google-oauth", "popup,width=520,height=650");
     if (!oauthWindow) throw new Error("Allow popups to connect Google Docs");
-    setStatus(`sync connected to ${documentId}`);
+    await reportGoogleDocsSyncConnection(documentId);
     renderGitPane();
   }
 

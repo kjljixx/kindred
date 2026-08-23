@@ -213,6 +213,22 @@ async def fetch_google_revision(document_id: str = GOOGLE_DOCS_DOCUMENT_ID) -> s
   return response.json().get("revisionId")
 
 
+async def fetch_google_document_title(document_id: str = GOOGLE_DOCS_DOCUMENT_ID) -> str:
+  token = get_access_token()
+  response = await get_http_client().get(
+    f"https://docs.googleapis.com/v1/documents/{document_id}",
+    params={"fields": "title"},
+    headers={"Authorization": f"Bearer {token}"},
+  )
+  if response.is_error:
+    try:
+      detail = response.json().get("error", {}).get("message", response.text)
+    except Exception:
+      detail = response.text
+    raise HTTPException(status_code=response.status_code, detail=detail)
+  return response.json().get("title", "")
+
+
 @app.get("/api/google-docs/document")
 async def api_google_docs_document(documentId: str = GOOGLE_DOCS_DOCUMENT_ID) -> dict[str, Any]:
   try:
@@ -228,6 +244,16 @@ async def api_google_docs_document(documentId: str = GOOGLE_DOCS_DOCUMENT_ID) ->
 async def api_google_docs_revision(documentId: str = GOOGLE_DOCS_DOCUMENT_ID) -> dict[str, str | None]:
   try:
     return {"revisionId": await fetch_google_revision(documentId)}
+  except HTTPException:
+    raise
+  except Exception as exc:
+    raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/google-docs/title")
+async def api_google_docs_title(documentId: str = GOOGLE_DOCS_DOCUMENT_ID) -> dict[str, str]:
+  try:
+    return {"title": await fetch_google_document_title(documentId)}
   except HTTPException:
     raise
   except Exception as exc:
