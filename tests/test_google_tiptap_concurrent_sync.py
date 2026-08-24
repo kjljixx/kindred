@@ -126,6 +126,42 @@ class GoogleDocsTestClient:
     response.raise_for_status()
     return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
+  def set_text_with_foreground_color(
+    self,
+    text: str,
+    colored_text: str,
+    color: dict[str, float],
+  ) -> str:
+    document = self.document()
+    end_index = document["body"]["content"][-1]["endIndex"]
+    color_start = text.index(colored_text) + 1
+    color_end = color_start + len(colored_text)
+    requests = []
+    if end_index > 2:
+      requests.append(
+        {"deleteContentRange": {"range": {"startIndex": 1, "endIndex": end_index - 1}}}
+      )
+    requests.extend(
+      [
+        {"insertText": {"location": {"index": 1}, "text": f"{text}\n"}},
+        {
+          "updateTextStyle": {
+            "range": {"startIndex": color_start, "endIndex": color_end},
+            "textStyle": {"foregroundColor": {"color": {"rgbColor": color}}},
+            "fields": "foregroundColor",
+          }
+        },
+      ]
+    )
+    response = httpx.post(
+      f"{DOCS_URL}/{self.document_id}:batchUpdate",
+      headers={**self._headers(), "Content-Type": "application/json"},
+      json={"requests": requests},
+      timeout=30,
+    )
+    response.raise_for_status()
+    return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+
 
 @pytest.fixture
 def google_docs() -> GoogleDocsTestClient:
@@ -251,6 +287,25 @@ def test_typed_font_color_syncs_to_google_docs(kindred, google_docs):
   red = {"red": 1, "green": 0, "blue": 0}
   assert google_docs.text_has_foreground_color(" red text", red)
   assert google_docs.text_has_foreground_color("base", None)
+
+
+def test_google_docs_font_color_downsyncs_to_kindred(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text_with_foreground_color(
+    "plain red text plain",
+    "red text",
+    {"red": 1, "green": 0, "blue": 0},
+  )
+  wait_for_editor_text(kindred, "plain red text plain")
+  kindred.wait_for_sync_idle()
+  assert (
+    '<p>plain <span style="color: rgb(255, 0, 0);">red text</span> plain</p>'
+    in kindred.editor_html()
+  )
 
 
 @pytest.mark.parametrize(
