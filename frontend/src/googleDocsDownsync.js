@@ -27,6 +27,8 @@ export function googleDocsToTipTap(googleDoc) {
       if (style.strikethrough) marks.push({ type: "strike" });
       const color = cssColorFromGoogle(style.foregroundColor)
       if (color) marks.push({ type: "textStyle", attrs: { color } });
+      const highlight = cssColorFromGoogle(style.backgroundColor)
+      if (highlight) marks.push({ type: "highlight", attrs: { color: highlight } });
 
       paragraphContent.push({ type: "text", text, ...(marks.length ? { marks } : {}) });
     }

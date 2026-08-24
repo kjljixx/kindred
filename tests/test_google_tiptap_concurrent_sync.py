@@ -127,10 +127,11 @@ class GoogleDocsTestClient:
     response.raise_for_status()
     return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
-  def set_text_with_foreground_color(
+  def set_text_with_color(
     self,
     text: str,
     colored_text: str,
+    style_name: str,
     color: dict[str, float],
   ) -> str:
     document = self.document()
@@ -148,8 +149,8 @@ class GoogleDocsTestClient:
         {
           "updateTextStyle": {
             "range": {"startIndex": color_start, "endIndex": color_end},
-            "textStyle": {"foregroundColor": {"color": {"rgbColor": color}}},
-            "fields": "foregroundColor",
+            "textStyle": {style_name: {"color": {"rgbColor": color}}},
+            "fields": style_name,
           }
         },
       ]
@@ -317,15 +318,36 @@ def test_google_docs_font_color_downsyncs_to_kindred(kindred, google_docs):
   kindred.replace_editor_text("seed")
   kindred.wait_until_draft_active()
   kindred.wait_for_sync_idle()
-  google_docs.set_text_with_foreground_color(
+  google_docs.set_text_with_color(
     "plain red text plain",
     "red text",
+    "foregroundColor",
     {"red": 1, "green": 0, "blue": 0},
   )
   wait_for_editor_text(kindred, "plain red text plain")
   kindred.wait_for_sync_idle()
   assert (
     '<p>plain <span style="color: rgb(255, 0, 0);">red text</span> plain</p>'
+    in kindred.editor_html()
+  )
+
+
+def test_google_docs_highlight_downsyncs_to_kindred(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text_with_color(
+    "plain highlight text plain",
+    "highlight text",
+    "backgroundColor",
+    {"red": 1, "green": 1, "blue": 0},
+  )
+  wait_for_editor_text(kindred, "plain highlight text plain")
+  kindred.wait_for_sync_idle()
+  assert (
+    '<p>plain <mark style="background-color: rgb(255, 255, 0);">highlight text</mark> plain</p>'
     in kindred.editor_html()
   )
 
