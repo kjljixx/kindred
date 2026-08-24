@@ -229,7 +229,8 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
 
   async function activeGoogleDocsSyncTarget() {
     if (!store || !activeDraftId || !currentBranchName) return null;
-    return store.getBranchSync(activeDraftId, currentBranchName);
+    return {documentId: "1sADU8OrbDmZW1VyuaARqjVNjmWLHl2wWl3R71WkCEDI"};
+    return (await store.getBranchSync(activeDraftId, currentBranchName));
   }
 
   async function reportGoogleDocsSyncConnection(documentId) {

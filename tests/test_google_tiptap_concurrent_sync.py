@@ -71,6 +71,35 @@ class GoogleDocsTestClient:
       for _, style in characters[start:start + len(text)]
     )
 
+  def text_has_foreground_color(
+    self,
+    text: str,
+    expected: dict[str, float] | None,
+  ) -> bool:
+    characters: list[tuple[str, dict | None]] = []
+    for block in self.document().get("body", {}).get("content", []):
+      for element in block.get("paragraph", {}).get("elements", []):
+        run = element.get("textRun", {})
+        color = (
+          run.get("textStyle", {})
+          .get("foregroundColor", {})
+          .get("color", {})
+          .get("rgbColor")
+        )
+        characters.extend((character, color) for character in run.get("content", ""))
+
+    document_text = "".join(character for character, _ in characters)
+    start = document_text.find(text)
+    if start < 0:
+      raise AssertionError(f"text not found: {text!r}")
+    return all(
+      color is None if expected is None else all(
+        color is not None and color.get(channel, 0) == value
+        for channel, value in expected.items()
+      )
+      for _, color in characters[start:start + len(text)]
+    )
+
   def set_text(self, text: str) -> str:
     document = self.document()
     end_index = document["body"]["content"][-1]["endIndex"]
@@ -202,6 +231,26 @@ def test_typed_text_style_syncs_to_google_docs(kindred, google_docs, command, go
   kindred.wait_for_sync_idle()
   assert google_docs.text_has_style(typed_text, google_style)
   assert google_docs.text_has_style(plain_text, google_style, expected=False)
+
+
+def test_typed_font_color_syncs_to_google_docs(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("base")
+  wait_for_editor_text(kindred, "base")
+  kindred.wait_for_sync_idle()
+  kindred.pause_sync()
+  kindred.press_keys(Keys.END)
+  kindred.set_font_color("#ff0000")
+  kindred.driver.switch_to.active_element.send_keys(" red text")
+  kindred.resume_sync()
+  kindred.wait_for_sync_idle()
+  red = {"red": 1, "green": 0, "blue": 0}
+  assert google_docs.text_has_foreground_color(" red text", red)
+  assert google_docs.text_has_foreground_color("base", None)
 
 
 @pytest.mark.parametrize(

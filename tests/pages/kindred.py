@@ -714,6 +714,22 @@ class KindredPage:
     )
     btn.click()
 
+  def set_font_color(self, color: str) -> None:
+    color_input = self.wait.until(
+      EC.presence_of_element_located(
+        (By.CSS_SELECTOR, "#editor-toolbar [data-color-input]")
+      )
+    )
+    self.driver.execute_script(
+      """
+      const [input, color] = arguments;
+      input.value = color;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      """,
+      color_input,
+      color,
+    )
+
   def select_all_in_editor(self) -> None:
     self.press_keys(Keys.CONTROL + "a")
     

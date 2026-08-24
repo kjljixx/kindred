@@ -15,8 +15,37 @@ function pmPosToDocsIndex(doc, pos) {
 function textStyleForMark(mark) {
   const markName = mark.type?.name || mark.type || mark
   const field = markName === 'strike' ? 'strikethrough' : markName
+  if (markName === 'textStyle') {
+    const foregroundColor = googleRgbColor(mark.attrs?.color)
+    return foregroundColor
+      ? { field: 'foregroundColor', textStyle: { foregroundColor } }
+      : null
+  }
   if (!SUPPORTED_TEXT_STYLE_FIELDS.has(field)) return null
   return { field, textStyle: { [field]: true } }
+}
+
+function googleRgbColor(color) {
+  const value = String(color || '').trim()
+  const hex = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  const rgb = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i)
+  const channels = hex
+    ? (hex[1].length === 3
+      ? [...hex[1]].map((channel) => parseInt(channel + channel, 16))
+      : [0, 2, 4].map((start) => parseInt(hex[1].slice(start, start + 2), 16)))
+    : rgb
+      ? rgb.slice(1, 4).map(Number)
+      : null
+  if (!channels || channels.some((channel) => channel < 0 || channel > 255)) return null
+  return {
+    color: {
+      rgbColor: {
+        red: channels[0] / 255,
+        green: channels[1] / 255,
+        blue: channels[2] / 255,
+      },
+    },
+  }
 }
 
 function insertedTextStyleRequests(doc, from, to) {
@@ -31,6 +60,13 @@ function insertedTextStyleRequests(doc, from, to) {
     const textStyle = Object.fromEntries(
       [...SUPPORTED_TEXT_STYLE_FIELDS].map((field) => [field, markedFields.has(field)]),
     )
+    const colorMark = node.marks.find((mark) => mark.type?.name === 'textStyle')
+    const foregroundColor = googleRgbColor(colorMark?.attrs?.color)
+    if (foregroundColor) textStyle.foregroundColor = foregroundColor
+    const fields = [
+      ...SUPPORTED_TEXT_STYLE_FIELDS,
+      'foregroundColor',
+    ]
 
     requests.push({
       updateTextStyle: {
@@ -39,7 +75,7 @@ function insertedTextStyleRequests(doc, from, to) {
           endIndex: pmPosToDocsIndex(doc, pos + node.nodeSize),
         },
         textStyle,
-        fields: [...SUPPORTED_TEXT_STYLE_FIELDS].join(','),
+        fields: fields.join(','),
       },
     })
   })
@@ -92,7 +128,10 @@ export function stepToGoogleDocsRequests(step, doc) {
             startIndex: pmPosToDocsIndex(doc, from),
             endIndex: pmPosToDocsIndex(doc, to),
           },
-          textStyle: { [style.field]: json.stepType === 'addMark' },
+          textStyle:
+            style.field === 'foregroundColor'
+              ? (json.stepType === 'addMark' ? style.textStyle : {})
+              : { [style.field]: json.stepType === 'addMark' },
           fields: style.field,
         },
       })
