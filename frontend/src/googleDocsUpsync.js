@@ -17,18 +17,28 @@ function textStyleForMark(mark) {
   const field = markName === 'strike' ? 'strikethrough' : markName
   if (markName === 'textStyle') {
     const foregroundColor = googleRgbColor(mark.attrs?.color)
-    return foregroundColor
-      ? { field: 'foregroundColor', textStyle: { foregroundColor } }
-      : null
+    const fontSize = googleFontSize(mark.attrs?.fontSize)
+    const textStyle = {
+      ...(foregroundColor ? { foregroundColor } : {}),
+      ...(fontSize ? { fontSize } : {}),
+    }
+    const fields = Object.keys(textStyle)
+    return fields.length ? { fields, textStyle } : null
   }
   if (markName === 'highlight') {
     const backgroundColor = googleRgbColor(mark.attrs?.color)
     return backgroundColor
-      ? { field: 'backgroundColor', textStyle: { backgroundColor } }
+      ? { fields: ['backgroundColor'], textStyle: { backgroundColor } }
       : null
   }
   if (!SUPPORTED_TEXT_STYLE_FIELDS.has(field)) return null
-  return { field, textStyle: { [field]: true } }
+  return { fields: [field], textStyle: { [field]: true } }
+}
+
+function googleFontSize(fontSize) {
+  const match = String(fontSize || '').trim().match(/^(\d+(?:\.\d+)?)px$/)
+  if (!match) return null
+  return { magnitude: Number(match[1]) * 0.75, unit: 'PT' }
 }
 
 function googleRgbColor(color) {
@@ -61,7 +71,7 @@ function insertedTextStyleRequests(doc, from, to) {
     if (!node.isText || !node.text) return
 
     const markedFields = new Set(
-      node.marks.map(textStyleForMark).filter(Boolean).map(({ field }) => field),
+      node.marks.map(textStyleForMark).filter(Boolean).flatMap(({ fields }) => fields),
     )
     const textStyle = Object.fromEntries(
       [...SUPPORTED_TEXT_STYLE_FIELDS].map((field) => [field, markedFields.has(field)]),
@@ -72,10 +82,13 @@ function insertedTextStyleRequests(doc, from, to) {
     const highlightMark = node.marks.find((mark) => mark.type?.name === 'highlight')
     const backgroundColor = googleRgbColor(highlightMark?.attrs?.color)
     if (backgroundColor) textStyle.backgroundColor = backgroundColor
+    const fontSize = googleFontSize(colorMark?.attrs?.fontSize)
+    if (fontSize) textStyle.fontSize = fontSize
     const fields = [
       ...SUPPORTED_TEXT_STYLE_FIELDS,
       'foregroundColor',
       'backgroundColor',
+      'fontSize',
     ]
 
     requests.push({
@@ -138,11 +151,14 @@ export function stepToGoogleDocsRequests(step, doc) {
             startIndex: pmPosToDocsIndex(doc, from),
             endIndex: pmPosToDocsIndex(doc, to),
           },
-          textStyle:
-            style.field === 'foregroundColor' || style.field === 'backgroundColor'
-              ? (json.stepType === 'addMark' ? style.textStyle : {})
-              : { [style.field]: json.stepType === 'addMark' },
-          fields: style.field,
+          textStyle: json.stepType === 'addMark'
+            ? style.textStyle
+            : Object.fromEntries(
+              style.fields
+                .filter((field) => SUPPORTED_TEXT_STYLE_FIELDS.has(field))
+                .map((field) => [field, false]),
+            ),
+          fields: style.fields.join(','),
         },
       })
     }

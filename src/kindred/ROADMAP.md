@@ -11,6 +11,7 @@ TODO
 - Proper list diffs/review
 - Proper table diffs/review - use daff
 - Left margin for editor
+- Make font size PT not PX
 
 Chat
 - RAG message stacks

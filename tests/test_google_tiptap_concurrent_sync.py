@@ -101,6 +101,20 @@ class GoogleDocsTestClient:
       for _, color in characters[start:start + len(text)]
     )
 
+  def text_has_font_size(self, text: str, expected_points: float | None) -> bool:
+    characters: list[tuple[str, float | None]] = []
+    for block in self.document().get("body", {}).get("content", []):
+      for element in block.get("paragraph", {}).get("elements", []):
+        run = element.get("textRun", {})
+        size = run.get("textStyle", {}).get("fontSize", {}).get("magnitude")
+        characters.extend((character, size) for character in run.get("content", ""))
+
+    document_text = "".join(character for character, _ in characters)
+    start = document_text.find(text)
+    if start < 0:
+      raise AssertionError(f"text not found: {text!r}")
+    return all(size == expected_points for _, size in characters[start:start + len(text)])
+
   def set_text(self, text: str) -> str:
     document = self.document()
     end_index = document["body"]["content"][-1]["endIndex"]
@@ -151,6 +165,42 @@ class GoogleDocsTestClient:
             "range": {"startIndex": color_start, "endIndex": color_end},
             "textStyle": {style_name: {"color": {"rgbColor": color}}},
             "fields": style_name,
+          }
+        },
+      ]
+    )
+    response = httpx.post(
+      f"{DOCS_URL}/{self.document_id}:batchUpdate",
+      headers={**self._headers(), "Content-Type": "application/json"},
+      json={"requests": requests},
+      timeout=30,
+    )
+    response.raise_for_status()
+    return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+
+  def set_text_with_font_size(
+    self,
+    text: str,
+    sized_text: str,
+    points: float,
+  ) -> str:
+    document = self.document()
+    end_index = document["body"]["content"][-1]["endIndex"]
+    size_start = text.index(sized_text) + 1
+    size_end = size_start + len(sized_text)
+    requests = []
+    if end_index > 2:
+      requests.append(
+        {"deleteContentRange": {"range": {"startIndex": 1, "endIndex": end_index - 1}}}
+      )
+    requests.extend(
+      [
+        {"insertText": {"location": {"index": 1}, "text": f"{text}\n"}},
+        {
+          "updateTextStyle": {
+            "range": {"startIndex": size_start, "endIndex": size_end},
+            "textStyle": {"fontSize": {"magnitude": points, "unit": "PT"}},
+            "fields": "fontSize",
           }
         },
       ]
@@ -312,6 +362,26 @@ def test_typed_highlight_color_syncs_to_google_docs(kindred, google_docs):
   assert google_docs.text_has_color("base", "backgroundColor", None)
 
 
+def test_typed_font_size_syncs_to_google_docs(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("base")
+  wait_for_editor_text(kindred, "base")
+  kindred.wait_for_sync_idle()
+  kindred.pause_sync()
+  kindred.press_keys(Keys.END)
+  kindred.set_font_size(24)
+  kindred.driver.switch_to.active_element.send_keys(" large text")
+  assert 'font-size: 24px' in kindred.editor_html()
+  kindred.resume_sync()
+  kindred.wait_for_sync_idle()
+  assert google_docs.text_has_font_size(" large text", 18)
+  assert google_docs.text_has_font_size("base", None)
+
+
 def test_google_docs_font_color_downsyncs_to_kindred(kindred, google_docs):
   kindred.open()
   kindred.wait_until_ready()
@@ -348,6 +418,21 @@ def test_google_docs_highlight_downsyncs_to_kindred(kindred, google_docs):
   kindred.wait_for_sync_idle()
   assert (
     '<p>plain <mark style="background-color: rgb(255, 255, 0);">highlight text</mark> plain</p>'
+    in kindred.editor_html()
+  )
+
+
+def test_google_docs_font_size_downsyncs_to_kindred(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text_with_font_size("plain large text plain", "large text", 18)
+  wait_for_editor_text(kindred, "plain large text plain")
+  kindred.wait_for_sync_idle()
+  assert (
+    '<p>plain <span style="font-size: 24px;">large text</span> plain</p>'
     in kindred.editor_html()
   )
 

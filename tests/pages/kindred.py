@@ -746,6 +746,22 @@ class KindredPage:
       color,
     )
 
+  def set_font_size(self, size: int) -> None:
+    font_size_input = self.wait.until(
+      EC.presence_of_element_located(
+        (By.CSS_SELECTOR, "#editor-toolbar [data-font-size]")
+      )
+    )
+    self.driver.execute_script(
+      """
+      const [input, size] = arguments;
+      input.value = String(size);
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      """,
+      font_size_input,
+      size,
+    )
+
   def select_all_in_editor(self) -> None:
     self.press_keys(Keys.CONTROL + "a")
     
