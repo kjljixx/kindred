@@ -10,6 +10,11 @@ function cssFontSizeFromGoogle(fontSize) {
   return `${fontSize.magnitude * (4 / 3)}px`
 }
 
+function cssFontFamilyFromGoogle(weightedFontFamily) {
+  const fontFamily = weightedFontFamily?.fontFamily?.trim()
+  return fontFamily ? fontFamilyCssValue(fontFamily) : null
+}
+
 export function googleDocsToTipTap(googleDoc) {
   const content = [];
 
@@ -32,9 +37,11 @@ export function googleDocsToTipTap(googleDoc) {
       if (style.strikethrough) marks.push({ type: "strike" });
       const color = cssColorFromGoogle(style.foregroundColor)
       const fontSize = cssFontSizeFromGoogle(style.fontSize)
+      const fontFamily = cssFontFamilyFromGoogle(style.weightedFontFamily)
       const textStyle = {
         ...(color ? { color } : {}),
         ...(fontSize ? { fontSize } : {}),
+        ...(fontFamily ? { fontFamily } : {}),
       }
       if (Object.keys(textStyle).length) marks.push({ type: "textStyle", attrs: textStyle });
       const highlight = cssColorFromGoogle(style.backgroundColor)
@@ -48,3 +55,4 @@ export function googleDocsToTipTap(googleDoc) {
 
   return { type: "doc", content };
 }
+import { fontFamilyCssValue } from './fontCatalog.js'

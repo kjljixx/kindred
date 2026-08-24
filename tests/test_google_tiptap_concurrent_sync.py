@@ -227,6 +227,42 @@ class GoogleDocsTestClient:
     response.raise_for_status()
     return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
+  def set_text_with_font_family(
+    self,
+    text: str,
+    styled_text: str,
+    family: str,
+  ) -> str:
+    document = self.document()
+    end_index = document["body"]["content"][-1]["endIndex"]
+    style_start = text.index(styled_text) + 1
+    style_end = style_start + len(styled_text)
+    requests = []
+    if end_index > 2:
+      requests.append(
+        {"deleteContentRange": {"range": {"startIndex": 1, "endIndex": end_index - 1}}}
+      )
+    requests.extend(
+      [
+        {"insertText": {"location": {"index": 1}, "text": f"{text}\n"}},
+        {
+          "updateTextStyle": {
+            "range": {"startIndex": style_start, "endIndex": style_end},
+            "textStyle": {"weightedFontFamily": {"fontFamily": family}},
+            "fields": "weightedFontFamily",
+          }
+        },
+      ]
+    )
+    response = httpx.post(
+      f"{DOCS_URL}/{self.document_id}:batchUpdate",
+      headers={**self._headers(), "Content-Type": "application/json"},
+      json={"requests": requests},
+      timeout=30,
+    )
+    response.raise_for_status()
+    return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+
 
 @pytest.fixture
 def google_docs() -> GoogleDocsTestClient:
@@ -467,6 +503,25 @@ def test_google_docs_font_size_downsyncs_to_kindred(kindred, google_docs):
     '<p>plain <span style="font-size: 24px;">large text</span> plain</p>'
     in kindred.editor_html()
   )
+
+
+def test_google_docs_font_family_downsyncs_to_kindred(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text_with_font_family("plain verdana text plain", "verdana text", "Verdana")
+  assert google_docs.text_has_font_family("verdana text", "Verdana")
+  wait_for_editor_text(kindred, "plain verdana text plain")
+  kindred.wait_for_sync_idle()
+  assert (
+    '<p>plain <span style="font-family: Verdana, Geneva, sans-serif;">verdana text</span> plain</p>'
+    in kindred.editor_html()
+  )
+  kindred.select_editor_text(7, 7)
+  assert kindred.selected_font_family() == "Verdana, Geneva, sans-serif"
+  kindred.wait.until(lambda _: kindred.selected_font_family_label() == "Verdana")
 
 
 @pytest.mark.parametrize(

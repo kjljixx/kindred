@@ -778,6 +778,16 @@ class KindredPage:
       family,
     )
 
+  def selected_font_family(self) -> str:
+    return self.driver.find_element(
+      By.CSS_SELECTOR, "#editor-toolbar [data-font-family]"
+    ).get_attribute("value")
+
+  def selected_font_family_label(self) -> str:
+    return self.driver.find_element(
+      By.CSS_SELECTOR, "#editor-toolbar [data-font-family-label]"
+    ).text
+
   def select_all_in_editor(self) -> None:
     self.press_keys(Keys.CONTROL + "a")
     
