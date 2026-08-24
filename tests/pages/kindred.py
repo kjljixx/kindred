@@ -714,6 +714,11 @@ class KindredPage:
     )
     btn.click()
 
+  def toolbar_command_active(self, cmd: str) -> bool:
+    return "is-active" in self.driver.find_element(
+      By.CSS_SELECTOR, f'#editor-toolbar button[data-cmd="{cmd}"]'
+    ).get_attribute("class")
+
   def set_next_prompt_response(self, value: str) -> None:
     self.driver.execute_script("window.prompt = () => arguments[0]", value)
 

@@ -276,6 +276,37 @@ class GoogleDocsTestClient:
     response.raise_for_status()
     return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
+  def set_text_with_link(self, text: str, linked_text: str, url: str) -> str:
+    document = self.document()
+    end_index = document["body"]["content"][-1]["endIndex"]
+    link_start = text.index(linked_text) + 1
+    link_end = link_start + len(linked_text)
+    requests = []
+    if end_index > 2:
+      requests.append(
+        {"deleteContentRange": {"range": {"startIndex": 1, "endIndex": end_index - 1}}}
+      )
+    requests.extend(
+      [
+        {"insertText": {"location": {"index": 1}, "text": f"{text}\n"}},
+        {
+          "updateTextStyle": {
+            "range": {"startIndex": link_start, "endIndex": link_end},
+            "textStyle": {"link": {"url": url}},
+            "fields": "link",
+          }
+        },
+      ]
+    )
+    response = httpx.post(
+      f"{DOCS_URL}/{self.document_id}:batchUpdate",
+      headers={**self._headers(), "Content-Type": "application/json"},
+      json={"requests": requests},
+      timeout=30,
+    )
+    response.raise_for_status()
+    return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+
 
 @pytest.fixture
 def google_docs() -> GoogleDocsTestClient:
@@ -556,6 +587,25 @@ def test_google_docs_font_family_downsyncs_to_kindred(kindred, google_docs):
   kindred.select_editor_text(7, 7)
   assert kindred.selected_font_family() == "Verdana, Geneva, sans-serif"
   kindred.wait.until(lambda _: kindred.selected_font_family_label() == "Verdana")
+
+
+def test_google_docs_link_downsyncs_to_kindred(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text_with_link("plain linked text plain", "linked text", "https://example.com")
+  assert google_docs.text_has_link("linked text", "https://example.com")
+  wait_for_editor_text(kindred, "plain linked text plain")
+  kindred.wait_for_sync_idle()
+  assert (
+    '<a target="_blank" rel="noopener noreferrer nofollow" href="https://example.com">'
+    in kindred.editor_html()
+  )
+  assert kindred.editor_html().count("<a ") == 1
+  kindred.select_editor_text(7, 7)
+  assert kindred.toolbar_command_active("link")
 
 
 @pytest.mark.parametrize(

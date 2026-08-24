@@ -4,6 +4,7 @@ GOOGLE DRIVE SYNC
 -maybe show user's recent docs in a list?
 -Fix multi edits in the editor not being able to be synced
 -update draft state (like title, ability to import from double click) from sync
+-make sure colors are inverted
 
 Editor
 TODO
@@ -13,6 +14,8 @@ TODO
 - Proper table diffs/review - use daff
 - Left margin for editor
 - Make font size PT not PX
+- Fix list/format lock bug: 1) Format lock to red color. 2) start a list. Type something in the first bullet point. 3) start the next bullet point and press tab to nest it. 4) notice that first letter on the second bullet is white, not red.
+- Choose better default color swatches
 
 Chat
 - RAG message stacks

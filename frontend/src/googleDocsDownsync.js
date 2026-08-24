@@ -44,6 +44,7 @@ export function googleDocsToTipTap(googleDoc) {
         ...(fontFamily ? { fontFamily } : {}),
       }
       if (Object.keys(textStyle).length) marks.push({ type: "textStyle", attrs: textStyle });
+      if (style.link?.url) marks.push({ type: "link", attrs: { href: style.link.url } });
       const highlight = cssColorFromGoogle(style.backgroundColor)
       if (highlight) marks.push({ type: "highlight", attrs: { color: highlight } });
 
