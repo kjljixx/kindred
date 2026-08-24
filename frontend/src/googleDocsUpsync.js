@@ -21,17 +21,23 @@ function textStyleForMark(mark) {
       ? { field: 'foregroundColor', textStyle: { foregroundColor } }
       : null
   }
+  if (markName === 'highlight') {
+    const backgroundColor = googleRgbColor(mark.attrs?.color)
+    return backgroundColor
+      ? { field: 'backgroundColor', textStyle: { backgroundColor } }
+      : null
+  }
   if (!SUPPORTED_TEXT_STYLE_FIELDS.has(field)) return null
   return { field, textStyle: { [field]: true } }
 }
 
 function googleRgbColor(color) {
   const value = String(color || '').trim()
-  const hex = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  const hex = value.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}(?:[0-9a-f]{2})?)$/i)
   const rgb = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i)
   const channels = hex
-    ? (hex[1].length === 3
-      ? [...hex[1]].map((channel) => parseInt(channel + channel, 16))
+    ? (hex[1].length <= 4
+      ? [...hex[1].slice(0, 3)].map((channel) => parseInt(channel + channel, 16))
       : [0, 2, 4].map((start) => parseInt(hex[1].slice(start, start + 2), 16)))
     : rgb
       ? rgb.slice(1, 4).map(Number)
@@ -63,9 +69,13 @@ function insertedTextStyleRequests(doc, from, to) {
     const colorMark = node.marks.find((mark) => mark.type?.name === 'textStyle')
     const foregroundColor = googleRgbColor(colorMark?.attrs?.color)
     if (foregroundColor) textStyle.foregroundColor = foregroundColor
+    const highlightMark = node.marks.find((mark) => mark.type?.name === 'highlight')
+    const backgroundColor = googleRgbColor(highlightMark?.attrs?.color)
+    if (backgroundColor) textStyle.backgroundColor = backgroundColor
     const fields = [
       ...SUPPORTED_TEXT_STYLE_FIELDS,
       'foregroundColor',
+      'backgroundColor',
     ]
 
     requests.push({
@@ -129,7 +139,7 @@ export function stepToGoogleDocsRequests(step, doc) {
             endIndex: pmPosToDocsIndex(doc, to),
           },
           textStyle:
-            style.field === 'foregroundColor'
+            style.field === 'foregroundColor' || style.field === 'backgroundColor'
               ? (json.stepType === 'addMark' ? style.textStyle : {})
               : { [style.field]: json.stepType === 'addMark' },
           fields: style.field,

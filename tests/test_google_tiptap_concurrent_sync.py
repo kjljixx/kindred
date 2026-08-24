@@ -71,9 +71,10 @@ class GoogleDocsTestClient:
       for _, style in characters[start:start + len(text)]
     )
 
-  def text_has_foreground_color(
+  def text_has_color(
     self,
     text: str,
+    style_name: str,
     expected: dict[str, float] | None,
   ) -> bool:
     characters: list[tuple[str, dict | None]] = []
@@ -82,7 +83,7 @@ class GoogleDocsTestClient:
         run = element.get("textRun", {})
         color = (
           run.get("textStyle", {})
-          .get("foregroundColor", {})
+          .get(style_name, {})
           .get("color", {})
           .get("rgbColor")
         )
@@ -285,8 +286,29 @@ def test_typed_font_color_syncs_to_google_docs(kindred, google_docs):
   kindred.resume_sync()
   kindred.wait_for_sync_idle()
   red = {"red": 1, "green": 0, "blue": 0}
-  assert google_docs.text_has_foreground_color(" red text", red)
-  assert google_docs.text_has_foreground_color("base", None)
+  assert google_docs.text_has_color(" red text", "foregroundColor", red)
+  assert google_docs.text_has_color("base", "foregroundColor", None)
+
+
+def test_typed_highlight_color_syncs_to_google_docs(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("base")
+  wait_for_editor_text(kindred, "base")
+  kindred.wait_for_sync_idle()
+  kindred.pause_sync()
+  kindred.press_keys(Keys.END)
+  kindred.set_highlight_color("#ffff00")
+  kindred.driver.switch_to.active_element.send_keys(" highlighted")
+  assert 'background-color: rgb(255, 255, 0)' in kindred.editor_html()
+  kindred.resume_sync()
+  kindred.wait_for_sync_idle()
+  yellow = {"red": 1, "green": 1, "blue": 0}
+  assert google_docs.text_has_color(" highlighted", "backgroundColor", yellow)
+  assert google_docs.text_has_color("base", "backgroundColor", None)
 
 
 def test_google_docs_font_color_downsyncs_to_kindred(kindred, google_docs):
