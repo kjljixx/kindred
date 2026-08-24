@@ -128,6 +128,19 @@ class GoogleDocsTestClient:
       raise AssertionError(f"text not found: {text!r}")
     return all(family == expected for _, family in characters[start:start + len(text)])
 
+  def text_has_link(self, text: str, expected_url: str | None) -> bool:
+    characters: list[tuple[str, str | None]] = []
+    for block in self.document().get("body", {}).get("content", []):
+      for element in block.get("paragraph", {}).get("elements", []):
+        run = element.get("textRun", {})
+        url = run.get("textStyle", {}).get("link", {}).get("url")
+        characters.extend((character, url) for character in run.get("content", ""))
+    document_text = "".join(character for character, _ in characters)
+    start = document_text.find(text)
+    if start < 0:
+      raise AssertionError(f"text not found: {text!r}")
+    return all(url == expected_url for _, url in characters[start:start + len(text)])
+
   def set_text(self, text: str) -> str:
     document = self.document()
     end_index = document["body"]["content"][-1]["endIndex"]
@@ -448,6 +461,27 @@ def test_typed_font_family_syncs_to_google_docs(kindred, google_docs):
   kindred.wait_for_sync_idle()
   assert not google_docs.text_has_font_family(" verdana text", None)
   assert google_docs.text_has_font_family("base", None)
+
+
+def test_typed_link_syncs_to_google_docs(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("base linked text")
+  wait_for_editor_text(kindred, "base linked text")
+  kindred.wait_for_sync_idle()
+  kindred.pause_sync()
+  kindred.select_editor_text(5, 11)
+  kindred.set_next_prompt_response("https://example.com")
+  kindred.toolbar_click("link")
+  assert '<a target="_blank" rel="noopener noreferrer nofollow" href="https://example.com">linked</a>' in kindred.editor_html()
+  kindred.resume_sync()
+  kindred.wait_for_sync_idle()
+  assert google_docs.text_has_link("linked", "https://example.com")
+  assert google_docs.text_has_link("base ", None)
+  assert google_docs.text_has_link(" text", None)
 
 
 def test_google_docs_font_color_downsyncs_to_kindred(kindred, google_docs):

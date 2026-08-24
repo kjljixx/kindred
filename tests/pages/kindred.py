@@ -714,6 +714,9 @@ class KindredPage:
     )
     btn.click()
 
+  def set_next_prompt_response(self, value: str) -> None:
+    self.driver.execute_script("window.prompt = () => arguments[0]", value)
+
   def set_font_color(self, color: str) -> None:
     color_input = self.wait.until(
       EC.presence_of_element_located(

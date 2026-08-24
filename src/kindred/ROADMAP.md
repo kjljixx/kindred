@@ -3,6 +3,7 @@ GOOGLE DRIVE SYNC
 -Find a better way to auth; multi-user, don't have to log in multiple times
 -maybe show user's recent docs in a list?
 -Fix multi edits in the editor not being able to be synced
+-update draft state (like title, ability to import from double click) from sync
 
 Editor
 TODO

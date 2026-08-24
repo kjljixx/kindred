@@ -33,6 +33,9 @@ function textStyleForMark(mark) {
       ? { fields: ['backgroundColor'], textStyle: { backgroundColor } }
       : null
   }
+  if (markName === 'link' && mark.attrs?.href) {
+    return { fields: ['link'], textStyle: { link: { url: mark.attrs.href } } }
+  }
   if (!SUPPORTED_TEXT_STYLE_FIELDS.has(field)) return null
   return { fields: [field], textStyle: { [field]: true } }
 }
@@ -93,12 +96,15 @@ function insertedTextStyleRequests(doc, from, to) {
     if (fontSize) textStyle.fontSize = fontSize
     const weightedFontFamily = googleFontFamily(colorMark?.attrs?.fontFamily)
     if (weightedFontFamily) textStyle.weightedFontFamily = weightedFontFamily
+    const linkMark = node.marks.find((mark) => mark.type?.name === 'link')
+    if (linkMark?.attrs?.href) textStyle.link = { url: linkMark.attrs.href }
     const fields = [
       ...SUPPORTED_TEXT_STYLE_FIELDS,
       'foregroundColor',
       'backgroundColor',
       'fontSize',
       'weightedFontFamily',
+      'link',
     ]
 
     requests.push({
