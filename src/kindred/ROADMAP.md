@@ -1,6 +1,8 @@
 GOOGLE DRIVE SYNC
--Max out 300 writes/min
--Bidirectional sync
+-Docs tab support
+-Find a better way to auth; multi-user, don't have to log in multiple times
+-maybe show user's recent docs in a list?
+-Fix multi edits in the editor not being able to be synced
 
 Editor
 TODO

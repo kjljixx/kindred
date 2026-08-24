@@ -8,6 +8,7 @@ import pytest
 from google.auth import default as google_auth_default
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from dotenv import load_dotenv
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 
 from pages.kindred import KindredPage
@@ -51,6 +52,24 @@ class GoogleDocsTestClient:
       for element in block.get("paragraph", {}).get("elements", []):
         parts.append(element.get("textRun", {}).get("content", ""))
     return "".join(parts).rstrip("\n")
+
+  def text_has_style(self, text: str, style_name: str, expected: bool = True) -> bool:
+    characters: list[tuple[str, dict]] = []
+    for block in self.document().get("body", {}).get("content", []):
+      for element in block.get("paragraph", {}).get("elements", []):
+        run = element.get("textRun", {})
+        style = run.get("textStyle", {})
+        characters.extend((character, style) for character in run.get("content", ""))
+
+    document_text = "".join(character for character, _ in characters)
+    start = document_text.find(text)
+    if start < 0:
+      raise AssertionError(f"text not found: {text!r}")
+
+    return all(
+      style.get(style_name) is True if expected else not style.get(style_name)
+      for _, style in characters[start:start + len(text)]
+    )
 
   def set_text(self, text: str) -> str:
     document = self.document()
@@ -151,6 +170,38 @@ def test_concurrent_non_overlapping_inserts_merge(kindred, google_docs):
   assert "LOCAL" in kindred.editor_text()
   assert "REMOTE" in google_docs.text()
   finish_and_assert_merge(kindred, google_docs, "AAA LOCAL BBB REMOTE CCC", base, remote)
+
+
+@pytest.mark.parametrize(
+  ("command", "google_style"),
+  [
+    ("bold", "bold"),
+    ("italic", "italic"),
+    ("underline", "underline"),
+    ("strike", "strikethrough"),
+  ],
+)
+def test_typed_text_style_syncs_to_google_docs(kindred, google_docs, command, google_style):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.paste_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("base")
+  wait_for_editor_text(kindred, "base")
+  kindred.wait_for_sync_idle()
+  kindred.pause_sync()
+  kindred.press_keys(Keys.END)
+  kindred.toolbar_click(command)
+  typed_text = f" {command} text"
+  kindred.driver.switch_to.active_element.send_keys(typed_text)
+  kindred.toolbar_click(command)
+  plain_text = f" plain {command} text"
+  kindred.driver.switch_to.active_element.send_keys(plain_text)
+  kindred.resume_sync()
+  kindred.wait_for_sync_idle()
+  assert google_docs.text_has_style(typed_text, google_style)
+  assert google_docs.text_has_style(plain_text, google_style, expected=False)
 
 
 @pytest.mark.parametrize(
