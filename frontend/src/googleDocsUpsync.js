@@ -18,9 +18,11 @@ function textStyleForMark(mark) {
   if (markName === 'textStyle') {
     const foregroundColor = googleRgbColor(mark.attrs?.color)
     const fontSize = googleFontSize(mark.attrs?.fontSize)
+    const weightedFontFamily = googleFontFamily(mark.attrs?.fontFamily)
     const textStyle = {
       ...(foregroundColor ? { foregroundColor } : {}),
       ...(fontSize ? { fontSize } : {}),
+      ...(weightedFontFamily ? { weightedFontFamily } : {}),
     }
     const fields = Object.keys(textStyle)
     return fields.length ? { fields, textStyle } : null
@@ -39,6 +41,11 @@ function googleFontSize(fontSize) {
   const match = String(fontSize || '').trim().match(/^(\d+(?:\.\d+)?)px$/)
   if (!match) return null
   return { magnitude: Number(match[1]) * 0.75, unit: 'PT' }
+}
+
+function googleFontFamily(fontFamily) {
+  const name = String(fontFamily || '').split(',')[0].trim().replace(/^['"]|['"]$/g, '')
+  return name ? { fontFamily: name } : null
 }
 
 function googleRgbColor(color) {
@@ -84,11 +91,14 @@ function insertedTextStyleRequests(doc, from, to) {
     if (backgroundColor) textStyle.backgroundColor = backgroundColor
     const fontSize = googleFontSize(colorMark?.attrs?.fontSize)
     if (fontSize) textStyle.fontSize = fontSize
+    const weightedFontFamily = googleFontFamily(colorMark?.attrs?.fontFamily)
+    if (weightedFontFamily) textStyle.weightedFontFamily = weightedFontFamily
     const fields = [
       ...SUPPORTED_TEXT_STYLE_FIELDS,
       'foregroundColor',
       'backgroundColor',
       'fontSize',
+      'weightedFontFamily',
     ]
 
     requests.push({

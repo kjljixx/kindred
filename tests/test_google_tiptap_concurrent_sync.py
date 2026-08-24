@@ -115,6 +115,19 @@ class GoogleDocsTestClient:
       raise AssertionError(f"text not found: {text!r}")
     return all(size == expected_points for _, size in characters[start:start + len(text)])
 
+  def text_has_font_family(self, text: str, expected: str | None) -> bool:
+    characters = []
+    for block in self.document().get("body", {}).get("content", []):
+      for element in block.get("paragraph", {}).get("elements", []):
+        run = element.get("textRun", {})
+        family = run.get("textStyle", {}).get("weightedFontFamily", {}).get("fontFamily")
+        characters.extend((character, family) for character in run.get("content", ""))
+    document_text = "".join(character for character, _ in characters)
+    start = document_text.find(text)
+    if start < 0:
+      raise AssertionError(f"text not found: {text!r}")
+    return all(family == expected for _, family in characters[start:start + len(text)])
+
   def set_text(self, text: str) -> str:
     document = self.document()
     end_index = document["body"]["content"][-1]["endIndex"]
@@ -380,6 +393,25 @@ def test_typed_font_size_syncs_to_google_docs(kindred, google_docs):
   kindred.wait_for_sync_idle()
   assert google_docs.text_has_font_size(" large text", 18)
   assert google_docs.text_has_font_size("base", None)
+
+
+def test_typed_font_family_syncs_to_google_docs(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("base")
+  wait_for_editor_text(kindred, "base")
+  kindred.pause_sync()
+  kindred.press_keys(Keys.END)
+  kindred.set_font_family("Verdana, Geneva, sans-serif")
+  kindred.driver.switch_to.active_element.send_keys(" verdana text")
+  assert 'font-family: Verdana, Geneva, sans-serif' in kindred.editor_html()
+  kindred.resume_sync()
+  kindred.wait_for_sync_idle()
+  assert not google_docs.text_has_font_family(" verdana text", None)
+  assert google_docs.text_has_font_family("base", None)
 
 
 def test_google_docs_font_color_downsyncs_to_kindred(kindred, google_docs):

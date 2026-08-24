@@ -762,6 +762,22 @@ class KindredPage:
       size,
     )
 
+  def set_font_family(self, family: str) -> None:
+    font_family_select = self.wait.until(
+      EC.presence_of_element_located(
+        (By.CSS_SELECTOR, "#editor-toolbar [data-font-family]")
+      )
+    )
+    self.driver.execute_script(
+      """
+      const [select, family] = arguments;
+      select.value = family;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      """,
+      font_family_select,
+      family,
+    )
+
   def select_all_in_editor(self) -> None:
     self.press_keys(Keys.CONTROL + "a")
     
