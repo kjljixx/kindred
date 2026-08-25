@@ -1,3 +1,5 @@
+import { fontFamilyCssValue } from './fontCatalog.js'
+
 function cssColorFromGoogle(color) {
   const rgb = color?.color?.rgbColor
   if (!rgb) return null
@@ -26,6 +28,15 @@ function cssTextAlignFromGoogle(alignment) {
 
 export function googleDocsToTipTap(googleDoc) {
   const content = [];
+  let bulletItems = [];
+  let bulletListType = null;
+
+  const flushBulletItems = () => {
+    if (!bulletItems.length) return;
+    content.push({ type: bulletListType, content: bulletItems });
+    bulletItems = [];
+    bulletListType = null;
+  };
 
   for (const element of googleDoc.body?.content || []) {
     if (!element.paragraph) continue;
@@ -61,13 +72,26 @@ export function googleDocsToTipTap(googleDoc) {
     }
 
     const textAlign = cssTextAlignFromGoogle(element.paragraph.paragraphStyle?.alignment)
-    content.push({
+    const paragraph = {
       type: "paragraph",
       ...(textAlign ? { attrs: { textAlign } } : {}),
       ...(paragraphContent.length ? { content: paragraphContent } : {}),
-    });
+    };
+    const bullet = element.paragraph.bullet
+    const nestingLevel = bullet?.nestingLevel || 0
+    const listType = googleDoc.lists?.[bullet?.listId]?.listProperties?.nestingLevels?.[nestingLevel]?.glyphType
+      ? "orderedList"
+      : "bulletList"
+    if (bullet) {
+      if (bulletItems.length && listType !== bulletListType) flushBulletItems();
+      bulletListType = listType;
+      bulletItems.push({ type: "listItem", content: [paragraph] });
+    } else {
+      flushBulletItems();
+      content.push(paragraph);
+    }
   }
+  flushBulletItems();
 
   return { type: "doc", content };
 }
-import { fontFamilyCssValue } from './fontCatalog.js'

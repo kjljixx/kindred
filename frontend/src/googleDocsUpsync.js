@@ -194,6 +194,24 @@ export function stepToGoogleDocsRequests(step, doc) {
     const previousNode = doc.nodeAt(step.from)
     const nextNode = nextDoc.nodeAt(step.from)
     const alignment = googleParagraphAlignment(nextNode?.attrs?.textAlign)
+
+    const listType = json.slice?.content?.[0]?.type
+    const bulletPreset = listType === 'bulletList'
+      ? 'BULLET_DISC_CIRCLE_SQUARE'
+      : listType === 'orderedList'
+        ? 'NUMBERED_DECIMAL_ALPHA_ROMAN'
+        : null
+    if (bulletPreset) {
+      requests.push({
+        createParagraphBullets: {
+          range: {
+            startIndex: pmPosToDocsIndex(doc, step.from),
+            endIndex: pmPosToDocsIndex(doc, step.to),
+          },
+          bulletPreset,
+        },
+      })
+    }
     const startIndex = pmPosToDocsIndex(doc, step.from) + (step.from > 0 ? 1 : 0)
     const endIndex = startIndex + (nextNode?.textContent.length || 0)
 

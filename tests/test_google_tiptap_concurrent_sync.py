@@ -176,6 +176,17 @@ class GoogleDocsTestClient:
         return paragraph.get("paragraphStyle", {}).get("alignment")
     raise AssertionError(f"paragraph not found: {text!r}")
 
+  def paragraph_has_bullet(self, text: str) -> bool:
+    for block in self.document().get("body", {}).get("content", []):
+      paragraph = block.get("paragraph", {})
+      paragraph_text = "".join(
+        element.get("textRun", {}).get("content", "")
+        for element in paragraph.get("elements", [])
+      ).rstrip("\n")
+      if paragraph_text == text:
+        return "bullet" in paragraph
+    raise AssertionError(f"paragraph not found: {text!r}")
+
   def set_text(self, text: str) -> str:
     document = self.document()
     end_index = document["body"]["content"][-1]["endIndex"]
@@ -184,6 +195,22 @@ class GoogleDocsTestClient:
       requests.append({"deleteContentRange": {"range": {"startIndex": 1, "endIndex": end_index - 1}}})
     requests.append({"insertText": {"location": {"index": 1}, "text": f"{text}\n"}})
     response = self._batch_update(requests)
+    return response.get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+
+  def set_text_with_bullets(self, text: str) -> str:
+    return self.set_text_with_list(text, "BULLET_DISC_CIRCLE_SQUARE")
+
+  def set_text_with_list(self, text: str, bullet_preset: str) -> str:
+    self.set_text(text)
+    end_index = self.document()["body"]["content"][-1]["endIndex"]
+    response = self._batch_update(
+      [{
+          "createParagraphBullets": {
+            "range": {"startIndex": 1, "endIndex": end_index - 1},
+          "bulletPreset": bullet_preset,
+        }
+      }]
+    )
     return response.get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
   def insert_text(self, *, index: int, text: str) -> str:
@@ -575,6 +602,75 @@ def test_typed_second_paragraph_alignment_syncs_to_google_docs(kindred, google_d
   kindred.wait_for_sync_idle()
   assert google_docs.paragraph_alignment("test") != "CENTER"
   assert google_docs.paragraph_alignment("test2") == "CENTER"
+
+
+def test_typed_bullet_list_syncs_to_google_docs(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("one\ntwo")
+  wait_for_editor_text(kindred, "onetwo")
+  kindred.wait_for_sync_idle()
+  kindred.pause_sync()
+  kindred.select_all_in_editor()
+  kindred.toolbar_click("bulletList")
+  assert "<ul>" in kindred.editor_html()
+  kindred.resume_sync()
+  kindred.wait_for_sync_idle()
+  assert google_docs.paragraph_has_bullet("one")
+  assert google_docs.paragraph_has_bullet("two")
+
+
+def test_google_docs_bullet_list_downsyncs_to_kindred(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text_with_bullets("one\ntwo")
+  assert google_docs.paragraph_has_bullet("one")
+  assert google_docs.paragraph_has_bullet("two")
+  wait_for_editor_text(kindred, "onetwo")
+  assert "<ul>" in kindred.editor_html()
+  assert "<li><p" in kindred.editor_html()
+  assert ">one</p>" in kindred.editor_html()
+  assert ">two</p>" in kindred.editor_html()
+
+
+def test_typed_ordered_list_syncs_to_google_docs(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("one\ntwo")
+  wait_for_editor_text(kindred, "onetwo")
+  kindred.wait_for_sync_idle()
+  kindred.pause_sync()
+  kindred.select_all_in_editor()
+  kindred.toolbar_click("orderedList")
+  assert "<ol>" in kindred.editor_html()
+  kindred.resume_sync()
+  kindred.wait_for_sync_idle()
+  assert google_docs.paragraph_has_bullet("one")
+  assert google_docs.paragraph_has_bullet("two")
+
+
+def test_google_docs_ordered_list_downsyncs_to_kindred(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text_with_list("one\ntwo", "NUMBERED_DECIMAL_ALPHA_ROMAN")
+  assert google_docs.paragraph_has_bullet("one")
+  assert google_docs.paragraph_has_bullet("two")
+  wait_for_editor_text(kindred, "onetwo")
+  assert "<ol>" in kindred.editor_html()
+  assert ">one</p>" in kindred.editor_html()
+  assert ">two</p>" in kindred.editor_html()
 
 
 def test_google_docs_font_color_downsyncs_to_kindred(kindred, google_docs):
