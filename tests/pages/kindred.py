@@ -12,6 +12,7 @@ from selenium.common.exceptions import (
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -358,6 +359,9 @@ class KindredPage:
     editor = self.wait.until(EC.presence_of_element_located(self.EDITOR))
     editor.click()
     editor.send_keys(*keys)
+
+  def send_active_keys(self, *keys: str) -> None:
+    ActionChains(self.driver).send_keys(*keys).perform()
 
   def editor_text(self) -> str:
     editor = self.driver.find_element(*self.EDITOR)

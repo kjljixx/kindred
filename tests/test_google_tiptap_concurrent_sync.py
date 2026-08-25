@@ -187,6 +187,13 @@ class GoogleDocsTestClient:
         return "bullet" in paragraph
     raise AssertionError(f"paragraph not found: {text!r}")
 
+  def body_text(self) -> str:
+    return "".join(
+      element.get("textRun", {}).get("content", "")
+      for block in self.document().get("body", {}).get("content", [])
+      for element in block.get("paragraph", {}).get("elements", [])
+    ).strip()
+
   def set_text(self, text: str) -> str:
     document = self.document()
     end_index = document["body"]["content"][-1]["endIndex"]
@@ -623,6 +630,86 @@ def test_typed_bullet_list_syncs_to_google_docs(kindred, google_docs):
   assert google_docs.paragraph_has_bullet("two")
 
 
+def test_toggled_off_bullet_list_removes_google_docs_bullets(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("one\ntwo")
+  wait_for_editor_text(kindred, "onetwo")
+  kindred.wait_for_sync_idle()
+  kindred.pause_sync()
+  kindred.select_all_in_editor()
+  kindred.toolbar_click("bulletList")
+  assert "<ul>" in kindred.editor_html()
+  kindred.select_editor_text(0, 6)
+  kindred.driver.execute_script(
+    "navigator.sendBeacon('http://localhost:8787/log', JSON.stringify({sessionId: 'list-unlist-step-8ce71f', msg: 'remove click'}));"
+  )
+  kindred.toolbar_click("bulletList")
+  assert "<p>one</p>" in kindred.editor_html()
+  assert "<p>two</p>" in kindred.editor_html()
+  kindred.resume_sync()
+  kindred.wait_for_sync_idle()
+  assert not google_docs.paragraph_has_bullet("one")
+  assert not google_docs.paragraph_has_bullet("two")
+
+
+def test_backspacing_new_empty_bullet_removes_google_docs_bullet(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("")
+  kindred.wait_for_sync_idle()
+  kindred.toolbar_click("bulletList")
+  kindred.send_active_keys("test")
+  kindred.wait_for_sync_idle()
+  kindred.send_active_keys(Keys.ENTER)
+  kindred.wait_for_sync_idle()
+  kindred.send_active_keys(Keys.BACKSPACE)
+  kindred.wait_for_sync_idle()
+  assert not google_docs.paragraph_has_bullet("")
+
+
+def test_second_backspace_after_new_bullet_keeps_google_docs_sync_idle(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("")
+  kindred.wait_for_sync_idle()
+  kindred.toolbar_click("bulletList")
+  kindred.send_active_keys("test")
+  kindred.wait_for_sync_idle()
+  kindred.send_active_keys(Keys.ENTER)
+  kindred.wait_for_sync_idle()
+  kindred.send_active_keys(Keys.BACKSPACE, Keys.BACKSPACE)
+  kindred.wait_for_sync_idle()
+
+
+def test_deleting_all_bullet_list_text_keeps_google_docs_sync_idle(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("test\ntest")
+  wait_for_editor_text(kindred, "testtest")
+  kindred.wait_for_sync_idle()
+  kindred.select_all_in_editor()
+  kindred.toolbar_click("bulletList")
+  kindred.wait_for_sync_idle()
+  kindred.select_all_in_editor()
+  kindred.send_active_keys(Keys.BACKSPACE)
+  kindred.wait_for_sync_idle()
+  assert google_docs.body_text() == ""
+  assert not google_docs.paragraph_has_bullet("")
+
+
 def test_google_docs_bullet_list_downsyncs_to_kindred(kindred, google_docs):
   kindred.open()
   kindred.wait_until_ready()
@@ -656,6 +743,29 @@ def test_typed_ordered_list_syncs_to_google_docs(kindred, google_docs):
   kindred.wait_for_sync_idle()
   assert google_docs.paragraph_has_bullet("one")
   assert google_docs.paragraph_has_bullet("two")
+
+
+def test_toggled_off_ordered_list_removes_google_docs_bullets(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("one\ntwo")
+  wait_for_editor_text(kindred, "onetwo")
+  kindred.wait_for_sync_idle()
+  kindred.pause_sync()
+  kindred.select_all_in_editor()
+  kindred.toolbar_click("orderedList")
+  assert "<ol>" in kindred.editor_html()
+  kindred.select_editor_text(0, 6)
+  kindred.toolbar_click("orderedList")
+  assert "<p>one</p>" in kindred.editor_html()
+  assert "<p>two</p>" in kindred.editor_html()
+  kindred.resume_sync()
+  kindred.wait_for_sync_idle()
+  assert not google_docs.paragraph_has_bullet("one")
+  assert not google_docs.paragraph_has_bullet("two")
 
 
 def test_google_docs_ordered_list_downsyncs_to_kindred(kindred, google_docs):

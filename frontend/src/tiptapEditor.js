@@ -2306,10 +2306,19 @@ export function createKindredEditor({
       // never echoed back into the upsync queue.
       if (isRecordingSteps && !suppressStepRecording && transaction.docChanged) {
         let currentDoc = transaction.before
+        const deletedRanges = new Set()
         for (const step of transaction.steps) {
           // Translate immediately using the active doc in scope
           const reqs = stepToGoogleDocsRequests(step, currentDoc)
-          pendingSyncEditorSteps.push(...reqs)
+          const uniqueReqs = reqs.filter((request) => {
+            const range = request.deleteContentRange?.range
+            if (!range) return true
+            const key = `${range.startIndex}:${range.endIndex}`
+            if (deletedRanges.has(key)) return false
+            deletedRanges.add(key)
+            return true
+          })
+          pendingSyncEditorSteps.push(...uniqueReqs)
 
           const result = step.apply(currentDoc)
           if (result.doc) currentDoc = result.doc

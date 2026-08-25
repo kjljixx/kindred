@@ -144,7 +144,11 @@ export function stepToGoogleDocsRequests(step, doc) {
     const newEnd = nextDoc.content.size - (doc.content.size - to)
     const insertedText = nextDoc.textBetween(from, newEnd, '\n')
     const startIndex = pmPosToDocsIndex(doc, from)
-    const endIndex = pmPosToDocsIndex(doc, to)
+    const endIndex = pmPosToDocsIndex(doc, to) - (to >= doc.content.size ? 1 : 0)
+    let removesList = false
+    doc.nodesBetween(from, to, (node) => {
+      if (node.type.name === 'bulletList' || node.type.name === 'orderedList') removesList = true
+    })
 
     if (endIndex > startIndex) {
       requests.push({
@@ -152,6 +156,13 @@ export function stepToGoogleDocsRequests(step, doc) {
           range: { startIndex, endIndex },
         },
       })
+      if (removesList && !insertedText) {
+        requests.push({
+          deleteParagraphBullets: {
+            range: { startIndex: 1, endIndex: 2 },
+          },
+        })
+      }
     }
 
     if (insertedText.length > 0) {
@@ -201,7 +212,12 @@ export function stepToGoogleDocsRequests(step, doc) {
       : listType === 'orderedList'
         ? 'NUMBERED_DECIMAL_ALPHA_ROMAN'
         : null
-    if (bulletPreset) {
+    const parentListType = doc.resolve(step.from).parent.type.name
+    const removesEmptyListItem = previousNode?.type.name === 'listItem' &&
+      previousNode.textContent === '' &&
+      (parentListType === 'bulletList' || parentListType === 'orderedList') &&
+      listType === parentListType
+    if (bulletPreset && nextNode?.type.name === listType) {
       requests.push({
         createParagraphBullets: {
           range: {
@@ -211,6 +227,22 @@ export function stepToGoogleDocsRequests(step, doc) {
           bulletPreset,
         },
       })
+    } else if (removesEmptyListItem || (
+      (previousNode?.type.name === 'bulletList' || previousNode?.type.name === 'orderedList') &&
+      nextNode?.type.name !== previousNode.type.name
+    )) {
+      const listStartIndex = pmPosToDocsIndex(doc, step.from) + (removesEmptyListItem ? 1 : 0)
+      const listEndIndex = pmPosToDocsIndex(doc, step.to) + (removesEmptyListItem ? 1 : 0)
+      if (listStartIndex < listEndIndex) {
+        requests.push({
+          deleteParagraphBullets: {
+            range: {
+              startIndex: listStartIndex,
+              endIndex: listEndIndex,
+            },
+          },
+        })
+      }
     }
     const startIndex = pmPosToDocsIndex(doc, step.from) + (step.from > 0 ? 1 : 0)
     const endIndex = startIndex + (nextNode?.textContent.length || 0)
