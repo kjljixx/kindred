@@ -4,8 +4,11 @@ Diff is word-granularity and available even when the working tree is clean.
 """
 
 from __future__ import annotations
+from io import BytesIO
 from turtle import delay
 
+from PIL import Image
+from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
 from pages.kindred import KindredPage
@@ -266,9 +269,452 @@ def test_d_multi_table(kindred: KindredPage) -> None:
   )
   kindred.paste_html(table_html)
   kindred.enter_dirty_diff()
-  assert "test" in kindred.diff_del_texts()
-  assert "again" in kindred.diff_ins_texts()
-  assert not "second" in kindred.diff_ins_texts()
+  tables = kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror table",
+  )
+  assert len(tables) == 2
+  assert [
+    cell.text.strip()
+    for cell in tables[0].find_elements(
+      By.CSS_SELECTOR,
+      ".diff-table-cell-del",
+    )
+  ] == ["test"]
+  assert [
+    cell.text.strip()
+    for cell in tables[0].find_elements(
+      By.CSS_SELECTOR,
+      ".diff-table-cell-ins",
+    )
+  ] == ["again"]
+  assert not tables[1].find_elements(
+    By.CSS_SELECTOR,
+    ".diff-table-cell-del, .diff-table-cell-ins",
+  )
+  assert tables[1].find_element(
+    By.CSS_SELECTOR,
+    "tr:first-child td:first-child",
+  ).text.strip() == "second"
+
+
+def test_d_replacing_text_with_table_renders_deleted_text_before_table(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_text("e")
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  kindred.select_all_in_editor()
+  kindred.press_keys(Keys.BACK_SPACE)
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p></p></td><td><p></p></td></tr>
+    <tr><td><p></p></td><td><p></p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.enter_dirty_diff()
+
+  assert kindred.driver.execute_script(
+    """
+    const deleted = document.querySelector('#editor .diff-del');
+    const table = document.querySelector(
+      '#editor .tableWrapper.diff-table-ins'
+    );
+    if (!deleted || !table) return null;
+    const deletedRect = deleted.getBoundingClientRect();
+    const tableRect = table.getBoundingClientRect();
+    return {
+      text: (deleted.textContent || '').trim(),
+      insideTable: table.contains(deleted),
+      beforeTable: Boolean(
+        deleted.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING
+      ),
+      overlapsTable: !(
+        deletedRect.bottom <= tableRect.top || deletedRect.top >= tableRect.bottom
+      ),
+    };
+    """
+  ) == {
+    "text": "e",
+    "insideTable": False,
+    "beforeTable": True,
+    "overlapsTable": False,
+  }
+
+
+def test_d_table_cell_edit_marks_only_changed_cell(kindred: KindredPage) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>Alpha</p></td><td><p>Beta</p></td></tr>
+    <tr><td><p>Gamma</p></td><td><p>Delta</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  target = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:first-child td:nth-child(2) p",
+  )
+  target.click()
+  kindred.driver.switch_to.active_element.send_keys(Keys.END, "!")
+  kindred.wait.until(lambda d: "Beta!" in kindred.editor_body_text())
+  kindred.enter_dirty_diff()
+
+  inserted = kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .diff-table-cell-ins",
+  )
+  deleted = kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .diff-table-cell-del",
+  )
+  assert [cell.text.strip() for cell in inserted] == ["Beta!"]
+  assert [cell.text.strip() for cell in deleted] == ["Beta"]
+  assert not kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-table-ins")
+
+
+def test_d_table_middle_row_delete_stays_between_neighbors(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>Top</p></td></tr>
+    <tr><td><p>Middle</p></td></tr>
+    <tr><td><p>Bottom</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  middle = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:nth-child(2) td",
+  )
+  middle.click()
+  kindred.toolbar_click("deleteRow")
+  kindred.wait.until(
+    lambda d: [
+      cell.text.strip()
+      for cell in kindred.driver.find_elements(
+        By.CSS_SELECTOR,
+        "#editor .ProseMirror table td",
+      )
+    ] == ["Top", "Bottom"]
+  )
+  kindred.enter_dirty_diff()
+
+  rows = kindred.driver.execute_script(
+    """
+    return Array.from(document.querySelectorAll('#editor .ProseMirror table tr'))
+      .map((row) => ({
+        text: (row.textContent || '').trim(),
+        deleted: row.classList.contains('diff-table-row-del'),
+      }));
+    """
+  )
+  assert rows == [
+    {"text": "Top", "deleted": False},
+    {"text": "Middle", "deleted": True},
+    {"text": "Bottom", "deleted": False},
+  ]
+
+
+def test_d_table_middle_row_insert_stays_between_neighbors(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>Top</p></td></tr>
+    <tr><td><p>Bottom</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  top = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:first-child td",
+  )
+  top.click()
+  kindred.toolbar_click("addRowAfter")
+  middle = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:nth-child(2) td p",
+  )
+  middle.click()
+  kindred.driver.switch_to.active_element.send_keys("Middle")
+  kindred.wait.until(
+    lambda d: [
+      cell.text.strip()
+      for cell in kindred.driver.find_elements(
+        By.CSS_SELECTOR,
+        "#editor .ProseMirror table td",
+      )
+    ] == ["Top", "Middle", "Bottom"]
+  )
+  kindred.enter_dirty_diff()
+
+  rows = kindred.driver.execute_script(
+    """
+    return Array.from(document.querySelectorAll('#editor .ProseMirror table tr'))
+      .map((row) => ({
+        text: (row.textContent || '').trim(),
+        inserted: row.classList.contains('diff-table-row-ins'),
+      }));
+    """
+  )
+  assert rows == [
+    {"text": "Top", "inserted": False},
+    {"text": "Middle", "inserted": True},
+    {"text": "Bottom", "inserted": False},
+  ]
+  inserted_row_edges = kindred.driver.execute_script(
+    """
+    const cell = document.querySelector('#editor tr.diff-table-row-ins > td');
+    const style = getComputedStyle(cell);
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--accent-success-300)';
+    document.body.appendChild(probe);
+    const expected = getComputedStyle(probe).color;
+    probe.remove();
+    return { topStyle: style.borderTopStyle, topColor: style.borderTopColor, expected };
+    """
+  )
+  assert inserted_row_edges == {
+    "topStyle": "solid",
+    "topColor": inserted_row_edges["expected"],
+    "expected": inserted_row_edges["expected"],
+  }
+
+
+def test_d_table_middle_column_delete_stays_between_neighbors(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
+    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  middle = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:first-child td:nth-child(2)",
+  )
+  middle.click()
+  kindred.toolbar_click("deleteColumn")
+  kindred.wait.until(
+    lambda d: [
+      cell.text.strip()
+      for cell in kindred.driver.find_elements(
+        By.CSS_SELECTOR,
+        "#editor .ProseMirror table td",
+      )
+    ] == ["A", "C", "D", "F"]
+  )
+  kindred.enter_dirty_diff()
+
+  rows = kindred.driver.execute_script(
+    """
+    return Array.from(document.querySelectorAll('#editor .ProseMirror table tr'))
+      .map((row) => Array.from(row.cells, (cell) => ({
+        text: (cell.textContent || '').trim(),
+        deleted: cell.classList.contains('diff-table-column-del'),
+      })));
+    """
+  )
+  assert rows == [
+    [
+      {"text": "A", "deleted": False},
+      {"text": "B", "deleted": True},
+      {"text": "C", "deleted": False},
+    ],
+    [
+      {"text": "D", "deleted": False},
+      {"text": "E", "deleted": True},
+      {"text": "F", "deleted": False},
+    ],
+  ]
+
+
+def test_d_deleted_middle_column_keeps_delete_color_on_every_edge(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
+    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
+    <tr><td><p>G</p></td><td><p>H</p></td><td><p>I</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  middle = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:first-child td:nth-child(2)",
+  )
+  middle.click()
+  kindred.toolbar_click("deleteColumn")
+  kindred.enter_dirty_diff()
+
+  deleted_cells = kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror td.diff-table-column-del",
+  )
+  assert len(deleted_cells) == 3
+  for cell in deleted_cells:
+    image = Image.open(BytesIO(cell.screenshot_as_png)).convert("RGB")
+    center_x = image.width // 2
+    center_y = image.height // 2
+    css_color = cell.value_of_css_property("color")
+    border_color = tuple(
+      int(component.strip())
+      for component in css_color[css_color.index("(") + 1:css_color.index(")")]
+      .split(",")[:3]
+    )
+    assert border_color != image.getpixel((center_x, center_y))
+    border_widths = kindred.driver.execute_script(
+      """
+      const cell = arguments[0];
+      const native = getComputedStyle(cell);
+      return [
+        native.borderTopWidth, native.borderRightWidth,
+        native.borderBottomWidth, native.borderLeftWidth,
+      ];
+      """,
+      cell,
+    )
+    assert border_widths == ["1px"] * 4, border_widths
+
+
+def test_d_table_middle_column_insert_stays_between_neighbors(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>A</p></td><td><p>C</p></td></tr>
+    <tr><td><p>D</p></td><td><p>F</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  first = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:first-child td:first-child",
+  )
+  first.click()
+  kindred.toolbar_click("addColumnAfter")
+  inserted = kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror td:nth-child(2) p",
+  )
+  inserted[0].click()
+  kindred.driver.switch_to.active_element.send_keys("B")
+  inserted[1].click()
+  kindred.driver.switch_to.active_element.send_keys("E")
+  kindred.wait.until(
+    lambda d: [
+      cell.text.strip()
+      for cell in kindred.driver.find_elements(
+        By.CSS_SELECTOR,
+        "#editor .ProseMirror table td",
+      )
+    ] == ["A", "B", "C", "D", "E", "F"]
+  )
+  kindred.enter_dirty_diff()
+
+  rows = kindred.driver.execute_script(
+    """
+    return Array.from(document.querySelectorAll('#editor .ProseMirror table tr'))
+      .map((row) => Array.from(row.cells, (cell) => ({
+        text: (cell.textContent || '').trim(),
+        inserted: cell.classList.contains('diff-table-column-ins'),
+      })));
+    """
+  )
+  assert rows == [
+    [
+      {"text": "A", "inserted": False},
+      {"text": "B", "inserted": True},
+      {"text": "C", "inserted": False},
+    ],
+    [
+      {"text": "D", "inserted": False},
+      {"text": "E", "inserted": True},
+      {"text": "F", "inserted": False},
+    ],
+  ]
+  inserted_column_edges = kindred.driver.execute_script(
+    """
+    const cell = document.querySelector('#editor td.diff-table-column-ins');
+    const style = getComputedStyle(cell);
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--accent-success-300)';
+    document.body.appendChild(probe);
+    const expected = getComputedStyle(probe).color;
+    probe.remove();
+    return {
+      leftStyle: style.borderLeftStyle,
+      leftWidth: style.borderLeftWidth,
+      leftColor: style.borderLeftColor,
+      expected,
+    };
+    """
+  )
+  assert inserted_column_edges == {
+    "leftStyle": "solid",
+    "leftWidth": "1px",
+    "leftColor": inserted_column_edges["expected"],
+    "expected": inserted_column_edges["expected"],
+  }
+
+
+def test_d_table_rowspan_edit_marks_logical_cell_without_phantom_cells(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td rowspan="2"><p>Left</p></td><td><p>Top</p></td></tr>
+    <tr><td><p>Bottom</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  bottom = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:nth-child(2) td p",
+  )
+  bottom.click()
+  kindred.driver.switch_to.active_element.send_keys(Keys.END, " dirty")
+  kindred.enter_dirty_diff()
+
+  rows = kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror table tr",
+  )
+  assert [len(row.find_elements(By.CSS_SELECTOR, ":scope > td")) for row in rows] == [2, 1]
+  assert not rows[0].find_elements(By.CSS_SELECTOR, ".diff-table-cell-ins")
+  assert len(rows[1].find_elements(By.CSS_SELECTOR, ".diff-table-cell-ins")) == 1
+  assert rows[1].find_element(
+    By.CSS_SELECTOR,
+    ".diff-table-cell-ins",
+  ).text.strip() == "Bottom dirty"
+
 
 def test_d_coalesce_short_equals_punctuation_preserves_projection(
   kindred: KindredPage,
@@ -287,3 +733,81 @@ def test_d_coalesce_short_equals_punctuation_preserves_projection(
   ins = "".join(kindred.diff_ins_texts())
   assert "again," in ins
   assert "test" not in ins
+
+
+def test_d_table_inserted_row_keeps_alignment_when_column_is_deleted(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
+    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
+    <tr><td><p>G</p></td><td><p>H</p></td><td><p>I</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:first-child td:first-child",
+  ).click()
+  kindred.toolbar_click("addRowAfter")
+  kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:first-child td:nth-child(2)",
+  ).click()
+  kindred.toolbar_click("deleteColumn")
+  kindred.enter_dirty_diff()
+
+  geometry = kindred.driver.execute_script(
+    """
+    const rows = Array.from(document.querySelectorAll('#editor .ProseMirror table tr'));
+    const cells = rows.map((row) => Array.from(row.cells).map((cell) => {
+      const rect = cell.getBoundingClientRect();
+      return { left: rect.left, right: rect.right };
+    }));
+    return { counts: cells.map((row) => row.length), cells };
+    """
+  )
+  assert geometry["counts"] == [3, 3, 3, 3]
+  first_row = geometry["cells"][0]
+  for row in geometry["cells"][1:]:
+    assert [round(cell["left"]) for cell in row] == [
+      round(cell["left"]) for cell in first_row
+    ]
+    assert [round(cell["right"]) for cell in row] == [
+      round(cell["right"]) for cell in first_row
+    ]
+
+  conflict = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor tr.diff-table-row-ins td.diff-table-column-del",
+  )
+  conflict_style = kindred.driver.execute_script(
+    """
+    const cell = arguments[0];
+    const style = getComputedStyle(cell);
+    const probe = document.createElement('span');
+    probe.style.backgroundColor = 'var(--color-danger-bg)';
+    probe.style.color = 'var(--accent-danger-300)';
+    document.body.appendChild(probe);
+    const expected = getComputedStyle(probe);
+    const result = {
+      background: style.backgroundColor,
+      border: style.borderTopColor,
+      color: style.color,
+      decoration: style.textDecorationLine,
+      expectedBackground: expected.backgroundColor,
+      expectedColor: expected.color,
+    };
+    probe.remove();
+    return result;
+    """,
+    conflict,
+  )
+  assert conflict_style["background"] == conflict_style["expectedBackground"]
+  assert conflict_style["border"] == conflict_style["expectedColor"]
+  assert conflict_style["color"] == conflict_style["expectedColor"]
+  assert conflict_style["decoration"] == "line-through"

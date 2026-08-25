@@ -68,6 +68,22 @@ function mapSideToBase(baseKeys, sideKeys) {
   return { baseToSide, inserts };
 }
 
+function reconcileEditedStructuralBlocks(baseBlocks, sideBlocks, mapping) {
+  for (let baseIndex = 0; baseIndex < baseBlocks.length; baseIndex++) {
+    if (mapping.baseToSide[baseIndex] != null) continue;
+    const family = blockFamily(baseBlocks[baseIndex]);
+    if (family !== "table" && family !== "list") continue;
+    const insertIndex = mapping.inserts.findIndex((insert) => {
+      const nearby =
+        insert.afterBase === baseIndex || insert.afterBase === baseIndex - 1;
+      return nearby && blockFamily(sideBlocks[insert.sideIndex]) === family;
+    });
+    if (insertIndex < 0) continue;
+    mapping.baseToSide[baseIndex] = mapping.inserts[insertIndex].sideIndex;
+    mapping.inserts.splice(insertIndex, 1);
+  }
+}
+
 function sameNode(a, b) {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
@@ -164,6 +180,8 @@ export function alignDocs(baseDoc, oursDoc, theirsDoc, options = {}) {
 
   const oursMap = mapSideToBase(baseKeys, oursKeys);
   const theirsMap = mapSideToBase(baseKeys, theirsKeys);
+  reconcileEditedStructuralBlocks(baseBlocks, oursBlocks, oursMap);
+  reconcileEditedStructuralBlocks(baseBlocks, theirsBlocks, theirsMap);
 
   debugEvent("align", "lcs-map", {
     baseKeys,

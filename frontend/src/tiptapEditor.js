@@ -17,6 +17,7 @@ import {
   mountFontFamilyPicker,
 } from "./fontCatalog.js";
 import { SelectionUnits } from "./selectionUnits.js";
+import { diffTable, parseTableConflicts } from "./tableDaff.js";
 import {
   debugEvent,
   debugVerbose,
@@ -451,9 +452,27 @@ export function htmlHasTableConflict(html) {
 
 function tableConflictCount(html) {
   const raw = String(html || "");
-  if (!raw || !raw.includes("data-kindred-table-ours")) return 0;
+  if (!raw || !raw.includes("data-kindred-table-")) return 0;
   const doc = new DOMParser().parseFromString(raw, "text/html");
-  return doc.body.querySelectorAll("[data-kindred-table-ours]").length;
+  let count = 0;
+  doc.body.querySelectorAll("table").forEach((table) => {
+    const granular = parseTableConflicts(
+      table.getAttribute("data-kindred-table-conflicts")
+    );
+    if (granular) {
+      count += granular.conflicts.length;
+      return;
+    }
+    if (
+      table.hasAttribute("data-kindred-table-ours") ||
+      table.hasAttribute("data-kindred-table-theirs") ||
+      table.hasAttribute("data-kindred-table-label-ours") ||
+      table.hasAttribute("data-kindred-table-label-theirs")
+    ) {
+      count += 1;
+    }
+  });
+  return count;
 }
 
 export function htmlHasListConflict(html) {
@@ -516,6 +535,9 @@ export function stripKindredProtocol(html) {
     el.removeAttribute("data-kindred-table-theirs");
     el.removeAttribute("data-kindred-table-label-ours");
     el.removeAttribute("data-kindred-table-label-theirs");
+  });
+  root.querySelectorAll("[data-kindred-table-conflicts]").forEach((el) => {
+    el.removeAttribute("data-kindred-table-conflicts");
   });
   root.querySelectorAll("[data-kindred-list-ours]").forEach((el) => {
     el.removeAttribute("data-kindred-list-ours");
@@ -890,24 +912,183 @@ function createTablePreviewWidget(tableHtml, side) {
   };
 }
 
+function createTableCellConflictWidget(
+  conflict,
+  tablePos,
+  onAction,
+  conflictMode = "merge"
+) {
+  return () => {
+    const wrap = document.createElement("span");
+    wrap.className = "merge-conflict merge-table-cell-conflict";
+    wrap.contentEditable = "false";
+    wrap.dataset.tableConflictId = conflict.id;
+    const review = conflictMode === "review";
+
+    const oursBtn = document.createElement("button");
+    oursBtn.type = "button";
+    oursBtn.className = "merge-conflict-btn merge-conflict-ours";
+    oursBtn.title = "Keep Current cell";
+    fillConflictBtn(oursBtn, conflict.oursHtml);
+
+    const theirsBtn = document.createElement("button");
+    theirsBtn.type = "button";
+    theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
+    theirsBtn.title = review ? "Keep Dirty cell" : "Keep Incoming cell";
+    fillConflictBtn(theirsBtn, conflict.theirsHtml);
+
+    const choose = (side) => (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onAction?.(side, tablePos, conflict.id);
+    };
+    oursBtn.addEventListener("mousedown", choose("ours"));
+    theirsBtn.addEventListener("mousedown", choose("theirs"));
+    wrap.append(oursBtn, theirsBtn);
+    return wrap;
+  };
+}
+
+function structuralChoiceLabel(noun, exists, otherExists, side, review) {
+  return exists ? "Keep" : "Remove";
+}
+
+function createTableRowConflictWidget(
+  conflict,
+  tablePos,
+  onAction,
+  conflictMode = "merge"
+) {
+  return () => {
+    const wrap = document.createElement("span");
+    wrap.className = "merge-conflict merge-table-row-conflict";
+    wrap.contentEditable = "false";
+    wrap.dataset.tableConflictId = conflict.id;
+    const review = conflictMode === "review";
+
+    const oursBtn = document.createElement("button");
+    oursBtn.type = "button";
+    oursBtn.className = "merge-conflict-btn merge-conflict-ours";
+    const oursLabel = structuralChoiceLabel(
+      "row",
+      Boolean(conflict.oursHtml),
+      Boolean(conflict.theirsHtml),
+      "ours",
+      review
+    );
+    oursBtn.title = oursLabel;
+    oursBtn.textContent = oursLabel;
+
+    const theirsBtn = document.createElement("button");
+    theirsBtn.type = "button";
+    theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
+    const theirsLabel = structuralChoiceLabel(
+      "row",
+      Boolean(conflict.theirsHtml),
+      Boolean(conflict.oursHtml),
+      "theirs",
+      review
+    );
+    theirsBtn.title = theirsLabel;
+    theirsBtn.textContent = theirsLabel;
+
+    const choose = (side) => (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onAction?.(side, tablePos, conflict.id);
+    };
+    oursBtn.addEventListener("mousedown", choose("ours"));
+    theirsBtn.addEventListener("mousedown", choose("theirs"));
+    wrap.append(oursBtn, theirsBtn);
+    return wrap;
+  };
+}
+
+function createTableColumnConflictWidget(
+  conflict,
+  tablePos,
+  onAction,
+  conflictMode = "merge"
+) {
+  return () => {
+    const wrap = document.createElement("span");
+    wrap.className = "merge-conflict merge-table-column-conflict";
+    wrap.contentEditable = "false";
+    wrap.dataset.tableConflictId = conflict.id;
+    const review = conflictMode === "review";
+
+    const oursBtn = document.createElement("button");
+    oursBtn.type = "button";
+    oursBtn.className = "merge-conflict-btn merge-conflict-ours";
+    const oursLabel = structuralChoiceLabel(
+      "column",
+      conflict.oursExists,
+      conflict.theirsExists,
+      "ours",
+      review
+    );
+    oursBtn.title = oursLabel;
+    oursBtn.textContent = oursLabel;
+
+    const theirsBtn = document.createElement("button");
+    theirsBtn.type = "button";
+    theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
+    const theirsLabel = structuralChoiceLabel(
+      "column",
+      conflict.theirsExists,
+      conflict.oursExists,
+      "theirs",
+      review
+    );
+    theirsBtn.title = theirsLabel;
+    theirsBtn.textContent = theirsLabel;
+
+    const choose = (side) => (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onAction?.(side, tablePos, conflict.id);
+    };
+    oursBtn.addEventListener("mousedown", choose("ours"));
+    theirsBtn.addEventListener("mousedown", choose("theirs"));
+    wrap.append(oursBtn, theirsBtn);
+    return wrap;
+  };
+}
+
 function createTableConflictWidget(attrs, tablePos, onAction, conflictMode = "merge") {
   return (view) => {
     const wrap = document.createElement("div");
     wrap.className = "merge-conflict merge-table-conflict";
     wrap.contentEditable = "false";
     const review = conflictMode === "review";
+    const oursExists = Boolean(attrs.tableOurs?.trim());
+    const theirsExists = Boolean(attrs.tableTheirs?.trim());
 
     const oursBtn = document.createElement("button");
     oursBtn.type = "button";
     oursBtn.className = "merge-conflict-btn merge-conflict-ours";
-    oursBtn.title = "Keep Current table";
-    oursBtn.textContent = "Current";
+    const oursLabel = structuralChoiceLabel(
+      "table",
+      oursExists,
+      theirsExists,
+      "ours",
+      review
+    );
+    oursBtn.title = oursLabel;
+    oursBtn.textContent = oursLabel;
 
     const theirsBtn = document.createElement("button");
     theirsBtn.type = "button";
     theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
-    theirsBtn.title = review ? "Keep Dirty table" : "Keep Incoming table";
-    theirsBtn.textContent = review ? "Dirty" : "Theirs";
+    const theirsLabel = structuralChoiceLabel(
+      "table",
+      theirsExists,
+      oursExists,
+      "theirs",
+      review
+    );
+    theirsBtn.title = theirsLabel;
+    theirsBtn.textContent = theirsLabel;
 
     const setPreview = (side) => {
       const tr = view.state.tr.setMeta(overlayKey, {
@@ -922,7 +1103,14 @@ function createTableConflictWidget(attrs, tablePos, onAction, conflictMode = "me
     theirsBtn.addEventListener("mouseleave", () => { if (!isTouchConflictInput()) setPreview(null); });
     oursBtn.addEventListener("mouseenter", () => { if (!isTouchConflictInput()) setPreview("ours"); });
     oursBtn.addEventListener("mouseleave", () => { if (!isTouchConflictInput()) setPreview(null); });
-    bindConflictChoice({ view, oursBtn, theirsBtn, preview: setPreview, commit: (side) => { setPreview(null); onAction?.(side, tablePos); } });
+    const choose = (side) => (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setPreview(null);
+      onAction?.(side, tablePos);
+    };
+    oursBtn.addEventListener("mousedown", choose("ours"));
+    theirsBtn.addEventListener("mousedown", choose("theirs"));
 
     wrap.append(oursBtn, theirsBtn);
     return wrap;
@@ -1023,6 +1211,135 @@ function appendAlignConflictDecorations(
   });
 }
 
+function appendTableCellConflictDecorations(
+  tableNode,
+  tablePos,
+  decorations,
+  conflicts,
+  onTableConflictAction,
+  conflictMode
+) {
+  for (const conflict of conflicts) {
+    if (conflict.kind !== "cell") continue;
+    if (conflict.rowIndex >= tableNode.childCount) continue;
+    const rowNode = tableNode.child(conflict.rowIndex);
+    if (conflict.columnIndex >= rowNode.childCount) continue;
+    const rowPos = tableRowPos(tableNode, tablePos, conflict.rowIndex);
+    const cellNode = rowNode.child(conflict.columnIndex);
+    const cellPos = tableCellPos(rowNode, rowPos, conflict.columnIndex);
+    decorations.push(
+      Decoration.widget(
+        cellPos + 1,
+        createTableCellConflictWidget(
+          conflict,
+          tablePos,
+          onTableConflictAction,
+          conflictMode
+        ),
+        {
+          side: -1,
+          key: `table-cell-conflict-${tablePos}-${conflict.id}:${conflictMode}`,
+        }
+      )
+    );
+    decorations.push(
+      Decoration.node(cellPos, cellPos + cellNode.nodeSize, {
+        class: "kindred-table-cell-conflict-node",
+      })
+    );
+  }
+}
+
+function appendTableRowConflictDecorations(
+  tableNode,
+  tablePos,
+  decorations,
+  conflicts,
+  onTableConflictAction,
+  conflictMode
+) {
+  for (const conflict of conflicts) {
+    if (conflict.kind !== "row") continue;
+    if (conflict.rowIndex >= tableNode.childCount) continue;
+    const rowNode = tableNode.child(conflict.rowIndex);
+    if (!rowNode.childCount) continue;
+    const rowPos = tableRowPos(tableNode, tablePos, conflict.rowIndex);
+    const firstCellPos = tableCellPos(rowNode, rowPos, 0);
+    decorations.push(
+      Decoration.widget(
+        firstCellPos + 1,
+        createTableRowConflictWidget(
+          conflict,
+          tablePos,
+          onTableConflictAction,
+          conflictMode
+        ),
+        {
+          side: -1,
+          key: `table-row-conflict-${tablePos}-${conflict.id}:${conflictMode}`,
+        }
+      )
+    );
+    decorations.push(
+      Decoration.node(rowPos, rowPos + rowNode.nodeSize, {
+        class: `kindred-table-row-conflict-node kindred-table-side-${
+          conflict.oursHtml ? "ours" : "theirs"
+        }`,
+      })
+    );
+  }
+}
+
+function appendTableColumnConflictDecorations(
+  tableNode,
+  tablePos,
+  decorations,
+  conflicts,
+  onTableConflictAction,
+  conflictMode
+) {
+  for (const conflict of conflicts) {
+    if (conflict.kind !== "column" || !tableNode.childCount) continue;
+    const firstRow = tableNode.child(0);
+    if (conflict.columnIndex >= firstRow.childCount) continue;
+    const firstRowPos = tableRowPos(tableNode, tablePos, 0);
+    const firstCellPos = tableCellPos(
+      firstRow,
+      firstRowPos,
+      conflict.columnIndex
+    );
+    decorations.push(
+      Decoration.widget(
+        firstCellPos + 1,
+        createTableColumnConflictWidget(
+          conflict,
+          tablePos,
+          onTableConflictAction,
+          conflictMode
+        ),
+        {
+          side: -1,
+          key: `table-column-conflict-${tablePos}-${conflict.id}:${conflictMode}`,
+        }
+      )
+    );
+    for (let rowIndex = 0; rowIndex < tableNode.childCount; rowIndex++) {
+      const rowNode = tableNode.child(rowIndex);
+      if (conflict.columnIndex >= rowNode.childCount) continue;
+      const rowPos = tableRowPos(tableNode, tablePos, rowIndex);
+      const cellNode = rowNode.child(conflict.columnIndex);
+      const cellPos = tableCellPos(rowNode, rowPos, conflict.columnIndex);
+      decorations.push(
+        Decoration.node(cellPos, cellPos + cellNode.nodeSize, {
+          class: `kindred-table-column-conflict-node kindred-table-side-${
+            conflict.oursExists ? "ours" : "theirs"
+          }`,
+        })
+      );
+    }
+  }
+}
+
 function appendTableConflictDecorations(
   doc,
   decorations,
@@ -1032,6 +1349,34 @@ function appendTableConflictDecorations(
 ) {
   doc.descendants((node, pos) => {
     if (node.type.name !== "table") return;
+    const granular = parseTableConflicts(node.attrs.tableConflicts);
+    if (granular?.conflicts.length) {
+      appendTableCellConflictDecorations(
+        node,
+        pos,
+        decorations,
+        granular.conflicts,
+        onTableConflictAction,
+        conflictMode
+      );
+      appendTableRowConflictDecorations(
+        node,
+        pos,
+        decorations,
+        granular.conflicts,
+        onTableConflictAction,
+        conflictMode
+      );
+      appendTableColumnConflictDecorations(
+        node,
+        pos,
+        decorations,
+        granular.conflicts,
+        onTableConflictAction,
+        conflictMode
+      );
+      return false;
+    }
     
     // Check if conflict attributes exist (even if one side is an empty string for deletion)
     const hasConflict =
@@ -1164,6 +1509,190 @@ function createDeletedTableWidget(tableHtml) {
   };
 }
 
+function createDeletedTableCellWidget(cellHtml) {
+  return () => {
+    const deleted = document.createElement("div");
+    deleted.className = "diff-table-cell-del";
+    deleted.contentEditable = "false";
+    deleted.innerHTML = cellHtml || "";
+    return deleted;
+  };
+}
+
+function createDeletedTableRowWidget(rowHtml) {
+  return () => {
+    const table = document.createElement("table");
+    table.innerHTML = `<tbody>${rowHtml || ""}</tbody>`;
+    const row = table.querySelector("tr") || document.createElement("tr");
+    row.classList.add("diff-table-row-del");
+    row.contentEditable = "false";
+    return row;
+  };
+}
+
+function createDeletedTableColumnWidget(cellHtml) {
+  return () => {
+    const table = document.createElement("table");
+    table.innerHTML = `<tbody><tr>${cellHtml || ""}</tr></tbody>`;
+    const cell = table.querySelector("td, th") || document.createElement("td");
+    cell.classList.add("diff-table-column-del");
+    cell.contentEditable = "false";
+    return cell;
+  };
+}
+
+function tableRowPos(tableNode, tablePos, rowIndex) {
+  let pos = tablePos + 1;
+  for (let index = 0; index < rowIndex; index++) {
+    pos += tableNode.child(index).nodeSize;
+  }
+  return pos;
+}
+
+function tableCellPos(rowNode, rowPos, columnIndex) {
+  let pos = rowPos + 1;
+  for (let index = 0; index < columnIndex; index++) {
+    pos += rowNode.child(index).nodeSize;
+  }
+  return pos;
+}
+
+function appendChangedTableCellDecorations(
+  tableNode,
+  tablePos,
+  decorations,
+  changes
+) {
+  for (const change of changes) {
+    const row = tableNode.child(change.rowIndex);
+    const cell = row?.child(change.columnIndex);
+    const content = cell?.firstChild;
+    if (!row || !cell || !content) continue;
+
+    let rowOffset = 0;
+    for (let index = 0; index < change.rowIndex; index++) {
+      rowOffset += tableNode.child(index).nodeSize;
+    }
+    let cellOffset = 0;
+    for (let index = 0; index < change.columnIndex; index++) {
+      cellOffset += row.child(index).nodeSize;
+    }
+    const cellPos = tablePos + 2 + rowOffset + cellOffset;
+    const contentPos = cellPos + 1;
+
+    decorations.push(
+      Decoration.widget(
+        contentPos,
+        createDeletedTableCellWidget(change.beforeHtml),
+        {
+          side: -1,
+          key: `deleted-table-cell-${tablePos}-${change.rowIndex}-${change.columnIndex}`,
+        }
+      )
+    );
+    decorations.push(
+      Decoration.node(contentPos, contentPos + content.nodeSize, {
+        class: "diff-table-cell-ins",
+      })
+    );
+  }
+}
+
+function appendDeletedTableRowDecorations(
+  tableNode,
+  tablePos,
+  decorations,
+  rows
+) {
+  for (const row of rows) {
+    if (row.action !== "delete") continue;
+    decorations.push(
+      Decoration.widget(
+        tableRowPos(tableNode, tablePos, row.insertAt),
+        createDeletedTableRowWidget(row.beforeHtml),
+        {
+          side: -1,
+          key: `deleted-table-row-${tablePos}-${row.beforeIndex}`,
+        }
+      )
+    );
+  }
+}
+
+function appendInsertedTableRowDecorations(
+  tableNode,
+  tablePos,
+  decorations,
+  rows
+) {
+  for (const row of rows) {
+    if (row.action !== "insert") continue;
+    const rowNode = tableNode.child(row.afterIndex);
+    const rowPos = tableRowPos(tableNode, tablePos, row.afterIndex);
+    decorations.push(
+      Decoration.node(rowPos, rowPos + rowNode.nodeSize, {
+        class: "diff-table-row-ins",
+      })
+    );
+  }
+}
+
+function appendDeletedTableColumnDecorations(
+  tableNode,
+  tablePos,
+  decorations,
+  columns,
+  rows
+) {
+  for (const column of columns) {
+    if (column.action !== "delete") continue;
+    for (const row of rows) {
+      if (row.afterIndex == null) continue;
+      const rowNode = tableNode.child(row.afterIndex);
+      const rowPos = tableRowPos(tableNode, tablePos, row.afterIndex);
+      decorations.push(
+        Decoration.widget(
+          tableCellPos(rowNode, rowPos, column.insertAt),
+          createDeletedTableColumnWidget(
+            row.beforeIndex == null
+              ? ""
+              : column.beforeCellsHtml[row.beforeIndex]
+          ),
+          {
+            side: -1,
+            key: `deleted-table-column-${tablePos}-${row.beforeIndex}-${column.beforeIndex}`,
+          }
+        )
+      );
+    }
+  }
+}
+
+function appendInsertedTableColumnDecorations(
+  tableNode,
+  tablePos,
+  decorations,
+  columns,
+  rows
+) {
+  for (const column of columns) {
+    if (column.action !== "insert") continue;
+    for (const row of rows) {
+      if (row.afterIndex == null) continue;
+      const rowNode = tableNode.child(row.afterIndex);
+      if (column.afterIndex >= rowNode.childCount) continue;
+      const rowPos = tableRowPos(tableNode, tablePos, row.afterIndex);
+      const cellNode = rowNode.child(column.afterIndex);
+      const cellPos = tableCellPos(rowNode, rowPos, column.afterIndex);
+      decorations.push(
+        Decoration.node(cellPos, cellPos + cellNode.nodeSize, {
+          class: "diff-table-column-ins",
+        })
+      );
+    }
+  }
+}
+
 function appendTableDiffDecorations(doc, decorations, tableDiffs) {
   if (!tableDiffs) return;
 
@@ -1184,17 +1713,57 @@ function appendTableDiffDecorations(doc, decorations, tableDiffs) {
     // If this table replaced an older table, render the red deleted table directly above it
     if (replacementsMap.has(html)) {
       const oldHtml = replacementsMap.get(html);
-      decorations.push(
-        Decoration.widget(pos, createDeletedTableWidget(oldHtml), {
-          side: -1,
-          key: `deleted-table-${pos}`,
-        })
+      const tableDiff = diffTable(oldHtml, html);
+      const hasRowChanges = tableDiff.rows.some((row) => row.action !== "equal");
+      const hasColumnChanges = tableDiff.columns.some(
+        (column) => column.action !== "equal"
       );
+      if (tableDiff.cells.length || hasRowChanges || hasColumnChanges) {
+        appendChangedTableCellDecorations(
+          node,
+          pos,
+          decorations,
+          tableDiff.cells
+        );
+        appendDeletedTableRowDecorations(
+          node,
+          pos,
+          decorations,
+          tableDiff.rows
+        );
+        appendInsertedTableRowDecorations(
+          node,
+          pos,
+          decorations,
+          tableDiff.rows
+        );
+        appendDeletedTableColumnDecorations(
+          node,
+          pos,
+          decorations,
+          tableDiff.columns,
+          tableDiff.rows
+        );
+        appendInsertedTableColumnDecorations(
+          node,
+          pos,
+          decorations,
+          tableDiff.columns,
+          tableDiff.rows
+        );
+      } else {
+        decorations.push(
+          Decoration.widget(pos, createDeletedTableWidget(oldHtml), {
+            side: -1,
+            key: `deleted-table-${pos}`,
+          })
+        );
+      }
     }
 
     // Only highlight this table green if it is actually in the added/modified list
     const count = addedMap.get(html) || 0;
-    if (count > 0) {
+    if (count > 0 && !replacementsMap.has(html)) {
       decorations.push(
         Decoration.node(pos, pos + node.nodeSize, { class: "diff-table-ins" })
       );
@@ -1415,6 +1984,27 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
   let basePos = 0;
   let curPos = 0;
 
+  const standaloneAddedTables = new Map();
+  for (const html of tableDiffs?.added || []) {
+    standaloneAddedTables.set(html, (standaloneAddedTables.get(html) || 0) + 1);
+  }
+  for (const replacement of tableDiffs?.replacements || []) {
+    const count = standaloneAddedTables.get(replacement.newHtml) || 0;
+    if (count > 1) standaloneAddedTables.set(replacement.newHtml, count - 1);
+    else standaloneAddedTables.delete(replacement.newHtml);
+  }
+
+  function deletedTextPosition(pm) {
+    let tableStart = null;
+    doc.descendants((node, pos) => {
+      if (node.type.name !== "table") return;
+      if (pm <= pos || pm >= pos + node.nodeSize) return false;
+      if (standaloneAddedTables.has(blockToHtml(node))) tableStart = pos;
+      return false;
+    });
+    return tableStart ?? pm;
+  }
+
   function addInline(fromPlain, toPlain, className) {
     if (toPlain <= fromPlain) return;
     const from = pmPosForPlain(map, fromPlain);
@@ -1476,7 +2066,7 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
       curPos += data.length;
     } else if (op === DIFF_DELETE) {
       if (showDiffs) {
-        const pm = pmPosForPlain(map, curPos);
+        const pm = deletedTextPosition(pmPosForPlain(map, curPos));
         debugEvent("diff", "delete-decoration", {
           text: data,
           basePos,

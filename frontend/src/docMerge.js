@@ -5,6 +5,10 @@
 import { alignDocs } from "./docAlign.js";
 import { blockToHtml, htmlToDoc } from "./kindredSchema.js";
 import { debugEvent, debugVerbose, startTrace, summarizeAlignOp } from "./debug.js";
+import {
+  createTableReviewConflict,
+  mergeTableWithDaff,
+} from "./tableDaff.js";
 
 function formatConflict(labelOurs, oursStr, labelTheirs, theirsStr) {
   const esc = (value) =>
@@ -156,7 +160,32 @@ function mergeDocs(
     );
   }
 
-  function handleTableConflict(ours, theirs) {
+  function handleTableConflict(ours, theirs, base = null) {
+    if (review && ours && theirs) {
+      const granular = createTableReviewConflict(
+        blockToHtml(ours),
+        blockToHtml(theirs),
+        labelOurs,
+        labelTheirs
+      );
+      if (granular) {
+        cleanMerge = false;
+        return granular;
+      }
+    }
+    if (!review && base && ours && theirs) {
+      const merged = mergeTableWithDaff(
+        blockToHtml(base),
+        blockToHtml(ours),
+        blockToHtml(theirs),
+        labelOurs,
+        labelTheirs
+      );
+      if (merged) {
+        if (merged.conflictCount) cleanMerge = false;
+        return merged.html;
+      }
+    }
     cleanMerge = false;
     return formatTableConflict(ours, theirs, labelOurs, labelTheirs);
   }
@@ -168,7 +197,7 @@ function mergeDocs(
 
   function handleStructuralConflict(ours, theirs, base) {
     const display = ours || theirs || base;
-    if (isTableBlock(display)) return handleTableConflict(ours, theirs);
+    if (isTableBlock(display)) return handleTableConflict(ours, theirs, base);
     if (isListBlock(display)) return handleListConflict(ours, theirs);
     return conflictBlock(ours, theirs);
   }

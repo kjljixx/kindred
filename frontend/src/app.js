@@ -29,6 +29,10 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { CONFIG } from "./config.js";
 import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.js";
+import {
+  resolveAllTableConflicts,
+  resolveTableConflictHtml,
+} from "./tableDaff.js";
 
 (() => {
   const DIFF_EQUAL = 0;
@@ -470,7 +474,8 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     diffsFn: (a, b) => diffs(a, b),
     onConflictAction: (action, index) => handleConflictAction(action, index),
     onAlignConflictAction: (action, paraPos) => handleAlignConflictAction(action, paraPos),
-    onTableConflictAction: (action, tablePos) => handleTableConflictAction(action, tablePos),
+    onTableConflictAction: (action, tablePos, conflictId) =>
+      handleTableConflictAction(action, tablePos, conflictId),
     onListConflictAction: (action, listPos) => handleListConflictAction(action, listPos),
     onUpdate: () => {
       if (
@@ -805,6 +810,8 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
       }
       html = parts.join("");
     }
+
+    html = resolveAllTableConflicts(html, side);
   
     // 2. DOM-based resolution for alignments, tables, and lists
     const doc = new DOMParser().parseFromString(
@@ -1870,12 +1877,16 @@ import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.j
     persistActiveDraftSoon();
   }
 
-  function handleTableConflictAction(action, tablePos) {
+  function handleTableConflictAction(action, tablePos, conflictId = null) {
     if (!tipTap || tablePos == null) return;
     const node = tipTap.state.doc.nodeAt(tablePos);
     if (!node || node.type.name !== "table") return;
     const chosenHtml =
-      action === "theirs" ? node.attrs.tableTheirs : node.attrs.tableOurs;
+      conflictId && node.attrs.tableConflicts
+        ? resolveTableConflictHtml(blockToHtml(node), conflictId, action)
+        : action === "theirs"
+          ? node.attrs.tableTheirs
+          : node.attrs.tableOurs;
   
     suppressEditorUpdate = true;
     try {

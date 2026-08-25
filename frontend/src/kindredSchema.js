@@ -251,6 +251,14 @@ const KindredTable = Table.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
+      tableConflicts: {
+        default: null,
+        parseHTML: (el) => attrOrNull(el, "data-kindred-table-conflicts"),
+        renderHTML: (attrs) =>
+          attrs.tableConflicts
+            ? { "data-kindred-table-conflicts": attrs.tableConflicts }
+            : {},
+      },
       tableOurs: {
         default: null,
         parseHTML: (el) => attrOrNull(el, "data-kindred-table-ours"),

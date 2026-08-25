@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+
 from pages.kindred import KindredPage
+from pages.table_visuals import vertical_border_thicknesses
 
 
 def _commit_then_dirty(kindred: KindredPage, head: str, dirty: str) -> None:
@@ -183,8 +187,6 @@ def test_r_format_only_bold_keep_head(kindred: KindredPage) -> None:
   assert not kindred.editor_has_tag("b")
   assert "hello" in kindred.editor_body_text()
 
-from selenium.webdriver.common.keys import Keys
-
 def test_r_format_table_conflict(kindred: KindredPage) -> None:
   table_html = (
     """<table style="min-width: 75px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><td colspan="1" rowspan="1"><p>test</p></td><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td></tr><tr><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td></tr><tr><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td><td colspan="1" rowspan="1"><p><br class="ProseMirror-trailingBreak"></p></td></tr></tbody></table>"""
@@ -197,6 +199,628 @@ def test_r_format_table_conflict(kindred: KindredPage) -> None:
   kindred.delete_table()
   kindred.enter_dirty_review(expect_conflicts=True)
   assert kindred.has_merge_conflict_ui()
+  assert [
+    button.text
+    for button in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-conflict > button",
+    )
+  ] == ["Keep", "Remove"]
   kindred.click_conflict_keep_theirs()
   kindred.exit_to_dirty_text()
   assert not "test" in kindred.status_text()
+
+
+def test_r_table_cell_conflicts_resolve_independently(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>A</p></td><td><p>B</p></td></tr>
+    <tr><td><p>C</p></td><td><p>D</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  changed = [
+    "#editor .ProseMirror tr:first-child td:nth-child(2) p",
+    "#editor .ProseMirror tr:nth-child(2) td:first-child p",
+  ]
+  for selector in changed:
+    cell = kindred.driver.find_element(By.CSS_SELECTOR, selector)
+    cell.click()
+    kindred.driver.switch_to.active_element.send_keys(Keys.END, "!")
+  kindred.wait.until(
+    lambda d: [
+      cell.text.strip()
+      for cell in kindred.driver.find_elements(
+        By.CSS_SELECTOR,
+        "#editor .ProseMirror table td p",
+      )
+    ] == ["A", "B!", "C!", "D"]
+  )
+
+  kindred.enter_dirty_review()
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-cell-conflict",
+    )
+  ) == 2
+
+  kindred.click_conflict_keep_ours(0)
+  kindred.click_conflict_keep_theirs(0)
+  kindred.enter_dirty_text()
+  assert [
+    cell.text.strip()
+    for cell in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror table td p",
+    )
+  ] == ["A", "B", "C!", "D"]
+
+
+def test_r_table_middle_row_delete_resolves_in_place(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>Top</p></td></tr>
+    <tr><td><p>Middle</p></td></tr>
+    <tr><td><p>Bottom</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  middle = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:nth-child(2) td",
+  )
+  middle.click()
+  kindred.toolbar_click("deleteRow")
+  kindred.enter_dirty_review()
+
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-row-conflict",
+    )
+  ) == 1
+  assert [
+    button.text
+    for button in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-row-conflict > button",
+    )
+  ] == ["Keep", "Remove"]
+  assert [
+    cell.text.strip()
+    for cell in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror table td p",
+    )
+  ] == ["Top", "Middle", "Bottom"]
+
+  kindred.click_conflict_keep_theirs(0)
+  kindred.enter_dirty_text()
+  assert [
+    cell.text.strip()
+    for cell in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror table td p",
+    )
+  ] == ["Top", "Bottom"]
+
+
+def test_r_row_conflict_buttons_render_left_without_overlapping_blocks(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<p>Before table</p><table><tbody>
+    <tr><td><p>Top</p></td></tr>
+    <tr><td><p>X</p></td></tr>
+    <tr><td><p>Bottom</p></td></tr>
+    </tbody></table><p>After table</p>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  middle = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror table tr:nth-child(2) td",
+  )
+  middle.click()
+  kindred.toolbar_click("deleteRow")
+  kindred.enter_dirty_review()
+
+  geometry = kindred.driver.execute_script(
+    """
+    const editor = document.querySelector('#editor .ProseMirror');
+    const table = editor.querySelector('table');
+    const wrapper = table.closest('.tableWrapper');
+    const row = table.rows[1];
+    const marker = editor.querySelector('.merge-table-row-conflict');
+    const buttons = Array.from(marker.children);
+    const blocks = Array.from(editor.children);
+    const before = blocks.find((block) => block.textContent.includes('Before table'));
+    const after = blocks.find((block) => block.textContent.includes('After table'));
+    const rect = (node) => node.getBoundingClientRect();
+    const visible = (node) => {
+      const box = rect(node);
+      const hit = document.elementFromPoint(
+        box.left + box.width / 2,
+        box.top + box.height / 2
+      );
+      return node === hit || node.contains(hit);
+    };
+    return {
+      table: rect(table),
+      wrapper: rect(wrapper),
+      row: rect(row),
+      marker: rect(marker),
+      buttons: buttons.map(rect),
+      buttonsVisible: buttons.map(visible),
+      before: rect(before),
+      after: rect(after),
+    };
+    """
+  )
+  assert geometry["marker"]["right"] <= geometry["table"]["left"]
+  assert geometry["buttons"][0]["bottom"] <= geometry["buttons"][1]["top"]
+  assert geometry["buttons"][1]["top"] - geometry["buttons"][0]["bottom"] > 0
+  assert geometry["buttonsVisible"] == [True, True]
+  assert geometry["row"]["height"] >= geometry["marker"]["height"]
+  assert geometry["before"]["bottom"] <= geometry["wrapper"]["top"]
+  assert geometry["wrapper"]["bottom"] <= geometry["after"]["top"]
+
+
+def test_r_table_middle_column_delete_resolves_in_place(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
+    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  middle = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:first-child td:nth-child(2)",
+  )
+  middle.click()
+  kindred.toolbar_click("deleteColumn")
+  kindred.enter_dirty_review()
+
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-column-conflict",
+    )
+  ) == 1
+  assert [
+    button.text
+    for button in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-column-conflict > button",
+    )
+  ] == ["Keep", "Remove"]
+  conflict_cells = kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .kindred-table-column-conflict-node",
+  )
+  assert len(conflict_cells) == 2
+  border_thicknesses = [
+    vertical_border_thicknesses(kindred.driver, cell, expected_side="ours")
+    for cell in conflict_cells
+  ]
+  assert all(left == right for left, right in border_thicknesses), border_thicknesses
+  assert [
+    cell.text.strip()
+    for cell in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror table td p",
+    )
+  ] == ["A", "B", "C", "D", "E", "F"]
+
+  kindred.click_conflict_keep_theirs(0)
+  kindred.enter_dirty_text()
+  assert [
+    cell.text.strip()
+    for cell in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror table td p",
+    )
+  ] == ["A", "C", "D", "F"]
+
+
+def test_r_table_inserted_row_and_later_cell_resolve_independently(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>Top</p></td></tr>
+    <tr><td><p>Bottom</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  top = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:first-child td",
+  )
+  top.click()
+  kindred.toolbar_click("addRowAfter")
+  middle = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:nth-child(2) td p",
+  )
+  middle.click()
+  kindred.driver.switch_to.active_element.send_keys("Middle")
+  bottom = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:nth-child(3) td p",
+  )
+  bottom.click()
+  kindred.driver.switch_to.active_element.send_keys(Keys.END, "!")
+  kindred.enter_dirty_review()
+
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-row-conflict",
+    )
+  ) == 1
+  assert [
+    button.text
+    for button in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-row-conflict > button",
+    )
+  ] == ["Remove", "Keep"]
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-cell-conflict",
+    )
+  ) == 1
+  assert kindred.driver.execute_script(
+    """
+    const row = document.querySelector(
+      '#editor tr.kindred-table-row-conflict-node'
+    );
+    const cell = document.querySelector(
+      '#editor td.kindred-table-cell-conflict-node'
+    );
+    return {
+      rowIsDirty: row?.classList.contains('kindred-table-side-theirs') || false,
+      rowBackground: getComputedStyle(row?.cells[0]).backgroundColor,
+      cellBackground: getComputedStyle(cell).backgroundColor,
+    };
+    """
+  ) == {
+    "rowIsDirty": True,
+    "rowBackground": "rgba(60, 131, 246, 0.18)",
+    "cellBackground": "rgba(0, 0, 0, 0)",
+  }
+
+  kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .merge-table-row-conflict .merge-conflict-ours",
+  ).click()
+  kindred.wait.until(
+    lambda d: not kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-row-conflict",
+    )
+  )
+  kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .merge-table-cell-conflict .merge-conflict-theirs",
+  ).click()
+  kindred.wait.until(lambda d: not kindred.has_merge_conflict_ui())
+  kindred.enter_dirty_text()
+  assert [
+    cell.text.strip()
+    for cell in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror table td p",
+    )
+  ] == ["Top", "Bottom!"]
+
+
+def test_r_table_inserted_column_uses_semantic_action_labels(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>A</p></td><td><p>C</p></td></tr>
+    <tr><td><p>D</p></td><td><p>F</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  first = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:first-child td:first-child",
+  )
+  first.click()
+  kindred.toolbar_click("addColumnAfter")
+  kindred.enter_dirty_review()
+
+  assert [
+    button.text
+    for button in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-column-conflict > button",
+    )
+  ] == ["Remove", "Keep"]
+  assert kindred.driver.execute_script(
+    """
+    const cells = Array.from(document.querySelectorAll(
+      '#editor td.kindred-table-column-conflict-node'
+    ));
+    return {
+      dirty: cells.length > 0 && cells.every((cell) =>
+        cell.classList.contains('kindred-table-side-theirs')
+      ),
+      background: cells[0]
+        ? getComputedStyle(cells[0]).backgroundColor
+        : null,
+    };
+    """
+  ) == {
+    "dirty": True,
+    "background": "rgba(60, 131, 246, 0.18)",
+  }
+
+  kindred.click_conflict_keep_theirs(0)
+  kindred.enter_dirty_text()
+  assert all(
+    len(row.find_elements(By.CSS_SELECTOR, ":scope > td")) == 3
+    for row in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror table tr",
+    )
+  )
+
+
+def test_r_table_row_color_precedes_column_color_and_borders_stay_uniform(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
+    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
+    <tr><td><p>G</p></td><td><p>H</p></td><td><p>I</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:first-child td:first-child",
+  ).click()
+  kindred.toolbar_click("addRowAfter")
+  kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:first-child td:nth-child(2)",
+  ).click()
+  kindred.toolbar_click("deleteColumn")
+  kindred.enter_dirty_review()
+
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-row-conflict",
+    )
+  ) == 1
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-column-conflict",
+    )
+  ) == 1
+  intersection = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor tr.kindred-table-row-conflict-node td.kindred-table-column-conflict-node",
+  )
+  assert kindred.driver.execute_script(
+    """
+    const cell = arguments[0];
+    const style = getComputedStyle(cell);
+    return {
+      rowSide: cell.parentElement.classList.contains('kindred-table-side-theirs'),
+      columnSide: cell.classList.contains('kindred-table-side-ours'),
+      background: style.backgroundColor,
+      borderRadius: style.borderRadius,
+      borders: [style.borderTopWidth, style.borderRightWidth,
+        style.borderBottomWidth, style.borderLeftWidth],
+    };
+    """,
+    intersection,
+  ) == {
+    "rowSide": True,
+    "columnSide": True,
+    "background": "rgba(60, 131, 246, 0.18)",
+    "borderRadius": "0px",
+    "borders": ["1px", "1px", "1px", "1px"],
+  }
+
+
+def test_r_column_conflict_buttons_render_above_without_overlapping_blocks(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<ul><li><p>Before list</p></li></ul><table><tbody>
+    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
+    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
+    </tbody></table><p>After table</p>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  middle = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror table tr:first-child td:nth-child(2)",
+  )
+  middle.click()
+  kindred.toolbar_click("deleteColumn")
+  kindred.enter_dirty_review()
+
+  geometry = kindred.driver.execute_script(
+    """
+    const editor = document.querySelector('#editor .ProseMirror');
+    const table = editor.querySelector('table');
+    const wrapper = table.closest('.tableWrapper');
+    const cell = table.rows[0].cells[1];
+    const marker = editor.querySelector('.merge-table-column-conflict');
+    const buttons = Array.from(marker.children);
+    const blocks = Array.from(editor.children);
+    const before = blocks.find((block) => block.textContent.includes('Before list'));
+    const after = blocks.find((block) => block.textContent.includes('After table'));
+    const rect = (node) => node.getBoundingClientRect();
+    const visible = (node) => {
+      const box = rect(node);
+      const hit = document.elementFromPoint(
+        box.left + box.width / 2,
+        box.top + box.height / 2
+      );
+      return node === hit || node.contains(hit);
+    };
+    return {
+      table: rect(table),
+      wrapper: rect(wrapper),
+      cell: rect(cell),
+      marker: rect(marker),
+      buttons: buttons.map(rect),
+      buttonsVisible: buttons.map(visible),
+      before: rect(before),
+      after: rect(after),
+    };
+    """
+  )
+  assert geometry["marker"]["bottom"] <= geometry["table"]["top"]
+  assert geometry["buttons"][0]["right"] <= geometry["buttons"][1]["left"]
+  assert abs(
+    (
+      geometry["buttons"][0]["top"] + geometry["buttons"][0]["bottom"]
+    ) / 2 - (
+      geometry["buttons"][1]["top"] + geometry["buttons"][1]["bottom"]
+    ) / 2
+  ) <= 1
+  assert geometry["cell"]["left"] <= (
+    geometry["marker"]["left"] + geometry["marker"]["right"]
+  ) / 2 <= geometry["cell"]["right"]
+  assert geometry["buttonsVisible"] == [True, True]
+  assert geometry["before"]["bottom"] <= geometry["wrapper"]["top"]
+  assert geometry["wrapper"]["bottom"] <= geometry["after"]["top"]
+
+
+def test_r_table_rowspan_cell_resolves_by_logical_column(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<table><tbody>
+    <tr><td rowspan="2"><p>Left</p></td><td><p>Top</p></td></tr>
+    <tr><td><p>Bottom</p></td></tr>
+    </tbody></table>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  bottom = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror tr:nth-child(2) td p",
+  )
+  bottom.click()
+  kindred.driver.switch_to.active_element.send_keys(Keys.END, " dirty")
+  kindred.enter_dirty_review()
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-cell-conflict",
+    )
+  ) == 1
+
+  kindred.click_conflict_keep_theirs(0)
+  kindred.enter_dirty_text()
+  rows = kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror table tr",
+  )
+  assert [len(row.find_elements(By.CSS_SELECTOR, ":scope > td")) for row in rows] == [2, 1]
+  assert rows[0].find_element(By.CSS_SELECTOR, ":scope > td").get_attribute(
+    "rowspan"
+  ) == "2"
+  assert [
+    cell.text.strip()
+    for cell in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror table td p",
+    )
+  ] == ["Left", "Top", "Bottom dirty"]
+
+
+def test_r_whole_table_insert_can_keep_dirty_table(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_text("Anchor")
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  anchor = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror > p",
+  )
+  anchor.click()
+  kindred.driver.switch_to.active_element.send_keys(Keys.END)
+  kindred.paste_html(
+    """<table><tbody><tr><td><p>Added</p></td></tr></tbody></table>"""
+  )
+  kindred.enter_dirty_review(expect_conflicts=True)
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-conflict:not(.merge-table-cell-conflict):not(.merge-table-row-conflict):not(.merge-table-column-conflict)",
+    )
+  ) == 1
+  assert [
+    button.text
+    for button in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-table-conflict > button",
+    )
+  ] == ["Remove", "Keep"]
+
+  kindred.click_conflict_keep_theirs(0)
+  kindred.enter_dirty_text()
+  assert not kindred.has_merge_conflict_ui()
+  assert kindred.driver.execute_script(
+    """
+    const tables = document.querySelectorAll('#editor .ProseMirror table');
+    return {
+      tableCount: tables.length,
+      rows: tables[0]?.rows.length || 0,
+      cells: tables[0]?.rows[0]?.cells.length || 0,
+      text: tables[0]?.textContent.trim() || '',
+    };
+    """
+  ) == {"tableCount": 1, "rows": 1, "cells": 1, "text": "Added"}

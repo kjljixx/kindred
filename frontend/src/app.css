@@ -1183,7 +1183,8 @@ button.pane-title {
 
 /* Base editor table styling (no header rows) */
 .editor .ProseMirror table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
   margin: var(--space-4) 0;
   overflow: hidden;
@@ -1257,6 +1258,120 @@ button.pane-title {
   margin: 0;
 }
 
+.editor .ProseMirror tr.kindred-table-row-conflict-node > td,
+.editor .ProseMirror tr.kindred-table-row-conflict-node > th {
+  border-color: var(--orange-text);
+  background: var(--orange-bg);
+  border-radius: 0;
+}
+
+.editor .ProseMirror tr.kindred-table-row-conflict-node.kindred-table-side-theirs > td,
+.editor .ProseMirror tr.kindred-table-row-conflict-node.kindred-table-side-theirs > th {
+  border-color: var(--blue-text);
+  background: var(--blue-bg);
+}
+
+.editor .ProseMirror td.kindred-table-column-conflict-node,
+.editor .ProseMirror th.kindred-table-column-conflict-node {
+  border-color: var(--orange-text);
+  background: var(--orange-bg);
+  border-radius: 0;
+  outline: 1px solid var(--orange-text);
+  outline-offset: -1px;
+}
+
+.editor .ProseMirror td.kindred-table-column-conflict-node.kindred-table-side-theirs,
+.editor .ProseMirror th.kindred-table-column-conflict-node.kindred-table-side-theirs {
+  border-color: var(--blue-text);
+  background: var(--blue-bg);
+  outline-color: var(--blue-text);
+}
+
+.editor .ProseMirror tr.kindred-table-row-conflict-node > td.kindred-table-column-conflict-node,
+.editor .ProseMirror tr.kindred-table-row-conflict-node > th.kindred-table-column-conflict-node {
+  border-color: var(--orange-text);
+  background: var(--orange-bg);
+  outline: none;
+}
+
+.editor .ProseMirror tr.kindred-table-row-conflict-node.kindred-table-side-theirs > td.kindred-table-column-conflict-node,
+.editor .ProseMirror tr.kindred-table-row-conflict-node.kindred-table-side-theirs > th.kindred-table-column-conflict-node {
+  border-color: var(--blue-text);
+  background: var(--blue-bg);
+  outline: none;
+}
+
+.merge-table-cell-conflict,
+.merge-table-row-conflict,
+.merge-table-column-conflict {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
+}
+
+.editor .ProseMirror .tableWrapper:has(.merge-table-row-conflict) {
+  box-sizing: border-box;
+  width: 100%;
+  padding-left: 8rem;
+  position: relative;
+  pointer-events: none;
+}
+
+.editor .ProseMirror .tableWrapper:has(.merge-table-column-conflict) {
+  box-sizing: border-box;
+  width: 100%;
+  padding-top: 3rem;
+  position: relative;
+  pointer-events: none;
+}
+
+.editor .ProseMirror .tableWrapper:has(.merge-table-row-conflict) table,
+.editor .ProseMirror .tableWrapper:has(.merge-table-column-conflict) table {
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.editor .ProseMirror .merge-table-row-conflict {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + var(--space-2));
+  width: 7rem;
+  margin: 0;
+  flex-direction: column;
+  transform: translateY(-50%);
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.editor .ProseMirror .merge-table-row-conflict > .merge-conflict-btn {
+  display: block;
+  width: 100%;
+  margin: var(--space-1);
+  white-space: nowrap;
+}
+
+.editor .ProseMirror tr.kindred-table-row-conflict-node > td,
+.editor .ProseMirror tr.kindred-table-row-conflict-node > th {
+  height: 4.5rem;
+}
+
+.editor .ProseMirror .merge-table-column-conflict {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 50%;
+  width: max-content;
+  margin: 0;
+  flex-wrap: nowrap;
+  transform: translateX(-50%);
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.editor .ProseMirror .merge-table-column-conflict > .merge-conflict-btn {
+  margin: 0 var(--space-1);
+  white-space: nowrap;
+}
+
 /* Full-table diff styling */
 .editor .ProseMirror .diff-table-ins,
 .editor .ProseMirror table.diff-table-ins {
@@ -1296,6 +1411,59 @@ button.pane-title {
   margin: 0;
   text-decoration: line-through;
   color: var(--accent-danger-300);
+}
+
+.editor .ProseMirror .diff-table-cell-del {
+  background: var(--color-danger-bg);
+  color: var(--accent-danger-300);
+  text-decoration: line-through;
+}
+
+.editor .ProseMirror .diff-table-cell-del p {
+  margin: 0;
+}
+
+.editor .ProseMirror .diff-table-cell-ins {
+  background: var(--color-success-bg);
+  color: var(--accent-success-300);
+}
+
+.editor .ProseMirror tr.diff-table-row-del td,
+.editor .ProseMirror tr.diff-table-row-del th {
+  background: var(--color-danger-bg);
+  border-color: var(--accent-danger-300);
+  color: var(--accent-danger-300);
+  text-decoration: line-through;
+}
+
+.editor .ProseMirror tr.diff-table-row-ins td,
+.editor .ProseMirror tr.diff-table-row-ins th {
+  background: var(--color-success-bg);
+  border-color: var(--accent-success-300);
+  color: var(--accent-success-300);
+}
+
+.editor .ProseMirror td.diff-table-column-del,
+.editor .ProseMirror th.diff-table-column-del {
+  background: var(--color-danger-bg);
+  border-color: var(--accent-danger-300);
+  color: var(--accent-danger-300);
+  text-decoration: line-through;
+}
+
+.editor .ProseMirror td.diff-table-column-ins,
+.editor .ProseMirror th.diff-table-column-ins {
+  background: var(--color-success-bg);
+  border-color: var(--accent-success-300);
+  color: var(--accent-success-300);
+}
+
+.editor .ProseMirror tr.diff-table-row-ins > td.diff-table-column-del,
+.editor .ProseMirror tr.diff-table-row-ins > th.diff-table-column-del {
+  background: var(--color-danger-bg);
+  border-color: var(--accent-danger-300);
+  color: var(--accent-danger-300);
+  text-decoration: line-through;
 }
 
 /* Editor list styling */

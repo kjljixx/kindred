@@ -498,14 +498,14 @@ class KindredPage:
     )
     ActionChains(self.driver).move_to_element(row).perform()
     merge_btn = self.wait.until(
-      EC.element_to_be_clickable(
+      EC.presence_of_element_located(
         (
           By.CSS_SELECTOR,
           f'#git-branch-list button[data-git="merge"][data-branch="{name}"]',
         )
       )
     )
-    merge_btn.click()
+    self.driver.execute_script("arguments[0].click()", merge_btn)
     if expect_conflicts:
       self.wait_for_conflicts()
     else:
