@@ -51,6 +51,15 @@ function googleFontFamily(fontFamily) {
   return name ? { fontFamily: name } : null
 }
 
+function googleParagraphAlignment(textAlign) {
+  return {
+    center: 'CENTER',
+    right: 'END',
+    justify: 'JUSTIFIED',
+    left: 'START',
+  }[textAlign] || null
+}
+
 function googleRgbColor(color) {
   const value = String(color || '').trim()
   const hex = value.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}(?:[0-9a-f]{2})?)$/i)
@@ -175,6 +184,28 @@ export function stepToGoogleDocsRequests(step, doc) {
                 .map((field) => [field, false]),
             ),
           fields: style.fields.join(','),
+        },
+      })
+    }
+  }
+
+  if (json.stepType === 'replaceAround') {
+    const nextDoc = step.apply(doc).doc
+    const previousNode = doc.nodeAt(step.from)
+    const nextNode = nextDoc.nodeAt(step.from)
+    const alignment = googleParagraphAlignment(nextNode?.attrs?.textAlign)
+    const startIndex = pmPosToDocsIndex(doc, step.from) + (step.from > 0 ? 1 : 0)
+    const endIndex = startIndex + (nextNode?.textContent.length || 0)
+
+    if (alignment && alignment !== googleParagraphAlignment(previousNode?.attrs?.textAlign)) {
+      requests.push({
+        updateParagraphStyle: {
+          range: {
+            startIndex,
+            endIndex,
+          },
+          paragraphStyle: { alignment },
+          fields: 'alignment',
         },
       })
     }

@@ -171,6 +171,7 @@ class KindredPage:
       const selection = window.getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
+      editor.focus();
       document.dispatchEvent(new Event('selectionchange', { bubbles: true }));
       """,
       start,

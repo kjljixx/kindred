@@ -141,6 +141,17 @@ class GoogleDocsTestClient:
       raise AssertionError(f"text not found: {text!r}")
     return all(url == expected_url for _, url in characters[start:start + len(text)])
 
+  def paragraph_alignment(self, text: str) -> str | None:
+    for block in self.document().get("body", {}).get("content", []):
+      paragraph = block.get("paragraph", {})
+      paragraph_text = "".join(
+        element.get("textRun", {}).get("content", "")
+        for element in paragraph.get("elements", [])
+      ).rstrip("\n")
+      if paragraph_text == text:
+        return paragraph.get("paragraphStyle", {}).get("alignment")
+    raise AssertionError(f"paragraph not found: {text!r}")
+
   def set_text(self, text: str) -> str:
     document = self.document()
     end_index = document["body"]["content"][-1]["endIndex"]
@@ -513,6 +524,44 @@ def test_typed_link_syncs_to_google_docs(kindred, google_docs):
   assert google_docs.text_has_link("linked", "https://example.com")
   assert google_docs.text_has_link("base ", None)
   assert google_docs.text_has_link(" text", None)
+
+
+def test_typed_alignment_syncs_to_google_docs(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("centered")
+  wait_for_editor_text(kindred, "centered")
+  kindred.wait_for_sync_idle()
+  kindred.pause_sync()
+  kindred.select_editor_text(0, 0)
+  kindred.toolbar_click("alignCenter")
+  assert kindred.paragraph_text_align(0) == "center"
+  kindred.resume_sync()
+  kindred.wait_for_sync_idle()
+  assert google_docs.paragraph_alignment("centered") == "CENTER"
+
+
+def test_typed_second_paragraph_alignment_syncs_to_google_docs(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("test\ntest2")
+  wait_for_editor_text(kindred, "testtest2")
+  kindred.wait_for_sync_idle()
+  kindred.pause_sync()
+  kindred.select_editor_text(5, 5)
+  kindred.toolbar_click("alignCenter")
+  assert kindred.paragraph_text_align(0) == ""
+  assert kindred.paragraph_text_align(1) == "center"
+  kindred.resume_sync()
+  kindred.wait_for_sync_idle()
+  assert google_docs.paragraph_alignment("test") != "CENTER"
+  assert google_docs.paragraph_alignment("test2") == "CENTER"
 
 
 def test_google_docs_font_color_downsyncs_to_kindred(kindred, google_docs):
