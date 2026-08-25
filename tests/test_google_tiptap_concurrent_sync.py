@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -28,6 +29,29 @@ DOCS_URL = "https://docs.googleapis.com/v1/documents"
 class GoogleDocsTestClient:
   document_id: str = DOC_ID
 
+  def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
+    for attempt in range(6):
+      response = httpx.request(method, url, **kwargs)
+      if response.status_code != 429 or attempt == 5:
+        response.raise_for_status()
+        return response
+      retry_after = response.headers.get("Retry-After")
+      try:
+        delay = float(retry_after) if retry_after else 2 ** attempt
+      except ValueError:
+        delay = 2 ** attempt
+      time.sleep(delay)
+    raise AssertionError("unreachable")
+
+  def _batch_update(self, requests: list[dict]) -> dict:
+    return self._request(
+      "POST",
+      f"{DOCS_URL}/{self.document_id}:batchUpdate",
+      headers={**self._headers(), "Content-Type": "application/json"},
+      json={"requests": requests},
+      timeout=30,
+    ).json()
+
   def _headers(self) -> dict[str, str]:
     credentials, _ = google_auth_default(
       scopes=["https://www.googleapis.com/auth/documents"]
@@ -37,10 +61,10 @@ class GoogleDocsTestClient:
     return {"Authorization": f"Bearer {credentials.token}"}
 
   def document(self) -> dict:
-    response = httpx.get(
+    response = self._request(
+      "GET",
       f"{DOCS_URL}/{self.document_id}", headers=self._headers(), timeout=30
     )
-    response.raise_for_status()
     return response.json()
 
   def revision_id(self) -> str:
@@ -159,24 +183,12 @@ class GoogleDocsTestClient:
     if end_index > 2:
       requests.append({"deleteContentRange": {"range": {"startIndex": 1, "endIndex": end_index - 1}}})
     requests.append({"insertText": {"location": {"index": 1}, "text": f"{text}\n"}})
-    response = httpx.post(
-      f"{DOCS_URL}/{self.document_id}:batchUpdate",
-      headers={**self._headers(), "Content-Type": "application/json"},
-      json={"requests": requests},
-      timeout=30,
-    )
-    response.raise_for_status()
-    return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+    response = self._batch_update(requests)
+    return response.get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
   def insert_text(self, *, index: int, text: str) -> str:
-    response = httpx.post(
-      f"{DOCS_URL}/{self.document_id}:batchUpdate",
-      headers={**self._headers(), "Content-Type": "application/json"},
-      json={"requests": [{"insertText": {"location": {"index": index}, "text": text}}]},
-      timeout=30,
-    )
-    response.raise_for_status()
-    return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+    response = self._batch_update([{"insertText": {"location": {"index": index}, "text": text}}])
+    return response.get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
   def set_text_with_color(
     self,
@@ -206,14 +218,8 @@ class GoogleDocsTestClient:
         },
       ]
     )
-    response = httpx.post(
-      f"{DOCS_URL}/{self.document_id}:batchUpdate",
-      headers={**self._headers(), "Content-Type": "application/json"},
-      json={"requests": requests},
-      timeout=30,
-    )
-    response.raise_for_status()
-    return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+    response = self._batch_update(requests)
+    return response.get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
   def set_text_with_font_size(
     self,
@@ -242,14 +248,8 @@ class GoogleDocsTestClient:
         },
       ]
     )
-    response = httpx.post(
-      f"{DOCS_URL}/{self.document_id}:batchUpdate",
-      headers={**self._headers(), "Content-Type": "application/json"},
-      json={"requests": requests},
-      timeout=30,
-    )
-    response.raise_for_status()
-    return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+    response = self._batch_update(requests)
+    return response.get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
   def set_text_with_font_family(
     self,
@@ -278,14 +278,8 @@ class GoogleDocsTestClient:
         },
       ]
     )
-    response = httpx.post(
-      f"{DOCS_URL}/{self.document_id}:batchUpdate",
-      headers={**self._headers(), "Content-Type": "application/json"},
-      json={"requests": requests},
-      timeout=30,
-    )
-    response.raise_for_status()
-    return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+    response = self._batch_update(requests)
+    return response.get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
   def set_text_with_link(self, text: str, linked_text: str, url: str) -> str:
     document = self.document()
@@ -309,14 +303,31 @@ class GoogleDocsTestClient:
         },
       ]
     )
-    response = httpx.post(
-      f"{DOCS_URL}/{self.document_id}:batchUpdate",
-      headers={**self._headers(), "Content-Type": "application/json"},
-      json={"requests": requests},
-      timeout=30,
+    response = self._batch_update(requests)
+    return response.get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+
+  def set_text_with_alignment(self, text: str, alignment: str) -> str:
+    document = self.document()
+    end_index = document["body"]["content"][-1]["endIndex"]
+    requests = []
+    if end_index > 2:
+      requests.append(
+        {"deleteContentRange": {"range": {"startIndex": 1, "endIndex": end_index - 1}}}
+      )
+    requests.extend(
+      [
+        {"insertText": {"location": {"index": 1}, "text": f"{text}\n"}},
+        {
+          "updateParagraphStyle": {
+            "range": {"startIndex": 1, "endIndex": len(text) + 1},
+            "paragraphStyle": {"alignment": alignment},
+            "fields": "alignment",
+          }
+        },
+      ]
     )
-    response.raise_for_status()
-    return response.json().get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+    response = self._batch_update(requests)
+    return response.get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
 
 @pytest.fixture
@@ -343,11 +354,13 @@ def establish_concurrent_state(
   kindred: KindredPage,
   google_docs: GoogleDocsTestClient,
 ) -> tuple[str, str]:
-  google_docs.set_text("AAA BBB CCC")
-  base_revision = google_docs.revision_id()
-
   kindred.open()
   kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text("AAA BBB CCC")
+  base_revision = google_docs.revision_id()
   wait_for_editor_text(kindred, "AAA BBB CCC")
   wait_for_sync_idle(kindred)
   assert kindred.sync_state()["baseRevisionId"] == base_revision
@@ -657,6 +670,19 @@ def test_google_docs_link_downsyncs_to_kindred(kindred, google_docs):
   assert kindred.toolbar_command_active("link")
 
 
+def test_google_docs_alignment_downsyncs_to_kindred(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text_with_alignment("centered", "CENTER")
+  assert google_docs.paragraph_alignment("centered") == "CENTER"
+  wait_for_editor_text(kindred, "centered")
+  kindred.wait_for_sync_idle()
+  assert kindred.paragraph_text_align(0) == "center"
+
+
 @pytest.mark.parametrize(
   ("base", "local_marker", "local_text", "remote_index", "remote_text", "expected_markers"),
   [
@@ -676,10 +702,13 @@ def test_concurrent_edit_matrix(
   remote_text,
   expected_markers,
 ):
-  google_docs.set_text(base)
-  base_revision = google_docs.revision_id()
   kindred.open()
   kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text(base)
+  base_revision = google_docs.revision_id()
   wait_for_editor_text(kindred, base)
   wait_for_sync_idle(kindred)
   kindred.pause_sync()

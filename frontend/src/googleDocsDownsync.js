@@ -15,6 +15,15 @@ function cssFontFamilyFromGoogle(weightedFontFamily) {
   return fontFamily ? fontFamilyCssValue(fontFamily) : null
 }
 
+function cssTextAlignFromGoogle(alignment) {
+  return {
+    CENTER: 'center',
+    END: 'right',
+    JUSTIFIED: 'justify',
+    START: 'left',
+  }[alignment] || null
+}
+
 export function googleDocsToTipTap(googleDoc) {
   const content = [];
 
@@ -51,7 +60,12 @@ export function googleDocsToTipTap(googleDoc) {
       paragraphContent.push({ type: "text", text, ...(marks.length ? { marks } : {}) });
     }
 
-    content.push({ type: "paragraph", ...(paragraphContent.length ? { content: paragraphContent } : {}) });
+    const textAlign = cssTextAlignFromGoogle(element.paragraph.paragraphStyle?.alignment)
+    content.push({
+      type: "paragraph",
+      ...(textAlign ? { attrs: { textAlign } } : {}),
+      ...(paragraphContent.length ? { content: paragraphContent } : {}),
+    });
   }
 
   return { type: "doc", content };
