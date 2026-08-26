@@ -60,6 +60,146 @@ function googleParagraphAlignment(textAlign) {
   }[textAlign] || null
 }
 
+const LIST_PRESETS = {
+  bulletList: 'BULLET_DISC_CIRCLE_SQUARE',
+  orderedList: 'NUMBERED_DECIMAL_ALPHA_ROMAN',
+}
+
+function listParagraphs(doc) {
+  const paragraphs = []
+
+  function visit(node, startPos, listContext = null, rootList = null) {
+    node.forEach((child, offset) => {
+      const childPos = startPos + 1 + offset
+      const type = child.type?.name
+
+      if (type === 'bulletList' || type === 'orderedList') {
+        visit(child, childPos, {
+          type,
+          depth: listContext ? listContext.depth + 1 : 0,
+        }, rootList || child)
+        return
+      }
+
+      if (type === 'paragraph' && listContext) {
+        paragraphs.push({
+          depth: listContext.depth,
+          listType: listContext.type,
+          node: child,
+          pos: childPos,
+          rootList: rootList || listContext.rootList,
+        })
+        return
+      }
+
+      visit(child, childPos, listContext, rootList)
+    })
+  }
+
+  visit(doc, -1)
+  return paragraphs
+}
+
+function pmParagraphStartToDocsIndex(doc, pos) {
+  const textBefore = doc.textBetween(0, pos, '\n')
+  const needsSeparator = Boolean(textBefore && !textBefore.endsWith('\n'))
+  return 1 + textBefore.length + (needsSeparator ? 1 : 0)
+}
+
+function paragraphEndToDocsIndex(doc, paragraph) {
+  return pmParagraphStartToDocsIndex(doc, paragraph.pos) + paragraph.node.textContent.length + 1
+}
+
+function indentationRequests(doc, nextDoc) {
+  const before = listParagraphs(doc)
+  const after = listParagraphs(nextDoc)
+  if (before.length !== after.length) return []
+
+  const changed = after
+    .map((paragraph, index) => ({ paragraph, previous: before[index] }))
+    .filter(({ paragraph, previous }) => (
+      previous &&
+      paragraph.listType === previous.listType &&
+      paragraph.depth > previous.depth
+    ))
+  if (!changed.length) return []
+  const changedParagraphs = new Set(changed.map(({ paragraph }) => paragraph))
+
+  // Bullet deletion preserves prior nesting as leading tabs; add only depth delta.
+  const insertions = changed.map(({ paragraph, previous }) => ({
+    index: pmParagraphStartToDocsIndex(doc, paragraph.pos),
+    text: '\t'.repeat(paragraph.depth - previous.depth),
+  }))
+  insertions.sort((left, right) => right.index - left.index)
+
+  const offsetAt = (index, includeAtIndex) => insertions.reduce(
+    (offset, insertion) => (
+      insertion.index < index || (includeAtIndex && insertion.index === index)
+        ? offset + insertion.text.length
+        : offset
+    ),
+    0,
+  )
+
+  const roots = [...new Set(changed.map(({ paragraph }) => paragraph.rootList))]
+  const requests = roots
+    .map((rootList) => {
+      const rootParagraphs = after.filter((paragraph) => paragraph.rootList === rootList)
+      const first = rootParagraphs[0]
+      const last = rootParagraphs.at(-1)
+      return {
+        deleteParagraphBullets: {
+          range: {
+            startIndex: pmParagraphStartToDocsIndex(doc, first.pos),
+            endIndex: paragraphEndToDocsIndex(doc, last),
+          },
+        },
+      }
+    })
+    .concat(insertions.map(({ index, text }) => ({
+      insertText: {
+        location: { index },
+        text,
+      },
+    })))
+
+  let run = []
+  const flushRun = () => {
+    if (!run.length) return
+    const first = run[0].paragraph
+    const listStart = after.find((paragraph) => paragraph.rootList === first.rootList) || first
+    const listParagraphsForRoot = after.filter((paragraph) => paragraph.rootList === first.rootList)
+    const listEnd = listParagraphsForRoot.at(-1) || run[run.length - 1].paragraph
+    const startIndex = pmParagraphStartToDocsIndex(doc, listStart.pos)
+    const endIndex = paragraphEndToDocsIndex(doc, listEnd)
+    requests.push({
+      createParagraphBullets: {
+        range: {
+          startIndex: startIndex + offsetAt(startIndex, false),
+          endIndex: endIndex + offsetAt(endIndex, false),
+        },
+        bulletPreset: LIST_PRESETS[first.listType],
+      },
+    })
+    run = []
+  }
+
+  after.forEach((paragraph, index) => {
+    const previous = before[index]
+    const isChanged = changedParagraphs.has(paragraph)
+    if (!isChanged) {
+      flushRun()
+      return
+    }
+    if (run.length && run[run.length - 1].paragraph.listType !== paragraph.listType) {
+      flushRun()
+    }
+    run.push({ paragraph, previous })
+  })
+  flushRun()
+  return requests
+}
+
 function googleRgbColor(color) {
   const value = String(color || '').trim()
   const hex = value.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}(?:[0-9a-f]{2})?)$/i)
@@ -207,17 +347,16 @@ export function stepToGoogleDocsRequests(step, doc) {
     const alignment = googleParagraphAlignment(nextNode?.attrs?.textAlign)
 
     const listType = json.slice?.content?.[0]?.type
-    const bulletPreset = listType === 'bulletList'
-      ? 'BULLET_DISC_CIRCLE_SQUARE'
-      : listType === 'orderedList'
-        ? 'NUMBERED_DECIMAL_ALPHA_ROMAN'
-        : null
+    const bulletPreset = LIST_PRESETS[listType] || null
     const parentListType = doc.resolve(step.from).parent.type.name
     const removesEmptyListItem = previousNode?.type.name === 'listItem' &&
       previousNode.textContent === '' &&
       (parentListType === 'bulletList' || parentListType === 'orderedList') &&
       listType === parentListType
-    if (bulletPreset && nextNode?.type.name === listType) {
+    const indentRequests = indentationRequests(doc, nextDoc)
+    if (indentRequests.length) {
+      requests.push(...indentRequests)
+    } else if (bulletPreset && nextNode?.type.name === listType) {
       requests.push({
         createParagraphBullets: {
           range: {

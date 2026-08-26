@@ -187,6 +187,18 @@ class GoogleDocsTestClient:
         return "bullet" in paragraph
     raise AssertionError(f"paragraph not found: {text!r}")
 
+  def paragraph_nesting_level(self, text: str) -> int | None:
+    for block in self.document().get("body", {}).get("content", []):
+      paragraph = block.get("paragraph", {})
+      paragraph_text = "".join(
+        element.get("textRun", {}).get("content", "")
+        for element in paragraph.get("elements", [])
+      ).rstrip("\n")
+      if paragraph_text == text:
+        bullet = paragraph.get("bullet")
+        return None if bullet is None else int(bullet.get("nestingLevel", 0))
+    raise AssertionError(f"paragraph not found: {text!r}")
+
   def body_text(self) -> str:
     return "".join(
       element.get("textRun", {}).get("content", "")
@@ -628,6 +640,25 @@ def test_typed_bullet_list_syncs_to_google_docs(kindred, google_docs):
   kindred.wait_for_sync_idle()
   assert google_docs.paragraph_has_bullet("one")
   assert google_docs.paragraph_has_bullet("two")
+
+
+def test_indenting_bullet_item_syncs_google_nesting(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text_with_bullets("one\ntwo")
+  wait_for_editor_text(kindred, "onetwo")
+  kindred.wait_for_sync_idle()
+
+  kindred.select_editor_text(4, 4)
+  kindred.send_active_keys(Keys.TAB)
+  kindred.wait_for_sync_idle()
+
+  assert google_docs.paragraph_nesting_level("one") == 0
+  assert google_docs.paragraph_nesting_level("two") == 1
+  assert "\t" not in google_docs.text()
 
 
 def test_toggled_off_bullet_list_removes_google_docs_bullets(kindred, google_docs):
