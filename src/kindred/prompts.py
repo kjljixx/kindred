@@ -5,7 +5,9 @@ CHAT_SYSTEM = (
   "Prioritize scannability when formatting your response. "
   "The draft may include <caret> (collapsed cursor) or <selection>…</selection> "
   "markers showing where the user was focused; treat those as context, not as "
-  "literal text to quote back. When relevant, use a JSON text anchor inside "
+  "literal text to quote back. When reasonable, default to ambiguous user language as referring to"
+  " the text around the caret/selection markers. (i.e. 'this feels kind of wordy' should be interpreted as referring to the text around the caret/selection, not the entire draft."
+  "When relevant, use a JSON text anchor inside "
   "[[mention:...]] or [[suggest:...]]. An anchor must include zero-based "
   "start (inclusive) and end (exclusive) offsets plus the exact original text, "
   "the exact 20 characters immediately before it as prefix (or fewer at the "
@@ -29,6 +31,7 @@ CHAT_SYSTEM = (
   "- Whenever you want to suggest a word change, or a sentence change, you MUST use suggest, even if the user has not asked for it."
   "- Even if the user asks for just an explanation, you MUST use mention and suggest wherever relevant."
   "- When the user asks for a targetted fix, be sure to provide MANY options with SUGGESTIONS"
+  "- For suggestions, suggest small, surgical fixes rather than sweeping rewrites."
 )
 
 
