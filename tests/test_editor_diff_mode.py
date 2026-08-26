@@ -1,10 +1,11 @@
-"""Diff-mode tests (paragraph / inline only — no lists or tables).
+"""Diff-mode tests for paragraphs, inline edits, lists, and tables.
 
 Diff is word-granularity and available even when the working tree is clean.
 """
 
 from __future__ import annotations
 from io import BytesIO
+import re
 from turtle import delay
 
 from PIL import Image
@@ -20,6 +21,17 @@ def _commit_then_edit(kindred: KindredPage, head: str, dirty: str) -> None:
   kindred.switch_to_git()
   kindred.commit()
   kindred.replace_editor_text(dirty)
+
+
+def _commit_then_edit_html(kindred: KindredPage, head: str, dirty: str) -> None:
+  kindred.paste_html(head)
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+  kindred.press_keys(Keys.CONTROL + "a")
+  kindred.paste_html(dirty)
+  expected = re.sub(r"<[^>]+>", "", dirty)
+  kindred.wait_until_editor_body_text(expected)
 
 
 def test_d1_clean_working_tree_keeps_diff_available(kindred: KindredPage) -> None:
@@ -103,6 +115,134 @@ def test_d8_edits_in_two_paragraphs_scope_paint(kindred: KindredPage) -> None:
   assert "extra" in ins and "more" in ins
   assert "Alpha" not in ins
   assert "Bravo" not in ins
+
+
+def test_d_list_text_edit_keeps_unchanged_bullets_plain(kindred: KindredPage) -> None:
+  _commit_then_edit_html(
+    kindred,
+    "<ul><li><p>Keep</p></li><li><p>old milk</p></li></ul>",
+    "<ul><li><p>Keep</p></li><li><p>new oat milk</p></li></ul>",
+  )
+  kindred.enter_dirty_diff()
+  assert len(kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-ins")) == 0
+  assert "new oat" in "".join(kindred.diff_ins_texts())
+  assert "old" in "".join(kindred.diff_del_texts())
+  assert "Keep" not in "".join(kindred.diff_ins_texts())
+
+
+def test_d_list_item_add_only_marks_added_item(kindred: KindredPage) -> None:
+  _commit_then_edit_html(
+    kindred,
+    "<ul><li><p>Keep</p></li><li><p>End</p></li></ul>",
+    "<ul><li><p>Keep</p></li><li><p>Added</p></li><li><p>End</p></li></ul>",
+  )
+  kindred.enter_dirty_diff()
+  added = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-ins")
+  assert len(added) == 1
+  assert added[0].text.strip() == "Added"
+  assert not kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-ins")
+
+
+def test_d_list_item_remove_leaves_red_item_ghost(kindred: KindredPage) -> None:
+  _commit_then_edit_html(
+    kindred,
+    "<ul><li><p>Keep</p></li><li><p>Drop</p></li><li><p>End</p></li></ul>",
+    "<ul><li><p>Keep</p></li><li><p>End</p></li></ul>",
+  )
+  kindred.enter_dirty_diff()
+  removed = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-del")
+  assert len(removed) == 1
+  assert removed[0].text.strip() == "Drop"
+
+
+def test_d_duplicate_list_item_backspace_shows_one_deleted_row(kindred: KindredPage) -> None:
+  kindred.paste_html("<ul><li><p>test</p></li><li><p>test</p></li></ul>")
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  second = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror li:nth-child(2) > p",
+  )
+  second.click()
+  second.send_keys(Keys.END)
+  for _ in range(5):
+    kindred.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
+  kindred.wait_until_editor_body_text("test")
+  kindred.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
+  kindred.wait.until(
+    lambda driver: len(driver.find_elements(By.CSS_SELECTOR, "#editor .ProseMirror li")) == 1
+  )
+  assert len(kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .ProseMirror li")) == 1
+  kindred.enter_dirty_diff()
+
+  removed = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-del")
+  assert len(removed) == 1
+  assert removed[0].text.strip() == "test"
+  rows = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .ProseMirror > ul > li")
+  assert len(rows) == 2
+  assert "diff-list-item-del" not in (rows[0].get_attribute("class") or "")
+  assert "diff-list-item-del" in (rows[1].get_attribute("class") or "")
+  assert not kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-ins")
+  assert not kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-del")
+
+
+def test_d_list_indent_shows_old_and_new_item_lines(kindred: KindredPage) -> None:
+  _commit_then_edit_html(
+    kindred,
+    "<ul><li><p>A</p></li><li><p>B</p></li><li><p>C</p></li></ul>",
+    "<ul><li><p>A</p><ul><li><p>B</p></li></ul></li><li><p>C</p></li></ul>",
+  )
+  kindred.enter_dirty_diff()
+  inserted = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-ins")
+  deleted = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-del")
+  assert len(inserted) == 1
+  assert inserted[0].text.strip() == "B"
+  assert len(deleted) == 1
+  assert deleted[0].text.strip() == "B"
+  assert deleted[0].value_of_css_property("margin-left") == "0px"
+
+
+def test_d_list_move_and_text_edit_keeps_both_signals(kindred: KindredPage) -> None:
+  _commit_then_edit_html(
+    kindred,
+    "<ul><li><p>A</p></li><li><p>old B</p></li></ul>",
+    "<ul><li><p>A</p><ul><li><p>new B</p></li></ul></li></ul>",
+  )
+  kindred.enter_dirty_diff()
+  inserted = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-ins")
+  deleted = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-del")
+  assert len(inserted) == 1
+  assert len(deleted) == 1
+  assert kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror > ul > li.diff-list-item-del",
+  )
+  assert kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror > ul > li > ul > li > p.diff-list-item-ins",
+  )
+  assert "new" in "".join(kindred.diff_ins_texts())
+  assert "old" in "".join(kindred.diff_del_texts())
+
+
+def test_d_nested_duplicate_list_add_marks_only_new_deepest_item(kindred: KindredPage) -> None:
+  _commit_then_edit_html(
+    kindred,
+    "<ul><li><p>test</p><ul><li><p>test</p></li></ul></li></ul>",
+    "<ul><li><p>test</p><ul><li><p>test</p><ul><li><p>test</p></li></ul></li></ul></li></ul>",
+  )
+  kindred.enter_dirty_diff()
+  inserted = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-ins")
+  deleted = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-del")
+  assert len(inserted) == 1
+  assert len(deleted) == 0
+  assert inserted[0].text.strip() == "test"
+  assert kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror > ul > li > ul > li > ul > li > p.diff-list-item-ins",
+  )
 
 
 def test_d8a_history_diff_scopes_an_edited_paragraph(kindred: KindredPage) -> None:

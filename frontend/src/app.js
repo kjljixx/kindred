@@ -390,26 +390,170 @@ import {
     const added = [];
     const deleted = [];
     const replacements = [];
-  
-    for (const op of ops) {
+
+    function children(node) {
+      return Array.isArray(node?.content) ? node.content : [];
+    }
+
+    function ownListItemText(node) {
+      return children(node)
+        .filter((child) => child.type !== "bulletList" && child.type !== "orderedList")
+        .map(docToPlainText)
+        .join("");
+    }
+
+    function flattenItems(list, depth = 0, path = [], out = []) {
+      for (const [index, item] of children(list).entries()) {
+        if (item.type !== "listItem") continue;
+        const itemPath = [...path, index];
+        out.push({
+          index: out.length,
+          depth,
+          path: itemPath,
+          text: ownListItemText(item),
+          html: blockToHtml({
+            ...item,
+            content: children(item).filter(
+              (child) => child.type !== "bulletList" && child.type !== "orderedList"
+            ),
+          }),
+        });
+        for (const child of children(item)) {
+          if (child.type === "bulletList" || child.type === "orderedList") {
+            flattenItems(child, depth + 1, itemPath, out);
+          }
+        }
+      }
+      return out;
+    }
+
+    function alignItems(before, after) {
+      function matchScore(oldItem, newItem, oldIndex, newIndex) {
+        if (oldItem.text === newItem.text) return 4;
+        const oldWords = oldItem.text.split(/\s+/).filter(Boolean);
+        const newWords = newItem.text.split(/\s+/).filter(Boolean);
+        const overlap = newWords.some((word) => oldWords.includes(word));
+        if (overlap) return 1;
+        return Math.abs(oldIndex - newIndex) <= 1 ? 1 : -2;
+      }
+      const rows = Array.from({ length: before.length + 1 }, () =>
+        new Array(after.length + 1).fill(0)
+      );
+      for (let i = 1; i <= before.length; i++) {
+        for (let j = 1; j <= after.length; j++) {
+          const match = matchScore(before[i - 1], after[j - 1], i - 1, j - 1);
+          rows[i][j] = Math.max(
+            rows[i - 1][j],
+            rows[i][j - 1],
+            rows[i - 1][j - 1] + match
+          );
+        }
+      }
+      const pairs = [];
+      let i = before.length;
+      let j = after.length;
+      while (i || j) {
+        if (j && rows[i][j] === rows[i][j - 1]) {
+          pairs.push({ before: null, after: after[j - 1] });
+          j--;
+        } else if (i && rows[i][j] === rows[i - 1][j]) {
+          pairs.push({ before: before[i - 1], after: null });
+          i--;
+        } else if (
+          i && j &&
+          rows[i][j] === rows[i - 1][j - 1] +
+            matchScore(before[i - 1], after[j - 1], i - 1, j - 1)
+        ) {
+          pairs.push({ before: before[i - 1], after: after[j - 1] });
+          i--;
+          j--;
+        } else if (j) {
+          pairs.push({ before: null, after: after[j - 1] });
+          j--;
+        } else {
+          pairs.push({ before: before[i - 1], after: null });
+          i--;
+        }
+      }
+      return pairs.reverse();
+    }
+
+    function granularReplacement(oldNode, newNode) {
+      const before = flattenItems(oldNode);
+      const after = flattenItems(newNode);
+      const items = alignItems(before, after).map((pair) => {
+        if (!pair.before) return { action: "insert", newIndex: pair.after.index, ...pair.after };
+        if (!pair.after) return { action: "delete", oldIndex: pair.before.index, ...pair.before };
+        const moved = pair.before.depth !== pair.after.depth;
+        const edited = pair.before.text !== pair.after.text;
+        return {
+          action: moved ? (edited ? "move-edit" : "move") : edited ? "edit" : "equal",
+          oldDepth: pair.before.depth,
+          newDepth: pair.after.depth,
+          oldText: pair.before.text,
+          newText: pair.after.text,
+          oldHtml: pair.before.html,
+          newHtml: pair.after.html,
+          oldPath: pair.before.path,
+          newPath: pair.after.path,
+          oldIndex: pair.before.index,
+          newIndex: pair.after.index,
+      };
+      });
+      const movedParents = [];
+      for (const item of items) {
+        if (item.action !== "move" && item.action !== "move-edit") continue;
+        const descendant = movedParents.some(
+          (parent) =>
+            item.oldPath?.length > parent.oldPath.length &&
+            item.newPath?.length > parent.newPath.length &&
+            parent.oldPath.every((value, index) => item.oldPath[index] === value) &&
+            parent.newPath.every((value, index) => item.newPath[index] === value)
+        );
+        if (descendant) item.action = "equal";
+        else movedParents.push(item);
+      }
+      return { oldHtml: blockToHtml(oldNode), newHtml: blockToHtml(newNode), items };
+    }
+
+    for (let opIndex = 0; opIndex < ops.length; opIndex++) {
+      const op = ops[opIndex];
+      const next = ops[opIndex + 1];
+      if (
+        op.type === "delete" &&
+        op.side === "theirs" &&
+        isListBlock(op.base || op.ours) &&
+        next?.type === "insert" &&
+        next.side === "theirs" &&
+        isListBlock(next.theirs || next.node)
+      ) {
+        replacements.push(
+          granularReplacement(op.base || op.ours, next.theirs || next.node)
+        );
+        opIndex++;
+        continue;
+      }
       if (op.type === "insert" && op.side === "theirs" && isListBlock(op.theirs || op.node)) {
-        added.push(blockToHtml(op.theirs || op.node));
+        const node = op.theirs || op.node;
+        const items = flattenItems(node).map((item) => ({ action: "insert", newIndex: item.index, ...item }));
+        replacements.push({ oldHtml: "", newHtml: blockToHtml(node), items });
       } else if (op.type === "delete" && op.side === "theirs" && isListBlock(op.base || op.ours)) {
-        deleted.push(blockToHtml(op.base || op.ours));
+        const node = op.base || op.ours;
+        const items = flattenItems(node).map((item) => ({ action: "delete", oldIndex: item.index, ...item }));
+        replacements.push({ oldHtml: blockToHtml(node), newHtml: "", items });
       } else if (op.type === "replace" && (isListBlock(op.base) || isListBlock(op.theirs))) {
         const oldHtml = isListBlock(op.base) ? blockToHtml(op.base) : "";
         const newHtml = isListBlock(op.theirs) ? blockToHtml(op.theirs) : "";
         if (oldHtml && newHtml) {
-          replacements.push({ oldHtml, newHtml });
-          added.push(newHtml);
+          replacements.push(granularReplacement(op.base, op.theirs));
         } else if (oldHtml) {
-          deleted.push(oldHtml);
+          replacements.push({ oldHtml, newHtml: "", items: flattenItems(op.base).map((item) => ({ action: "delete", oldIndex: item.index, ...item })) });
         } else if (newHtml) {
-          added.push(newHtml);
+          replacements.push({ newHtml, oldHtml: "", items: flattenItems(op.theirs).map((item) => ({ action: "insert", newIndex: item.index, ...item })) });
         }
       }
     }
-  
+
     return added.length || deleted.length || replacements.length
       ? { added, deleted, replacements }
       : null;

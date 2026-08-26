@@ -1529,9 +1529,9 @@ button.pane-title {
 /* Full-list diff styling */
 .editor .ProseMirror .diff-list-ins,
 .editor .ProseMirror ul.diff-list-ins,
-.editor .ProseMirror ol.diff-list-ins {
+.editor .ProseMirror ol.diff-list-ins,
+.editor .ProseMirror .diff-list-item-ins {
   background: var(--color-success-bg);
-  color: var(--accent-success-300);
 }
 
 .diff-list-del {
@@ -1546,6 +1546,19 @@ button.pane-title {
 .diff-list-del li > p {
   margin: 0;
   text-decoration: line-through;
+}
+
+.editor .ProseMirror .diff-list-item-del {
+  background: var(--color-danger-bg);
+  color: inherit;
+  opacity: var(--opacity-2);
+  pointer-events: none;
+  margin-left: calc(var(--diff-depth-shift, 0) * 1.5em);
+}
+
+.editor .ProseMirror .diff-list-item-del > p {
+  color: inherit;
+  margin: 0;
 }
 
 /* Inline mark styles (color/font-size/font-family) beat .diff-del color. */

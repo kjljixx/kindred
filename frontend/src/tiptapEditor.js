@@ -182,6 +182,7 @@ const DIFF_EQUAL = 0;
 const DIFF_INSERT = 1;
 const DIFF_DELETE = -1;
 
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -1792,49 +1793,196 @@ function createDeletedListWidget(listHtml) {
   };
 }
 
-function appendListDiffDecorations(doc, decorations, listDiffs) {
+function createDeletedListItemWidget(itemHtml, depthShift = 0) {
+  return () => {
+    const parsed = new DOMParser().parseFromString(itemHtml || "<li><p></p></li>", "text/html");
+    const item = parsed.body.querySelector("li") || parsed.body.firstElementChild;
+    const li = item ? document.importNode(item, true) : document.createElement("li");
+    li.classList.add("diff-list-item-del");
+    li.contentEditable = "false";
+    li.style.setProperty("--diff-depth-shift", String(depthShift));
+    li.querySelectorAll("ul, ol").forEach((nested) => nested.remove());
+    return li;
+  };
+}
+
+function listItemsWithPositions(list, listPos) {
+  const items = [];
+  const ownText = (item) => {
+    const parts = [];
+    item.forEach((child) => {
+      if (child.type.name !== "bulletList" && child.type.name !== "orderedList") {
+        parts.push(docToPlainText(child));
+      }
+    });
+    return parts.join("");
+  };
+  const walk = (container, containerPos, depth) => {
+    container.forEach((child, offset) => {
+      const childPos = containerPos + 1 + offset;
+      if (child.type.name !== "listItem") return;
+      const lineNode = child.firstChild;
+      items.push({
+        node: child,
+        pos: childPos,
+        lineNode,
+        linePos: childPos + 1,
+        lineSize: lineNode?.nodeSize || 1,
+        depth,
+        text: ownText(child),
+      });
+      child.forEach((nested, nestedOffset) => {
+        if (nested.type.name === "bulletList" || nested.type.name === "orderedList") {
+          walk(nested, childPos + 1 + nestedOffset, depth + 1);
+        }
+      });
+    });
+  };
+  walk(list, listPos, 0);
+  return items;
+}
+
+function listWordDiffParts(oldText, newText) {
+  const tokenize = (value) => String(value || "").match(/\s+|[A-Za-z0-9_]+|[^\w\s]/g) || [];
+  const oldTokens = tokenize(oldText);
+  const newTokens = tokenize(newText);
+  const dp = Array.from({ length: oldTokens.length + 1 }, () =>
+    new Array(newTokens.length + 1).fill(0)
+  );
+  for (let i = 1; i <= oldTokens.length; i++) {
+    for (let j = 1; j <= newTokens.length; j++) {
+      dp[i][j] = oldTokens[i - 1] === newTokens[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  const reversed = [];
+  let i = oldTokens.length;
+  let j = newTokens.length;
+  while (i || j) {
+    if (i && j && oldTokens[i - 1] === newTokens[j - 1]) {
+      reversed.push([DIFF_EQUAL, oldTokens[i - 1]]); i--; j--;
+    } else if (j && (!i || dp[i][j - 1] >= dp[i - 1][j])) {
+      reversed.push([DIFF_INSERT, newTokens[j - 1]]); j--;
+    } else {
+      reversed.push([DIFF_DELETE, oldTokens[i - 1]]); i--;
+    }
+  }
+  reversed.reverse();
+  return reversed.reduce((parts, [kind, text]) => {
+    const last = parts[parts.length - 1];
+    if (last && last[0] === kind) last[1] += text;
+    else parts.push([kind, text]);
+    return parts;
+  }, []);
+}
+
+function appendListItemTextDiff(item, oldText, newText, decorations, key) {
+  if (!item || oldText === newText) return;
+  const parts = listWordDiffParts(oldText, newText);
+  let currentOffset = 0;
+  for (const [op, text] of parts) {
+    if (!text) continue;
+    if (op === DIFF_INSERT) {
+      decorations.push(
+        Decoration.inline(
+          item.linePos + 1 + currentOffset,
+          item.linePos + 1 + currentOffset + text.length,
+          { class: "diff-ins" }
+        )
+      );
+      currentOffset += text.length;
+    } else if (op === DIFF_DELETE) {
+      decorations.push(
+        Decoration.widget(
+          item.linePos + 1 + currentOffset,
+          createDeleteWidget(text),
+          { side: -1, key: `list-del-${key}-${currentOffset}` }
+        )
+      );
+    } else {
+      currentOffset += text.length;
+    }
+  }
+}
+
+function appendListDiffDecorations(doc, decorations, listDiffs, diffsFn) {
   if (!listDiffs) return;
-
-  const addedMap = new Map();
-  for (const html of listDiffs.added || []) {
-    addedMap.set(html, (addedMap.get(html) || 0) + 1);
-  }
-
-  const replacementsMap = new Map();
-  for (const rep of listDiffs.replacements || []) {
-    replacementsMap.set(rep.newHtml, rep.oldHtml);
-  }
+  const renderedLists = new Set();
 
   doc.descendants((node, pos) => {
     if (node.type.name !== "bulletList" && node.type.name !== "orderedList") return;
     const html = blockToHtml(node);
-
-    if (replacementsMap.has(html)) {
-      const oldHtml = replacementsMap.get(html);
-      decorations.push(
-        Decoration.widget(pos, createDeletedListWidget(oldHtml), {
-          side: -1,
-          key: `deleted-list-${pos}`,
-        })
-      );
+    const replacement = (listDiffs.replacements || []).find((rep) => rep.newHtml === html);
+    if (!replacement) return;
+    renderedLists.add(replacement);
+    const liveItems = listItemsWithPositions(node, pos);
+    const topLevelItems = liveItems.filter((item) => item.depth === 0);
+    const oldGhosts = [];
+    for (const [changeIndex, change] of (replacement.items || []).entries()) {
+      if (change.action === "equal") continue;
+      const live = change.newIndex == null ? null : liveItems[change.newIndex];
+      if (change.action === "insert") {
+        if (live) decorations.push(Decoration.node(live.linePos, live.linePos + live.lineSize, { class: "diff-list-item-ins" }));
+        continue;
+      }
+      if (change.action === "edit") {
+        appendListItemTextDiff(live, change.oldText, change.newText, decorations, `${pos}-${changeIndex}`);
+        continue;
+      }
+      if (change.action === "move" || change.action === "move-edit") {
+        if (live) {
+          decorations.push(Decoration.node(live.linePos, live.linePos + live.lineSize, { class: "diff-list-item-ins" }));
+          if (change.action === "move-edit") {
+            appendListItemTextDiff(live, change.oldText, change.newText, decorations, `${pos}-${changeIndex}`);
+          }
+          oldGhosts.push({
+            html: change.oldHtml,
+            shift: change.oldDepth - change.newDepth,
+            targetIndex: change.newIndex,
+            oldDepth: change.oldDepth,
+            newDepth: change.newDepth,
+            oldPath: change.oldPath,
+            key: `${pos}-${changeIndex}`,
+          });
+        }
+        continue;
+      }
+      if (change.action === "delete") {
+        oldGhosts.push({
+          html: change.html,
+          shift: 0,
+          targetIndex: change.oldIndex,
+          key: `${pos}-${changeIndex}`,
+        });
+      }
     }
-
-    const count = addedMap.get(html) || 0;
-    if (count > 0) {
-      decorations.push(
-        Decoration.node(pos, pos + node.nodeSize, { class: "diff-list-ins" })
-      );
-      addedMap.set(html, count - 1);
+    for (const ghost of oldGhosts) {
+      const targetItems = ghost.oldDepth < ghost.newDepth ? topLevelItems : liveItems;
+      const targetIndex = ghost.oldDepth < ghost.newDepth
+        ? ghost.oldPath?.[0] ?? targetItems.length
+        : ghost.targetIndex;
+      const target = targetIndex < targetItems.length
+        ? targetItems[targetIndex]
+        : null;
+      const targetPos = target?.pos ?? pos + node.nodeSize - 1;
+      const depthShift = ghost.oldDepth == null
+        ? ghost.shift
+        : ghost.oldDepth - (target?.depth ?? 0);
+      decorations.push(Decoration.widget(targetPos, createDeletedListItemWidget(ghost.html, depthShift), { side: -1, key: `deleted-list-item-${ghost.key}` }));
     }
   });
 
-  for (const [index, html] of (listDiffs.deleted || []).entries()) {
-    decorations.push(
-      Decoration.widget(0, createDeletedListWidget(html), {
-        side: -1,
-        key: `deleted-list-standalone-${index}`,
-      })
-    );
+  for (const [index, replacement] of (listDiffs.replacements || []).entries()) {
+    if (replacement.newHtml || renderedLists.has(replacement)) continue;
+    if (replacement.oldHtml) {
+      decorations.push(
+        Decoration.widget(0, createDeletedListWidget(replacement.oldHtml), {
+          side: -1,
+          key: `deleted-list-standalone-${index}`,
+        })
+      );
+    }
   }
 }
 
@@ -1925,7 +2073,9 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     ((tableDiffs?.added?.length || 0) + (tableDiffs?.deleted?.length || 0) > 0);
   const hasListDiffs =
     showDiffs &&
-    ((listDiffs?.added?.length || 0) + (listDiffs?.deleted?.length || 0) > 0);
+    ((listDiffs?.added?.length || 0) +
+      (listDiffs?.deleted?.length || 0) +
+      (listDiffs?.replacements?.length || 0) > 0);
 
   if (!diffsFn && !hasFormat && !hasImageDiffs && !hasTableDiffs && !hasListDiffs) {
     return decorations.length
@@ -2107,7 +2257,7 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
   if (showDiffs) {
     appendImageDiffDecorations(doc, decorations, imageDiffs);
     appendTableDiffDecorations(doc, decorations, tableDiffs);
-    appendListDiffDecorations(doc, decorations, listDiffs);
+    appendListDiffDecorations(doc, decorations, listDiffs, diffsFn);
   }
   
   return DecorationSet.create(doc, decorations);
