@@ -1618,14 +1618,14 @@ import {
         if (paneMode === "git") renderGitPane();
       }
       if (pendingMerge) {
-        setStatus("merge ready; commit to finish merge", "warn");
+        setStatus("merge ready; commit to finish merge");
       }
       return;
     }
     if (unresolved) {
       setStatus("merge conflict; choose a resolution for each change", "warn");
     } else if (pendingMerge) {
-      setStatus("merge ready; commit to finish merge", "warn");
+      setStatus("merge ready; commit to finish merge");
     } else if (
       statusLevel === "warn" &&
       /merge conflict|conflicts resolved|merge ready/i.test(statusMessage)
@@ -2567,7 +2567,7 @@ import {
     const from = plainOffsetToDocPosition(start);
     const to = plainOffsetToDocPosition(end);
     if (from == null || to == null || to < from) {
-      setStatus("The requested character range is invalid.", "warn");
+      setStatus("the requested character range is invalid", "warn");
       return null;
     }
     return { from, to };
@@ -2671,7 +2671,7 @@ import {
 
   function applyChatSuggestion(start, end, replacement, expectedText) {
     if (currentText.slice(Number(start), Number(end)) !== expectedText) {
-      setStatus("Suggestion could not be safely located in the current draft.", "warn");
+      setStatus("suggestion could not be safely located in the current draft", "warn");
       return false;
     }
     const range = draftRange(start, end);
@@ -2687,7 +2687,7 @@ import {
     });
     workingDirty = true;
     persistActiveDraftSoon();
-    setStatus("Suggestion applied.");
+    setStatus("suggestion applied");
     return true;
   }
 
@@ -3031,7 +3031,7 @@ import {
 
   async function manualCommit() {
     if (isViewingHistory()) {
-      setStatus("Restore this commit before committing.");
+      setStatus("restore this commit before committing");
       return;
     }
     // Dirty review: keep Dirty for any unresolved hunks, then commit clean HTML.
@@ -3043,7 +3043,7 @@ import {
     if (!dirty && !pendingMerge) {
       workingDirty = false;
       updateCommitBtn();
-      setStatus("Nothing to commit");
+      setStatus("nothing to commit");
       return;
     }
     const { oid } = await store.commitWorkingTree(activeDraftId, { verb });
@@ -3190,7 +3190,7 @@ import {
       const exportHtml = htmlForExport();
       const exportPlain = store.htmlToPlain(exportHtml);
       if (!(exportPlain || "").trim() && exportHtml === "<p></p>") {
-        setStatus("Nothing to export.", "warn");
+        setStatus("nothing to export", "warn");
         return;
       }
       const base = sanitizeDownloadBase(
@@ -3444,7 +3444,7 @@ import {
     await refreshCommits();
     activeCommitIndex = commits.length - 1;
     loadSnapshotState(wt, { historical: false });
-    setStatus("Restored into working tree");
+    setStatus("restored into working tree");
     await refreshDraftList();
     renderGitPane();
     await refreshWorkingDirty();
@@ -3875,7 +3875,7 @@ import {
     }
 
     if (["mention", "current", "suggest"].includes(action) && !location) {
-      setStatus("Suggestion could not be safely located in the current draft.", "warn");
+      setStatus("suggestion could not be safely located in the current draft", "warn");
       return;
     }
     if (action === "mention" || action === "current") {
@@ -4170,7 +4170,7 @@ import {
 
   (async () => {
     try {
-      setStatus("Loading drafts...");
+      setStatus("loading drafts...");
       await storeReady;
       await refreshDraftList();
       updateMeta();
