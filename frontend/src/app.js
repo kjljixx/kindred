@@ -24,7 +24,8 @@ import { bindLongPress } from "./longPress.js";
 import { loadColoris, loadHtmlDiff } from "./optionalAssets.js";
 import { warmPopularGoogleFonts } from "./fontCatalog.js";
 import { alignTwoWay } from "./docAlign.js";
-import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, isStructuralBlock, isListBlock, isTableBlock } from "./kindredSchema.js";
+import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, isStructuralBlock, isTableBlock } from "./kindredSchema.js";
+import { listDiffsFromAlignOps, resolveListConflictHtml, resolveAllListConflicts } from "./listAlign.js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { CONFIG } from "./config.js";
@@ -387,176 +388,7 @@ import {
   }
   
   function listDiffsFromOps(ops) {
-    const added = [];
-    const deleted = [];
-    const replacements = [];
-
-    function children(node) {
-      return Array.isArray(node?.content) ? node.content : [];
-    }
-
-    function ownListItemText(node) {
-      return children(node)
-        .filter((child) => child.type !== "bulletList" && child.type !== "orderedList")
-        .map(docToPlainText)
-        .join("");
-    }
-
-    function flattenItems(list, depth = 0, path = [], out = []) {
-      for (const [index, item] of children(list).entries()) {
-        if (item.type !== "listItem") continue;
-        const itemPath = [...path, index];
-        out.push({
-          index: out.length,
-          depth,
-          path: itemPath,
-          text: ownListItemText(item),
-          html: blockToHtml({
-            ...item,
-            content: children(item).filter(
-              (child) => child.type !== "bulletList" && child.type !== "orderedList"
-            ),
-          }),
-        });
-        for (const child of children(item)) {
-          if (child.type === "bulletList" || child.type === "orderedList") {
-            flattenItems(child, depth + 1, itemPath, out);
-          }
-        }
-      }
-      return out;
-    }
-
-    function alignItems(before, after) {
-      function matchScore(oldItem, newItem, oldIndex, newIndex) {
-        if (oldItem.text === newItem.text) return 4;
-        const oldWords = oldItem.text.split(/\s+/).filter(Boolean);
-        const newWords = newItem.text.split(/\s+/).filter(Boolean);
-        const overlap = newWords.some((word) => oldWords.includes(word));
-        if (overlap) return 1;
-        return Math.abs(oldIndex - newIndex) <= 1 ? 1 : -2;
-      }
-      const rows = Array.from({ length: before.length + 1 }, () =>
-        new Array(after.length + 1).fill(0)
-      );
-      for (let i = 1; i <= before.length; i++) {
-        for (let j = 1; j <= after.length; j++) {
-          const match = matchScore(before[i - 1], after[j - 1], i - 1, j - 1);
-          rows[i][j] = Math.max(
-            rows[i - 1][j],
-            rows[i][j - 1],
-            rows[i - 1][j - 1] + match
-          );
-        }
-      }
-      const pairs = [];
-      let i = before.length;
-      let j = after.length;
-      while (i || j) {
-        if (j && rows[i][j] === rows[i][j - 1]) {
-          pairs.push({ before: null, after: after[j - 1] });
-          j--;
-        } else if (i && rows[i][j] === rows[i - 1][j]) {
-          pairs.push({ before: before[i - 1], after: null });
-          i--;
-        } else if (
-          i && j &&
-          rows[i][j] === rows[i - 1][j - 1] +
-            matchScore(before[i - 1], after[j - 1], i - 1, j - 1)
-        ) {
-          pairs.push({ before: before[i - 1], after: after[j - 1] });
-          i--;
-          j--;
-        } else if (j) {
-          pairs.push({ before: null, after: after[j - 1] });
-          j--;
-        } else {
-          pairs.push({ before: before[i - 1], after: null });
-          i--;
-        }
-      }
-      return pairs.reverse();
-    }
-
-    function granularReplacement(oldNode, newNode) {
-      const before = flattenItems(oldNode);
-      const after = flattenItems(newNode);
-      const items = alignItems(before, after).map((pair) => {
-        if (!pair.before) return { action: "insert", newIndex: pair.after.index, ...pair.after };
-        if (!pair.after) return { action: "delete", oldIndex: pair.before.index, ...pair.before };
-        const moved = pair.before.depth !== pair.after.depth;
-        const edited = pair.before.text !== pair.after.text;
-        return {
-          action: moved ? (edited ? "move-edit" : "move") : edited ? "edit" : "equal",
-          oldDepth: pair.before.depth,
-          newDepth: pair.after.depth,
-          oldText: pair.before.text,
-          newText: pair.after.text,
-          oldHtml: pair.before.html,
-          newHtml: pair.after.html,
-          oldPath: pair.before.path,
-          newPath: pair.after.path,
-          oldIndex: pair.before.index,
-          newIndex: pair.after.index,
-      };
-      });
-      const movedParents = [];
-      for (const item of items) {
-        if (item.action !== "move" && item.action !== "move-edit") continue;
-        const descendant = movedParents.some(
-          (parent) =>
-            item.oldPath?.length > parent.oldPath.length &&
-            item.newPath?.length > parent.newPath.length &&
-            parent.oldPath.every((value, index) => item.oldPath[index] === value) &&
-            parent.newPath.every((value, index) => item.newPath[index] === value)
-        );
-        if (descendant) item.action = "equal";
-        else movedParents.push(item);
-      }
-      return { oldHtml: blockToHtml(oldNode), newHtml: blockToHtml(newNode), items };
-    }
-
-    for (let opIndex = 0; opIndex < ops.length; opIndex++) {
-      const op = ops[opIndex];
-      const next = ops[opIndex + 1];
-      if (
-        op.type === "delete" &&
-        op.side === "theirs" &&
-        isListBlock(op.base || op.ours) &&
-        next?.type === "insert" &&
-        next.side === "theirs" &&
-        isListBlock(next.theirs || next.node)
-      ) {
-        replacements.push(
-          granularReplacement(op.base || op.ours, next.theirs || next.node)
-        );
-        opIndex++;
-        continue;
-      }
-      if (op.type === "insert" && op.side === "theirs" && isListBlock(op.theirs || op.node)) {
-        const node = op.theirs || op.node;
-        const items = flattenItems(node).map((item) => ({ action: "insert", newIndex: item.index, ...item }));
-        replacements.push({ oldHtml: "", newHtml: blockToHtml(node), items });
-      } else if (op.type === "delete" && op.side === "theirs" && isListBlock(op.base || op.ours)) {
-        const node = op.base || op.ours;
-        const items = flattenItems(node).map((item) => ({ action: "delete", oldIndex: item.index, ...item }));
-        replacements.push({ oldHtml: blockToHtml(node), newHtml: "", items });
-      } else if (op.type === "replace" && (isListBlock(op.base) || isListBlock(op.theirs))) {
-        const oldHtml = isListBlock(op.base) ? blockToHtml(op.base) : "";
-        const newHtml = isListBlock(op.theirs) ? blockToHtml(op.theirs) : "";
-        if (oldHtml && newHtml) {
-          replacements.push(granularReplacement(op.base, op.theirs));
-        } else if (oldHtml) {
-          replacements.push({ oldHtml, newHtml: "", items: flattenItems(op.base).map((item) => ({ action: "delete", oldIndex: item.index, ...item })) });
-        } else if (newHtml) {
-          replacements.push({ newHtml, oldHtml: "", items: flattenItems(op.theirs).map((item) => ({ action: "insert", newIndex: item.index, ...item })) });
-        }
-      }
-    }
-
-    return added.length || deleted.length || replacements.length
-      ? { added, deleted, replacements }
-      : null;
+    return listDiffsFromAlignOps(ops);
   }
 
   async function htmlAtCommitOid(oid) {
@@ -620,7 +452,8 @@ import {
     onAlignConflictAction: (action, paraPos) => handleAlignConflictAction(action, paraPos),
     onTableConflictAction: (action, tablePos, conflictId) =>
       handleTableConflictAction(action, tablePos, conflictId),
-    onListConflictAction: (action, listPos) => handleListConflictAction(action, listPos),
+    onListConflictAction: (action, listPos, conflictId) =>
+      handleListConflictAction(action, listPos, conflictId),
     onUpdate: () => {
       if (
         suppressEditorUpdate ||
@@ -956,6 +789,7 @@ import {
     }
 
     html = resolveAllTableConflicts(html, side);
+    html = resolveAllListConflicts(html, side);
   
     // 2. DOM-based resolution for alignments, tables, and lists
     const doc = new DOMParser().parseFromString(
@@ -2065,13 +1899,53 @@ import {
     persistActiveDraftSoon();
   }
 
-  function handleListConflictAction(action, listPos) {
+  function listBlockIndexAtPos(doc, listPos) {
+    let idx = 0;
+    let found = -1;
+    doc.descendants((node, pos) => {
+      if (found >= 0) return false;
+      if (node.type.name !== "bulletList" && node.type.name !== "orderedList") return;
+      if (pos === listPos) found = idx;
+      idx++;
+    });
+    return found;
+  }
+
+  function patchNthTopLevelList(html, index, listHtml) {
+    const raw = String(html || "");
+    const doc = new DOMParser().parseFromString(
+      `<div id="__kindred_root">${raw}</div>`,
+      "text/html"
+    );
+    const root = doc.getElementById("__kindred_root");
+    if (!root) return raw;
+    const lists = [...root.children].filter(
+      (el) => el.tagName === "UL" || el.tagName === "OL"
+    );
+    if (index < 0 || index >= lists.length) return raw;
+    if (!String(listHtml || "").trim()) {
+      lists[index].remove();
+      return root.innerHTML;
+    }
+    const parsed = new DOMParser().parseFromString(listHtml, "text/html");
+    const newList = parsed.querySelector("ul, ol");
+    if (!newList) return raw;
+    lists[index].replaceWith(doc.importNode(newList, true));
+    return root.innerHTML;
+  }
+
+  function handleListConflictAction(action, listPos, conflictId = null) {
     if (!tipTap || listPos == null) return;
     const node = tipTap.state.doc.nodeAt(listPos);
     if (!node || (node.type.name !== "bulletList" && node.type.name !== "orderedList")) return;
+    const listIndex = listBlockIndexAtPos(tipTap.state.doc, listPos);
     const chosenHtml =
-      action === "theirs" ? node.attrs.listTheirs : node.attrs.listOurs;
-  
+      conflictId && node.attrs.listConflicts
+        ? resolveListConflictHtml(blockToHtml(node), conflictId, action)
+        : action === "theirs"
+          ? node.attrs.listTheirs
+          : node.attrs.listOurs;
+
     suppressEditorUpdate = true;
     try {
       let tr;
@@ -2086,16 +1960,21 @@ import {
           );
         }
       } else {
-        // List was deleted on chosen side: delete the node from the doc
         tr = tipTap.state.tr.delete(listPos, listPos + node.nodeSize);
       }
       if (tr) tipTap.view.dispatch(tr);
     } finally {
       suppressEditorUpdate = false;
     }
-  
-    pullFromEditor();
+
+    if (conflictMarkerCount(currentHtml) > 0 && listIndex >= 0) {
+      currentHtml = patchNthTopLevelList(currentHtml, listIndex, chosenHtml);
+      currentText = getPlain(tipTap);
+    } else {
+      pullFromEditor();
+    }
     workingDirty = true;
+    hasConflict = unresolvedMergeConflictCount(currentHtml) > 0;
     syncDirtyBodyFromCurrent();
     syncOverlayFromState();
     syncMergeStatus();

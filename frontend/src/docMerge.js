@@ -9,6 +9,10 @@ import {
   createTableReviewConflict,
   mergeTableWithDaff,
 } from "./tableDaff.js";
+import {
+  createListReviewConflict,
+  mergeListWithAlign,
+} from "./listAlign.js";
 
 function formatConflict(labelOurs, oursStr, labelTheirs, theirsStr) {
   const esc = (value) =>
@@ -190,7 +194,32 @@ function mergeDocs(
     return formatTableConflict(ours, theirs, labelOurs, labelTheirs);
   }
 
-  function handleListConflict(ours, theirs) {
+  function handleListConflict(ours, theirs, base = null) {
+    if (review && ours && theirs) {
+      const granular = createListReviewConflict(
+        blockToHtml(ours),
+        blockToHtml(theirs),
+        labelOurs,
+        labelTheirs
+      );
+      if (granular) {
+        cleanMerge = false;
+        return granular;
+      }
+    }
+    if (!review && base && ours && theirs) {
+      const merged = mergeListWithAlign(
+        blockToHtml(base),
+        blockToHtml(ours),
+        blockToHtml(theirs),
+        labelOurs,
+        labelTheirs
+      );
+      if (merged) {
+        if (merged.conflictCount) cleanMerge = false;
+        return merged.html;
+      }
+    }
     cleanMerge = false;
     return formatListConflict(ours, theirs, labelOurs, labelTheirs);
   }
@@ -198,7 +227,7 @@ function mergeDocs(
   function handleStructuralConflict(ours, theirs, base) {
     const display = ours || theirs || base;
     if (isTableBlock(display)) return handleTableConflict(ours, theirs, base);
-    if (isListBlock(display)) return handleListConflict(ours, theirs);
+    if (isListBlock(display)) return handleListConflict(ours, theirs, base);
     return conflictBlock(ours, theirs);
   }
 

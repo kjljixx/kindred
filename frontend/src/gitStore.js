@@ -158,6 +158,9 @@ const VOLUME = "kindred";
       el.removeAttribute("data-kindred-list-label-ours");
       el.removeAttribute("data-kindred-list-label-theirs");
     });
+    root.querySelectorAll("[data-kindred-list-conflicts]").forEach((el) => {
+      el.removeAttribute("data-kindred-list-conflicts");
+    });
     return root.innerHTML;
   }
 

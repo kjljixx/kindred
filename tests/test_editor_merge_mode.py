@@ -1,4 +1,4 @@
-"""Live branch merge tests (paragraph / inline only — no lists or tables)."""
+"""Live branch merge tests (paragraphs, lists, tables)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,16 @@ from selenium.webdriver.common.keys import Keys
 
 from pages.kindred import KindredPage
 from pages.table_visuals import vertical_border_thicknesses
+
+
+def _list_top_level_item_texts(kindred: KindredPage) -> list[str]:
+  return [
+    item.text.strip()
+    for item in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror > ul > li > p",
+    )
+  ]
 
 
 def test_m1_clean_merge_non_overlapping(kindred: KindredPage) -> None:
@@ -1000,3 +1010,140 @@ def test_m_whole_table_insert_and_paragraph_edit_auto_merge(
     };
     """
   ) == {"tableCount": 1, "rows": 1, "cells": 1, "text": "Added"}
+
+
+def test_m_list_non_overlapping_items_auto_merge(kindred: KindredPage) -> None:
+  kindred.paste_html(
+    """<ul><li><p>Alpha</p></li><li><p>Bravo</p></li><li><p>Charlie</p></li></ul>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  kindred.create_branch("feature")
+  feature_item = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror > ul > li:nth-child(2) > p",
+  )
+  feature_item.click()
+  kindred.driver.switch_to.active_element.send_keys(Keys.END, " feature")
+  kindred.commit()
+
+  kindred.checkout_branch("main")
+  main_item = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror > ul > li:first-child > p",
+  )
+  main_item.click()
+  kindred.driver.switch_to.active_element.send_keys(Keys.END, " main")
+  kindred.commit()
+
+  kindred.merge_branch("feature", expect_conflicts=False)
+  assert not kindred.has_merge_conflict_ui()
+  assert _list_top_level_item_texts(kindred) == [
+    "Alpha main",
+    "Bravo feature",
+    "Charlie",
+  ]
+
+
+def test_m_list_overlapping_items_resolve_independently(
+  kindred: KindredPage,
+) -> None:
+  kindred.paste_html(
+    """<ul><li><p>Alpha</p></li><li><p>Bravo</p></li><li><p>Charlie</p></li></ul>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  kindred.create_branch("feature")
+  for selector in (
+    "#editor .ProseMirror > ul > li:nth-child(2) > p",
+    "#editor .ProseMirror > ul > li:nth-child(3) > p",
+  ):
+    item = kindred.driver.find_element(By.CSS_SELECTOR, selector)
+    item.click()
+    kindred.driver.switch_to.active_element.send_keys(Keys.END, " feature")
+  kindred.commit()
+
+  kindred.checkout_branch("main")
+  for selector in (
+    "#editor .ProseMirror > ul > li:nth-child(2) > p",
+    "#editor .ProseMirror > ul > li:nth-child(3) > p",
+  ):
+    item = kindred.driver.find_element(By.CSS_SELECTOR, selector)
+    item.click()
+    kindred.driver.switch_to.active_element.send_keys(Keys.END, " main")
+  kindred.commit()
+
+  kindred.merge_branch("feature", expect_conflicts=True)
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror > ul .merge-conflict:not(.merge-list-item-conflict):not(.merge-list-indent-conflict)",
+    )
+  ) == 2
+
+  kindred.click_conflict_keep_ours(0)
+  kindred.click_conflict_keep_theirs(0)
+  assert _list_top_level_item_texts(kindred) == [
+    "Alpha",
+    "Bravo main",
+    "Charlie feature",
+  ]
+
+
+def test_m_list_delete_vs_edit_one_item_conflict(kindred: KindredPage) -> None:
+  kindred.paste_html(
+    """<ul><li><p>Top</p></li><li><p>Middle</p></li><li><p>Bottom</p></li></ul>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  kindred.create_branch("feature")
+  feature_middle = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror > ul > li:nth-child(2) > p",
+  )
+  feature_middle.click()
+  kindred.driver.switch_to.active_element.send_keys(Keys.END, " feature")
+  kindred.commit()
+
+  kindred.checkout_branch("main")
+  main_middle = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror > ul > li:nth-child(2) > p",
+  )
+  main_middle.click()
+  kindred.driver.switch_to.active_element.send_keys(Keys.END)
+  for _ in range(len("Middle")):
+    kindred.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
+  kindred.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
+  kindred.wait.until(
+    lambda d: _list_top_level_item_texts(kindred) == ["Top", "Bottom"]
+  )
+  kindred.commit()
+
+  kindred.merge_branch("feature", expect_conflicts=True)
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-list-item-conflict:not(.merge-list-indent-conflict)",
+    )
+  ) == 1
+  assert not kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .merge-list-conflict:not(.merge-list-item-conflict)",
+  )
+  assert [
+    button.text
+    for button in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-list-item-conflict:not(.merge-list-indent-conflict) > button",
+    )
+  ] == ["Remove", "Keep"]
+
+  kindred.click_conflict_keep_theirs(0)
+  assert _list_top_level_item_texts(kindred) == ["Top", "Middle feature", "Bottom"]

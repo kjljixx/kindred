@@ -1526,6 +1526,26 @@ button.pane-title {
   margin: 0;
 }
 
+.merge-list-item-conflict,
+.merge-list-indent-conflict {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.editor .ProseMirror li.kindred-list-item-conflict-node.kindred-list-side-ours > p {
+  background: var(--orange-bg);
+}
+
+.editor .ProseMirror li.kindred-list-item-conflict-node.kindred-list-side-theirs > p {
+  background: var(--blue-bg);
+}
+
+.editor .ProseMirror li.kindred-list-item-conflict-node > p {
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-2);
+  padding: var(--space-1) var(--space-2);
+}
 /* Full-list diff styling */
 .editor .ProseMirror .diff-list-ins,
 .editor .ProseMirror ul.diff-list-ins,

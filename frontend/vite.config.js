@@ -4,6 +4,9 @@ import { resolve } from "node:path";
 export default defineConfig({
   base: "/static/",
   publicDir: "public",
+  test: {
+    environment: "happy-dom",
+  },
   plugins: [
     {
       name: "stylesheet-before-entry-module",

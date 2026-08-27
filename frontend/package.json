@@ -7,6 +7,7 @@
     "build": "vite build",
     "build:offline": "npm run vendor:pandoc && vite build",
     "preview": "vite preview",
+    "test": "vitest run",
     "vendor:pandoc": "node scripts/vendor-pandoc.mjs"
   },
   "dependencies": {
@@ -36,6 +37,8 @@
     "pandoc-wasm": "^1.1.0"
   },
   "devDependencies": {
-    "vite": "^6.2.0"
+    "happy-dom": "^20.11.8",
+    "vite": "^6.2.0",
+    "vitest": "^3.2.4"
   }
 }

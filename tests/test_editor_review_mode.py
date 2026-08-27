@@ -1,12 +1,35 @@
-"""Dirty Review mode tests (paragraph / inline only — no lists or tables)."""
+"""Dirty Review mode tests (paragraphs, lists, tables)."""
 
 from __future__ import annotations
+
+import re
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
 from pages.kindred import KindredPage
 from pages.table_visuals import vertical_border_thicknesses
+
+
+def _commit_then_edit_html(kindred: KindredPage, head: str, dirty: str) -> None:
+  kindred.paste_html(head)
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+  kindred.press_keys(Keys.CONTROL + "a")
+  kindred.paste_html(dirty)
+  expected = re.sub(r"<[^>]+>", "", dirty)
+  kindred.wait_until_editor_body_text(expected)
+
+
+def _list_top_level_item_texts(kindred: KindredPage) -> list[str]:
+  return [
+    item.text.strip()
+    for item in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror > ul > li > p",
+    )
+  ]
 
 
 def _commit_then_dirty(kindred: KindredPage, head: str, dirty: str) -> None:
@@ -824,3 +847,134 @@ def test_r_whole_table_insert_can_keep_dirty_table(
     };
     """
   ) == {"tableCount": 1, "rows": 1, "cells": 1, "text": "Added"}
+
+
+def test_r_list_two_item_edits_two_widgets(kindred: KindredPage) -> None:
+  kindred.paste_html(
+    """<ul><li><p>Alpha</p></li><li><p>Bravo</p></li><li><p>Charlie</p></li></ul>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  changed = [
+    "#editor .ProseMirror > ul > li:nth-child(2) > p",
+    "#editor .ProseMirror > ul > li:nth-child(3) > p",
+  ]
+  for selector in changed:
+    item = kindred.driver.find_element(By.CSS_SELECTOR, selector)
+    item.click()
+    kindred.driver.switch_to.active_element.send_keys(Keys.END, "!")
+  kindred.wait.until(
+    lambda d: _list_top_level_item_texts(kindred) == ["Alpha", "Bravo!", "Charlie!"]
+  )
+
+  kindred.enter_dirty_review()
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror > ul .merge-conflict:not(.merge-list-item-conflict):not(.merge-list-indent-conflict)",
+    )
+  ) == 2
+  assert not kindred.driver.find_elements(
+    By.CSS_SELECTOR,
+    "#editor .merge-list-conflict:not(.merge-list-item-conflict)",
+  )
+
+
+def test_r_list_middle_item_delete_keep_remove(kindred: KindredPage) -> None:
+  kindred.paste_html(
+    """<ul><li><p>Top</p></li><li><p>Middle</p></li><li><p>Bottom</p></li></ul>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  middle = kindred.driver.find_element(
+    By.CSS_SELECTOR,
+    "#editor .ProseMirror > ul > li:nth-child(2) > p",
+  )
+  middle.click()
+  kindred.driver.switch_to.active_element.send_keys(Keys.END)
+  for _ in range(len("Middle")):
+    kindred.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
+  kindred.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
+  kindred.wait.until(
+    lambda d: _list_top_level_item_texts(kindred) == ["Top", "Bottom"]
+  )
+
+  kindred.enter_dirty_review()
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-list-item-conflict:not(.merge-list-indent-conflict)",
+    )
+  ) == 1
+  assert [
+    button.text
+    for button in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-list-item-conflict:not(.merge-list-indent-conflict) > button",
+    )
+  ] == ["Keep", "Remove"]
+  assert _list_top_level_item_texts(kindred) == ["Top", "Middle", "Bottom"]
+
+  kindred.click_conflict_keep_theirs(0)
+  kindred.enter_dirty_text()
+  assert _list_top_level_item_texts(kindred) == ["Top", "Bottom"]
+
+
+def test_r_list_indent_shows_indent_outdent(kindred: KindredPage) -> None:
+  _commit_then_edit_html(
+    kindred,
+    "<ul><li><p>A</p></li><li><p>B</p></li><li><p>C</p></li></ul>",
+    "<ul><li><p>A</p><ul><li><p>B</p></li></ul></li><li><p>C</p></li></ul>",
+  )
+  kindred.enter_dirty_review()
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-list-indent-conflict",
+    )
+  ) == 1
+  assert [
+    button.text
+    for button in kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .merge-list-indent-conflict > button",
+    )
+  ] == ["Outdent", "Indent"]
+
+
+def test_r_list_resolve_two_edits_independently(kindred: KindredPage) -> None:
+  kindred.paste_html(
+    """<ul><li><p>Alpha</p></li><li><p>Bravo</p></li><li><p>Charlie</p></li></ul>"""
+  )
+  kindred.wait_until_draft_active()
+  kindred.switch_to_git()
+  kindred.commit()
+
+  changed = [
+    "#editor .ProseMirror > ul > li:nth-child(2) > p",
+    "#editor .ProseMirror > ul > li:nth-child(3) > p",
+  ]
+  for selector in changed:
+    item = kindred.driver.find_element(By.CSS_SELECTOR, selector)
+    item.click()
+    kindred.driver.switch_to.active_element.send_keys(Keys.END, "!")
+  kindred.wait.until(
+    lambda d: _list_top_level_item_texts(kindred) == ["Alpha", "Bravo!", "Charlie!"]
+  )
+
+  kindred.enter_dirty_review()
+  assert len(
+    kindred.driver.find_elements(
+      By.CSS_SELECTOR,
+      "#editor .ProseMirror > ul .merge-conflict:not(.merge-list-item-conflict):not(.merge-list-indent-conflict)",
+    )
+  ) == 2
+
+  kindred.click_conflict_keep_ours(0)
+  kindred.click_conflict_keep_theirs(0)
+  kindred.enter_dirty_text()
+  assert _list_top_level_item_texts(kindred) == ["Alpha", "Bravo", "Charlie!"]

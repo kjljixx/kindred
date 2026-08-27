@@ -18,6 +18,7 @@ import {
 } from "./fontCatalog.js";
 import { SelectionUnits } from "./selectionUnits.js";
 import { diffTable, parseTableConflicts } from "./tableDaff.js";
+import { parseListConflicts } from "./listAlign.js";
 import {
   debugEvent,
   debugVerbose,
@@ -482,9 +483,20 @@ export function htmlHasListConflict(html) {
 
 function listConflictCount(html) {
   const raw = String(html || "");
-  if (!raw || !raw.includes("data-kindred-list-ours")) return 0;
+  if (!raw || !raw.includes("data-kindred-list")) return 0;
   const doc = new DOMParser().parseFromString(raw, "text/html");
-  return doc.body.querySelectorAll("[data-kindred-list-ours]").length;
+  let count = 0;
+  doc.body.querySelectorAll("ul, ol").forEach((list) => {
+    const granular = parseListConflicts(
+      list.getAttribute("data-kindred-list-conflicts")
+    );
+    if (granular) {
+      count += granular.conflicts.length;
+      return;
+    }
+    if (list.hasAttribute("data-kindred-list-ours")) count += 1;
+  });
+  return count;
 }
 
 export function unresolvedMergeConflictCount(html) {
@@ -545,6 +557,9 @@ export function stripKindredProtocol(html) {
     el.removeAttribute("data-kindred-list-theirs");
     el.removeAttribute("data-kindred-list-label-ours");
     el.removeAttribute("data-kindred-list-label-theirs");
+  });
+  root.querySelectorAll("[data-kindred-list-conflicts]").forEach((el) => {
+    el.removeAttribute("data-kindred-list-conflicts");
   });
   return root.innerHTML;
 }
@@ -1168,6 +1183,146 @@ function createListConflictWidget(attrs, listPos, onAction, conflictMode = "merg
   };
 }
 
+function createListItemStructuralConflictWidget(
+  conflict,
+  listPos,
+  onAction,
+  conflictMode = "merge"
+) {
+  return () => {
+    const wrap = document.createElement("span");
+    wrap.className = "merge-conflict merge-list-item-conflict";
+    wrap.contentEditable = "false";
+    wrap.dataset.listConflictId = conflict.id;
+    const review = conflictMode === "review";
+
+    const oursBtn = document.createElement("button");
+    oursBtn.type = "button";
+    oursBtn.className = "merge-conflict-btn merge-conflict-ours";
+    const oursLabel = structuralChoiceLabel(
+      "item",
+      Boolean(conflict.oursHtml),
+      Boolean(conflict.theirsHtml),
+      "ours",
+      review
+    );
+    oursBtn.title = oursLabel;
+    oursBtn.textContent = oursLabel;
+
+    const theirsBtn = document.createElement("button");
+    theirsBtn.type = "button";
+    theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
+    const theirsLabel = structuralChoiceLabel(
+      "item",
+      Boolean(conflict.theirsHtml),
+      Boolean(conflict.oursHtml),
+      "theirs",
+      review
+    );
+    theirsBtn.title = theirsLabel;
+    theirsBtn.textContent = theirsLabel;
+
+    const choose = (side) => (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onAction?.(side, listPos, conflict.id);
+    };
+    oursBtn.addEventListener("mousedown", choose("ours"));
+    theirsBtn.addEventListener("mousedown", choose("theirs"));
+    wrap.append(oursBtn, theirsBtn);
+    return wrap;
+  };
+}
+
+function createListIndentConflictWidget(
+  conflict,
+  listPos,
+  onAction,
+  conflictMode = "merge"
+) {
+  return () => {
+    const wrap = document.createElement("span");
+    wrap.className = "merge-conflict merge-list-indent-conflict";
+    wrap.contentEditable = "false";
+    wrap.dataset.listConflictId = conflict.id;
+
+    const outdentBtn = document.createElement("button");
+    outdentBtn.type = "button";
+    outdentBtn.className = "merge-conflict-btn merge-conflict-ours";
+    outdentBtn.title = "Outdent";
+    outdentBtn.textContent = "Outdent";
+
+    const indentBtn = document.createElement("button");
+    indentBtn.type = "button";
+    indentBtn.className = "merge-conflict-btn merge-conflict-theirs";
+    indentBtn.title = "Indent";
+    indentBtn.textContent = "Indent";
+
+    const choose = (side) => (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onAction?.(side, listPos, conflict.id);
+    };
+    outdentBtn.addEventListener("mousedown", choose("outdent"));
+    indentBtn.addEventListener("mousedown", choose("indent"));
+    wrap.append(outdentBtn, indentBtn);
+    return wrap;
+  };
+}
+
+function listConflictSideClass(conflict) {
+  if (conflict.kind === "indent") return "kindred-list-side-theirs";
+  const hasOurs = Boolean(conflict.oursHtml?.trim());
+  const hasTheirs = Boolean(conflict.theirsHtml?.trim());
+  if (hasOurs && !hasTheirs) return "kindred-list-side-ours";
+  if (hasTheirs && !hasOurs) return "kindred-list-side-theirs";
+  return hasTheirs ? "kindred-list-side-theirs" : "kindred-list-side-ours";
+}
+
+function appendListItemConflictDecorations(
+  listNode,
+  listPos,
+  decorations,
+  conflicts,
+  onListConflictAction,
+  conflictMode
+) {
+  const liveItems = listItemsWithPositions(listNode, listPos);
+  for (const conflict of conflicts) {
+    if (conflict.kind === "content") continue;
+    const live = liveItems[conflict.itemIndex];
+    if (!live) continue;
+    const widgetFn =
+      conflict.kind === "item"
+        ? createListItemStructuralConflictWidget(
+            conflict,
+            listPos,
+            onListConflictAction,
+            conflictMode
+          )
+        : conflict.kind === "indent"
+          ? createListIndentConflictWidget(
+              conflict,
+              listPos,
+              onListConflictAction,
+              conflictMode
+            )
+          : null;
+    if (!widgetFn) continue;
+    decorations.push(
+      Decoration.widget(live.linePos, widgetFn, {
+        side: -1,
+        key: `list-${conflict.kind}-conflict-${listPos}-${conflict.id}:${conflictMode}`,
+      })
+    );
+    decorations.push(
+      Decoration.node(live.pos, live.pos + live.node.nodeSize, {
+        class: `kindred-list-item-conflict-node ${listConflictSideClass(conflict)}`,
+      })
+    );
+  }
+}
+
 function appendAlignConflictDecorations(
   doc,
   decorations,
@@ -1444,6 +1599,19 @@ function appendListConflictDecorations(
 ) {
   doc.descendants((node, pos) => {
     if (node.type.name !== "bulletList" && node.type.name !== "orderedList") return;
+
+    const granular = parseListConflicts(node.attrs.listConflicts);
+    if (granular?.conflicts.length) {
+      appendListItemConflictDecorations(
+        node,
+        pos,
+        decorations,
+        granular.conflicts,
+        onListConflictAction,
+        conflictMode
+      );
+      return false;
+    }
 
     const hasConflict =
       node.attrs.listOurs !== null ||

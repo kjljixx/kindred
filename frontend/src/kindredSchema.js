@@ -10,7 +10,7 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import FontFamily from "@tiptap/extension-font-family";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
-import { BulletList, OrderedList } from "@tiptap/extension-list";
+import { BulletList, OrderedList, ListItem } from "@tiptap/extension-list";
 
 function safeLinkHref(value) {
   const href = String(value || "").trim();
@@ -193,8 +193,33 @@ const KindredParagraph = Paragraph.extend({
   },
 });
 
+/** List item with optional review/merge row index for conflict resolution. */
+const KindredListItem = ListItem.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      kindredListItemIndex: {
+        default: null,
+        parseHTML: (el) => attrOrNull(el, "data-kindred-list-item-index"),
+        renderHTML: (attrs) =>
+          attrs.kindredListItemIndex
+            ? { "data-kindred-list-item-index": attrs.kindredListItemIndex }
+            : {},
+      },
+    };
+  },
+});
+
 function listConflictAttributes() {
   return {
+    listConflicts: {
+      default: null,
+      parseHTML: (el) => attrOrNull(el, "data-kindred-list-conflicts"),
+      renderHTML: (attrs) =>
+        attrs.listConflicts
+          ? { "data-kindred-list-conflicts": attrs.listConflicts }
+          : {},
+    },
     listOurs: {
       default: null,
       parseHTML: (el) => attrOrNull(el, "data-kindred-list-ours"),
@@ -388,6 +413,7 @@ export function kindredContentExtensions() {
       paragraph: false,
       bulletList: false,
       orderedList: false,
+      listItem: false,
 
       link: {
         autolink: true,
@@ -404,6 +430,7 @@ export function kindredContentExtensions() {
       underline: {},
     }),
     KindredParagraph,
+    KindredListItem,
     KindredBulletList,
     KindredOrderedList,
     Highlight,
