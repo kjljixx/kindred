@@ -8,6 +8,7 @@ TODO
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
 - Left margin for editor
 - Save format lock/other toolbar states, as well as view states, per draft
+- Scroll bar on the left
 
 Chat
 - Fix actual replace spot not matching the preview? it's off by a couple characters sometimes

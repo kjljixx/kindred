@@ -581,14 +581,14 @@ class KindredPage:
     )
     ActionChains(self.driver).move_to_element(row).perform()
     btn = self.wait.until(
-      EC.element_to_be_clickable(
+      EC.presence_of_element_located(
         (
           By.CSS_SELECTOR,
           f'#git-branch-list button[data-git="delete"][data-branch="{name}"]',
         )
       )
     )
-    btn.click()
+    self.driver.execute_script("arguments[0].click()", btn)
     alert = self.wait.until(EC.alert_is_present())
     alert.accept()
     self.wait.until(

@@ -12,8 +12,8 @@ def test_streaming_endpoint_emits_deltas_and_done(monkeypatch):
 
   def fake_stream(**kwargs):
     received.update(kwargs)
-    yield "A draft "
-    yield "reply."
+    yield "text", "A draft "
+    yield "text", "reply."
 
   monkeypatch.setattr(server, "chat_draft_stream", fake_stream)
   body = server.ChatRequest(
@@ -30,7 +30,7 @@ def test_streaming_endpoint_emits_deltas_and_done(monkeypatch):
   assert events == [
     {"type": "delta", "delta": "A draft "},
     {"type": "delta", "delta": "reply."},
-    {"type": "done", "reply": "A draft reply.", "cost": 0.0},
+    {"type": "done", "reply": "A draft reply.", "cost": 0.0, "reasoning_summary": None},
   ]
   assert received["conflict_context"] == "Conflict 1: current / incoming"
 
@@ -40,7 +40,7 @@ def test_stream_prompt_includes_conflicts_and_action_protocol(monkeypatch):
 
   def fake_reflect_stream(**kwargs):
     captured.update(kwargs)
-    yield "[[mention:0:8]]"
+    yield "text", "[[mention:0:8]]"
 
   monkeypatch.setattr(chat, "reflect_chat_stream", fake_reflect_stream)
   assert list(chat.chat_draft_stream(
@@ -48,7 +48,7 @@ def test_stream_prompt_includes_conflicts_and_action_protocol(monkeypatch):
     message="Improve it",
     messages=[],
     conflict_context="Conflict 1: Current: A; Incoming: B",
-  )) == ["[[mention:0:8]]"]
+  )) == [("text", "[[mention:0:8]]")]
   prompt = captured["prompt"]
   assert "JSON text anchor" in prompt[0]["content"]
   assert "Unresolved merge-conflict context" in prompt[-1]["content"]
