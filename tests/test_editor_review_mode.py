@@ -899,6 +899,7 @@ def test_r_list_middle_item_delete_keep_remove(kindred: KindredPage) -> None:
   for _ in range(len("Middle")):
     kindred.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
   kindred.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
+  kindred.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
   kindred.wait.until(
     lambda d: _list_top_level_item_texts(kindred) == ["Top", "Bottom"]
   )

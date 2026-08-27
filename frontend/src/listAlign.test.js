@@ -7,7 +7,7 @@ import {
   resolveListConflictHtml,
   resolveAllListConflicts,
 } from "./listAlign.js";
-import { htmlToDoc, blockToHtml } from "./kindredSchema.js";
+import { htmlToDoc, blockToHtml, mergeAdjacentTopLevelLists, normalizeDoc } from "./kindredSchema.js";
 
 function listNodeFromHtml(html) {
   const doc = htmlToDoc(html);
@@ -152,6 +152,34 @@ describe("mergeListWithAlign", () => {
     expect(merged.html).toContain("data-kindred-text-conflict");
     expect(countTextConflictMarkers(merged.html)).toBe(1);
     expect(listConflictsFromHtml(merged.html)).toBeNull();
+  });
+});
+
+describe("middle delete review", () => {
+  it("delete middle item produces one item delete conflict", () => {
+    const head =
+      "<ul><li><p>Top</p></li><li><p>Middle</p></li><li><p>Bottom</p></li></ul>";
+    const dirty = "<ul><li><p>Top</p></li><li><p>Bottom</p></li></ul>";
+    const listNode = (html) =>
+      htmlToDoc(html).content.find(
+        (n) => n.type === "bulletList" || n.type === "orderedList"
+      );
+    const diff = diffList(listNode(head), listNode(dirty));
+    expect(diff.items.map((i) => i.action)).toEqual(["equal", "delete", "equal"]);
+    const review = createListReviewConflict(head, dirty, "main", "dirty");
+    expect(review).toBeTruthy();
+    expect(review).toContain("data-kindred-list-conflicts");
+  });
+
+  it("mergeAdjacentTopLevelLists joins split top-level lists", () => {
+    const split =
+      "<ul><li><p>Top</p></li></ul><ul><li><p>Bottom</p></li></ul>";
+    const doc = mergeAdjacentTopLevelLists(normalizeDoc(htmlToDoc(split)));
+    const lists = doc.content.filter(
+      (n) => n.type === "bulletList" || n.type === "orderedList"
+    );
+    expect(lists).toHaveLength(1);
+    expect(lists[0].content).toHaveLength(2);
   });
 });
 

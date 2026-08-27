@@ -3,7 +3,7 @@
  * Leaf paragraph content still uses the existing mark-aware flat merge.
  */
 import { alignDocs } from "./docAlign.js";
-import { blockToHtml, htmlToDoc } from "./kindredSchema.js";
+import { blockToHtml, htmlToDoc, mergeAdjacentTopLevelLists, normalizeDoc } from "./kindredSchema.js";
 import { debugEvent, debugVerbose, startTrace, summarizeAlignOp } from "./debug.js";
 import {
   createTableReviewConflict,
@@ -454,9 +454,9 @@ export function mergeHtmlViaAst(
     return { cleanMerge: true, mergedText: oursHtml, ops: [] };
   }
 
-  const baseDoc = htmlToDoc(baseHtml);
-  const oursDoc = htmlToDoc(oursHtml);
-  const theirsDoc = htmlToDoc(theirsHtml);
+  const baseDoc = mergeAdjacentTopLevelLists(normalizeDoc(htmlToDoc(baseHtml)));
+  const oursDoc = mergeAdjacentTopLevelLists(normalizeDoc(htmlToDoc(oursHtml)));
+  const theirsDoc = mergeAdjacentTopLevelLists(normalizeDoc(htmlToDoc(theirsHtml)));
 
   return mergeDocs(
     baseDoc,

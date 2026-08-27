@@ -1121,6 +1121,7 @@ def test_m_list_delete_vs_edit_one_item_conflict(kindred: KindredPage) -> None:
   for _ in range(len("Middle")):
     kindred.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
   kindred.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
+  kindred.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
   kindred.wait.until(
     lambda d: _list_top_level_item_texts(kindred) == ["Top", "Bottom"]
   )

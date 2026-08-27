@@ -555,6 +555,29 @@ export function significantBlocks(doc) {
   return blocks;
 }
 
+/** Join consecutive top-level lists of the same type (TipTap may split on item delete). */
+export function mergeAdjacentTopLevelLists(doc) {
+  const raw = doc && doc.type === "doc" ? cloneJson(doc) : cloneJson(EMPTY_DOC);
+  const content = Array.isArray(raw.content) ? raw.content : [];
+  if (content.length < 2) return raw;
+  const merged = [];
+  for (const node of content) {
+    const prev = merged[merged.length - 1];
+    if (
+      prev &&
+      isListBlock(prev) &&
+      isListBlock(node) &&
+      prev.type === node.type
+    ) {
+      prev.content = [...(prev.content || []), ...(node.content || [])];
+      continue;
+    }
+    merged.push(cloneJson(node));
+  }
+  raw.content = merged.length ? merged : content;
+  return raw;
+}
+
 export function normalizeDoc(doc) {
   const raw = doc && doc.type === "doc" ? cloneJson(doc) : cloneJson(EMPTY_DOC);
   const content = Array.isArray(raw.content) ? raw.content : [];

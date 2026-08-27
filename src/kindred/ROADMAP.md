@@ -1,5 +1,4 @@
 Priorities
-- Collapsible side bar and/or bottom bar for mobile and thin screen
 - Google Drive
 
 Editor
@@ -12,6 +11,7 @@ TODO
 
 Chat
 - Fix actual replace spot not matching the preview? it's off by a couple characters sometimes
+- Horizontal chatting & message chunks
 - RAG message stacks
 
 Settings
@@ -21,7 +21,6 @@ TODO
 Git
 TODO
 - Make Ctrl+Y/Z work in merge conflict resolution
-- Pinning branches - each pinned branch gets a position index equal to the position they were originally in when pinned. When making the ordered list, pinned branches are sorted by their position index, and unpinned branches are sorted by last commit/access time. Unpinned branches are slotted in order into spots left empty by pinned branches.
 - Staging
 - Look at git-appraisal implementation for comments (or maybe tiptap comments are possible?)
 - Review/Merge mode with arrow keys and enter?
