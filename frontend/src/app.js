@@ -1159,7 +1159,7 @@ import {
     if (!(text || "").length) return null;
     await storeReady;
     const draft = await createDraft(text);
-    syncRightPane();
+    syncRightPane({ stickChatBottom: true });
     updateCommitBtn();
     return draft;
   }
@@ -1245,7 +1245,7 @@ import {
     updateCommitBtn();
   }
 
-  function showChatPane() {
+  function showChatPane({ stickBottom = false } = {}) {
     draftsHeading.hidden = true;
     draftListEl.hidden = true;
     paneModeCluster.hidden = false;
@@ -1263,16 +1263,16 @@ import {
       if (chatListEl) chatListEl.hidden = true;
       feedbackEl.hidden = false;
       chatComposer.hidden = false;
-      renderChatThread({ stickBottom: true });
+      renderChatThread({ stickBottom });
       syncChatComposer();
     }
     updateCommitBtn();
   }
 
-  function syncRightPane() {
+  function syncRightPane({ stickChatBottom = false } = {}) {
     if (!activeDraftId) showHomePane();
     else if (paneMode === "git") showGitPane();
-    else showChatPane();
+    else showChatPane({ stickBottom: stickChatBottom });
   }
 
   function renderDraftList() {
@@ -2814,7 +2814,7 @@ import {
     chatView = "thread";
     composerDraft = "";
     await persistChatsNow();
-    syncRightPane();
+    syncRightPane({ stickChatBottom: true });
     if (!chatInput.disabled) chatInput.focus();
   }
 
@@ -2828,7 +2828,7 @@ import {
     chatView = "thread";
     composerDraft = "";
     await persistChatsNow();
-    syncRightPane();
+    syncRightPane({ stickChatBottom: true });
   }
 
   async function deleteChat(id) {
@@ -2884,7 +2884,7 @@ import {
     syncPaneModeTabs();
     syncWorkspaceNavigation();
     updateCommitBtn();
-    syncRightPane();
+    syncRightPane({ stickChatBottom: paneMode === "chat" });
     syncOverlayFromState();
     if (paneMode === "git") {
       renderGitPane();

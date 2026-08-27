@@ -6,14 +6,11 @@ Editor
 TODO
 - Image support - improve - Diff doesn't show deleted images, maybe align-style conflict buttons are better?
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
-- Proper list diffs/review
-- Proper table diffs/review - use daff
 - Left margin for editor
 - Save format lock/other toolbar states, as well as view states, per draft
 
 Chat
 - Fix actual replace spot not matching the preview? it's off by a couple characters sometimes
-- Fix typing in editor scrolls chat down to the bottom
 - RAG message stacks
 
 Settings
