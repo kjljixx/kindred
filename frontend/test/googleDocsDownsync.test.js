@@ -6,6 +6,7 @@ import test from 'node:test'
 import {
   buildNestedLists,
   googleDocsToTipTap,
+  parseGoogleDocument,
   parseParagraphElement,
   stripListTabs,
 } from '../src/googleDocsDownsync.js'
@@ -314,4 +315,204 @@ test('downsync: probe fixture outdent3 keeps TWO nested under ONE', () => {
   assert.equal(root.content[0].content[0].content[0].text, 'ONE')
   assert.equal(root.content[0].content[1].type, 'bulletList')
   assert.equal(root.content[0].content[1].content[0].content[0].content[0].text, 'TWO')
+})
+
+function textCell(text, indexes = {}) {
+  return {
+    ...indexes,
+    content: [{
+      ...indexes.contentStart ? { startIndex: indexes.contentStart, endIndex: indexes.contentEnd } : {},
+      paragraph: {
+        elements: [{ textRun: { content: `${text}\n` } }],
+      },
+    }],
+  }
+}
+
+function googleTableElement({
+  startIndex = 1,
+  endIndex = 100,
+  rows,
+}) {
+  return {
+    startIndex,
+    endIndex,
+    table: {
+      rows: rows.length,
+      columns: rows[0]?.cells.length || 0,
+      tableRows: rows.map((row, rowIndex) => ({
+        startIndex: row.startIndex ?? startIndex + rowIndex * 10,
+        endIndex: row.endIndex ?? startIndex + rowIndex * 10 + 9,
+        tableCells: row.cells.map((cell, cellIndex) => (
+          typeof cell === 'string'
+            ? textCell(cell, {
+              startIndex: row.startIndex + cellIndex * 3 + 1,
+              endIndex: row.startIndex + cellIndex * 3 + 3,
+              contentStart: row.startIndex + cellIndex * 3 + 1,
+              contentEnd: row.startIndex + cellIndex * 3 + 2,
+            })
+            : cell
+        )),
+      })),
+    },
+  }
+}
+
+test('downsync: simple table maps rows and cells', () => {
+  const googleDoc = {
+    body: {
+      content: [
+        googleTableElement({
+          startIndex: 10,
+          endIndex: 90,
+          rows: [
+            { startIndex: 11, endIndex: 40, cells: ['Alpha', 'Bravo'] },
+            { startIndex: 41, endIndex: 80, cells: ['Charlie', 'Delta'] },
+          ],
+        }),
+      ],
+    },
+  }
+  const result = googleDocsToTipTap(googleDoc)
+
+  assert.deepEqual(result, {
+    type: 'doc',
+    content: [{
+      type: 'table',
+      content: [
+        {
+          type: 'tableRow',
+          content: [
+            { type: 'tableCell', content: [paragraphWithText('Alpha')] },
+            { type: 'tableCell', content: [paragraphWithText('Bravo')] },
+          ],
+        },
+        {
+          type: 'tableRow',
+          content: [
+            { type: 'tableCell', content: [paragraphWithText('Charlie')] },
+            { type: 'tableCell', content: [paragraphWithText('Delta')] },
+          ],
+        },
+      ],
+    }],
+  })
+})
+
+test('downsync: table cell with bullet list reuses structural parser', () => {
+  const googleDoc = {
+    body: {
+      content: [
+        googleTableElement({
+          rows: [{
+            cells: [{
+              content: [
+                {
+                  startIndex: 50,
+                  endIndex: 55,
+                  paragraph: bulletBlock('one', 0).paragraph,
+                },
+                {
+                  startIndex: 56,
+                  endIndex: 61,
+                  paragraph: bulletBlock('two', 0).paragraph,
+                },
+              ],
+            }],
+          }],
+        }),
+      ],
+    },
+    lists: {
+      [LIST_ID]: {
+        listProperties: {
+          nestingLevels: nestingLevels(),
+        },
+      },
+    },
+  }
+  const result = googleDocsToTipTap(googleDoc)
+  const listCell = result.content[0].content[0].content[0]
+
+  assert.equal(listCell.type, 'tableCell')
+  assert.equal(listCell.content[0].type, 'bulletList')
+  assert.deepEqual(
+    listCell.content[0].content.map((item) => item.content[0].content[0].text),
+    ['one', 'two'],
+  )
+})
+
+test('downsync: table cell with multiple paragraphs', () => {
+  const googleDoc = {
+    body: {
+      content: [
+        googleTableElement({
+          rows: [{
+            cells: [{
+              content: [
+                { startIndex: 20, endIndex: 25, paragraph: plainBlock('first').paragraph },
+                { startIndex: 26, endIndex: 31, paragraph: plainBlock('second').paragraph },
+              ],
+            }],
+          }],
+        }),
+      ],
+    },
+  }
+  const result = googleDocsToTipTap(googleDoc)
+  const cell = result.content[0].content[0].content[0]
+
+  assert.equal(cell.content.length, 2)
+  assert.equal(cell.content[0].content[0].text, 'first')
+  assert.equal(cell.content[1].content[0].text, 'second')
+})
+
+test('downsync: empty table cell gets placeholder paragraph', () => {
+  const googleDoc = {
+    body: {
+      content: [
+        googleTableElement({
+          rows: [{ cells: [{ content: [] }] }],
+        }),
+      ],
+    },
+  }
+  const result = googleDocsToTipTap(googleDoc)
+  const cell = result.content[0].content[0].content[0]
+
+  assert.deepEqual(cell, { type: 'tableCell', content: [{ type: 'paragraph' }] })
+})
+
+test('downsync: parseGoogleDocument preserves table index metadata', () => {
+  const googleDoc = {
+    body: {
+      content: [
+        googleTableElement({
+          startIndex: 10,
+          endIndex: 90,
+          rows: [{
+            startIndex: 11,
+            endIndex: 40,
+            cells: [
+              textCell('Alpha', { startIndex: 12, endIndex: 20 }),
+              textCell('Bravo', { startIndex: 21, endIndex: 30 }),
+            ],
+          }],
+        }),
+      ],
+    },
+  }
+  const parsed = parseGoogleDocument(googleDoc)
+  const table = parsed.elements[0]
+
+  assert.equal(table.kind, 'table')
+  assert.equal(table.startIndex, 10)
+  assert.equal(table.endIndex, 90)
+  assert.equal(table.rows[0].startIndex, 11)
+  assert.equal(table.rows[0].endIndex, 40)
+  assert.equal(table.rows[0].cells[0].startIndex, 12)
+  assert.equal(table.rows[0].cells[0].endIndex, 20)
+  assert.equal(table.tiptap.type, 'table')
+  assert.equal(table.tiptap.content[0].content[0].content[0].content[0].text, 'Alpha')
+  assert.equal(table.tiptap.attrs, undefined)
 })
