@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { getSchema } from '@tiptap/core'
 import { EditorState, TextSelection } from '@tiptap/pm/state'
-import { sinkListItem } from '@tiptap/pm/schema-list'
+import { liftListItem, sinkListItem } from '@tiptap/pm/schema-list'
 import { kindredContentExtensions } from '../src/kindredSchema.js'
-import { stepToGoogleDocsRequests } from '../src/googleDocsUpsync.js'
+import { listNestingRequests, stepToGoogleDocsRequests } from '../src/googleDocsUpsync.js'
 
 const schema = getSchema(kindredContentExtensions())
 
@@ -43,6 +43,25 @@ function indentStep(doc, text) {
   return { doc, step: transaction.steps[0], nextDoc: transaction.doc }
 }
 
+function outdentStep(doc, text) {
+  let textPos = null
+  doc.descendants((node, pos) => {
+    if (node.isText && node.text === text) textPos = pos
+  })
+  assert.notEqual(textPos, null)
+  const state = EditorState.create({
+    doc,
+    selection: TextSelection.create(doc, textPos),
+  })
+  let transaction = null
+  const applied = liftListItem(schema.nodes.listItem)(state, (nextTransaction) => {
+    transaction = nextTransaction
+  })
+  assert.equal(applied, true)
+  assert.equal(transaction.steps.length, 1)
+  return { doc, step: transaction.steps[0], nextDoc: transaction.doc }
+}
+
 function indentEmptyItemStep(doc) {
   let paragraphPos = null
   doc.descendants((node, pos) => {
@@ -59,34 +78,49 @@ function indentEmptyItemStep(doc) {
   })
   assert.equal(applied, true)
   assert.equal(transaction.steps.length, 1)
-  return { step: transaction.steps[0] }
+  return { doc, step: transaction.steps[0], nextDoc: transaction.doc }
+}
+
+function preIndentedDoc(items, textToIndent, type = 'bulletList') {
+  const baseDoc = listDoc(items, type)
+  const { nextDoc } = indentStep(baseDoc, textToIndent)
+  return nextDoc
 }
 
 function requestKinds(requests) {
   return requests.map((request) => Object.keys(request)[0])
 }
 
-test('indent inserts temporary tab then creates bullets over affected paragraphs', () => {
+const CLEAR_INDENT_STYLE = {
+  paragraphStyle: {
+    indentStart: { magnitude: 0, unit: 'PT' },
+    indentFirstLine: { magnitude: 0, unit: 'PT' },
+  },
+  fields: 'indentStart,indentFirstLine',
+}
+
+test('list nesting: single indent emits four-step rewrite over full list', () => {
   const { doc, step } = indentStep(listDoc(['one', 'two']), 'two')
   const requests = stepToGoogleDocsRequests(step, doc)
 
   assert.deepEqual(requestKinds(requests), [
     'deleteParagraphBullets',
+    'updateParagraphStyle',
     'insertText',
     'createParagraphBullets',
   ])
-  assert.deepEqual(requests[0], {
-    deleteParagraphBullets: {
-      range: { startIndex: 1, endIndex: 9 },
-    },
+  assert.deepEqual(requests[0].deleteParagraphBullets.range, { startIndex: 1, endIndex: 9 })
+  assert.deepEqual(requests[1].updateParagraphStyle, {
+    range: { startIndex: 1, endIndex: 9 },
+    ...CLEAR_INDENT_STYLE,
   })
-  assert.deepEqual(requests[1], {
+  assert.deepEqual(requests[2], {
     insertText: {
       location: { index: 5 },
       text: '\t',
     },
   })
-  assert.deepEqual(requests[2], {
+  assert.deepEqual(requests[3], {
     createParagraphBullets: {
       range: { startIndex: 1, endIndex: 10 },
       bulletPreset: 'BULLET_DISC_CIRCLE_SQUARE',
@@ -94,7 +128,133 @@ test('indent inserts temporary tab then creates bullets over affected paragraphs
   })
 })
 
-test('indent moves existing nested subtree with one-tab depth deltas', () => {
+test('list nesting: outdent emits four-step rewrite without tab edits when depth goes to zero', () => {
+  const doc = preIndentedDoc(['one', 'two'], 'two')
+  const { step } = outdentStep(doc, 'two')
+  const requests = stepToGoogleDocsRequests(step, doc)
+
+  assert.deepEqual(requestKinds(requests), [
+    'deleteParagraphBullets',
+    'updateParagraphStyle',
+    'createParagraphBullets',
+  ])
+  assert.deepEqual(requests[2].createParagraphBullets, {
+    range: { startIndex: 1, endIndex: 9 },
+    bulletPreset: 'BULLET_DISC_CIRCLE_SQUARE',
+  })
+})
+
+test('list nesting: outdent sibling re-inserts tabs for unchanged nested items (outdent3)', () => {
+  const doc = schema.nodeFromJSON({
+    type: 'doc',
+    content: [{
+      type: 'bulletList',
+      content: [{
+        type: 'listItem',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: 'ONE' }] },
+          {
+            type: 'bulletList',
+            content: [
+              {
+                type: 'listItem',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'TWO' }] }],
+              },
+              {
+                type: 'listItem',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'THREE' }] }],
+              },
+            ],
+          },
+        ],
+      }],
+    }],
+  })
+  const { step } = outdentStep(doc, 'THREE')
+  const requests = stepToGoogleDocsRequests(step, doc)
+
+  assert.deepEqual(requestKinds(requests), [
+    'deleteParagraphBullets',
+    'updateParagraphStyle',
+    'insertText',
+    'createParagraphBullets',
+  ])
+  assert.deepEqual(requests[2].insertText, {
+    location: { index: 5 },
+    text: '\t',
+  })
+  assert.deepEqual(requests[0].deleteParagraphBullets.range, { startIndex: 1, endIndex: 15 })
+  assert.deepEqual(requests[3].createParagraphBullets.range, {
+    startIndex: 1,
+    endIndex: 16,
+  })
+})
+
+test('list nesting: outdent test3 rewrites whole list (outdent4)', () => {
+  const doc = schema.nodeFromJSON({
+    type: 'doc',
+    content: [{
+      type: 'bulletList',
+      content: [
+        {
+          type: 'listItem',
+          content: [
+            { type: 'paragraph', content: [{ type: 'text', text: 'test' }] },
+            {
+              type: 'bulletList',
+              content: [{
+                type: 'listItem',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'test' }] }],
+              }],
+            },
+          ],
+        },
+        {
+          type: 'listItem',
+          content: [
+            { type: 'paragraph', content: [{ type: 'text', text: 'test' }] },
+            {
+              type: 'bulletList',
+              content: [
+                {
+                  type: 'listItem',
+                  content: [{ type: 'paragraph', content: [{ type: 'text', text: 'test123' }] }],
+                },
+                {
+                  type: 'listItem',
+                  content: [{ type: 'paragraph', content: [{ type: 'text', text: 'test2' }] }],
+                },
+                {
+                  type: 'listItem',
+                  content: [{ type: 'paragraph', content: [{ type: 'text', text: 'test3' }] }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }],
+  })
+  const { step } = outdentStep(doc, 'test3')
+  const requests = stepToGoogleDocsRequests(step, doc)
+
+  assert.deepEqual(requestKinds(requests), [
+    'deleteParagraphBullets',
+    'updateParagraphStyle',
+    'insertText',
+    'insertText',
+    'insertText',
+    'createParagraphBullets',
+  ])
+  assert.deepEqual(requests[0].deleteParagraphBullets.range, { startIndex: 1, endIndex: 36 })
+  assert.deepEqual(
+    requests.slice(2, 5).map((request) => request.insertText.location.index),
+    [24, 16, 6],
+  )
+  assert.deepEqual(requests[5].createParagraphBullets.range, { startIndex: 1, endIndex: 39 })
+})
+
+test('list nesting: subtree indent inserts tabs at each affected paragraph', () => {
   const doc = schema.nodeFromJSON({
     type: 'doc',
     content: [{
@@ -125,20 +285,18 @@ test('indent moves existing nested subtree with one-tab depth deltas', () => {
 
   assert.deepEqual(requestKinds(requests), [
     'deleteParagraphBullets',
+    'updateParagraphStyle',
     'insertText',
     'insertText',
     'createParagraphBullets',
   ])
-  assert.deepEqual(requests.slice(1, 3).map((request) => request.insertText.text), ['\t', '\t'])
-  assert.deepEqual(requests[3], {
-    createParagraphBullets: {
-      range: { startIndex: 1, endIndex: 27 },
-      bulletPreset: 'BULLET_DISC_CIRCLE_SQUARE',
-    },
-  })
+  assert.deepEqual(
+    requests.filter((request) => request.insertText).map((request) => request.insertText.text),
+    ['\t\t', '\t'],
+  )
 })
 
-test('indent preserves ordered-list preset', () => {
+test('list nesting: ordered list keeps numbered preset', () => {
   const doc = listDoc(['one', 'two'], 'orderedList')
   const { step } = indentStep(doc, 'two')
   const requests = stepToGoogleDocsRequests(step, doc)
@@ -146,24 +304,24 @@ test('indent preserves ordered-list preset', () => {
   assert.equal(requests.at(-1).createParagraphBullets.bulletPreset, 'NUMBERED_DECIMAL_ALPHA_ROMAN')
 })
 
-test('indent places empty item tab at empty paragraph start', () => {
+test('list nesting: empty item tab lands at empty paragraph start', () => {
   const doc = listDoc(['one', ''])
   const { step } = indentEmptyItemStep(doc)
   const requests = stepToGoogleDocsRequests(step, doc)
 
-  assert.deepEqual(requests[1], {
+  assert.deepEqual(requests[2], {
     insertText: {
       location: { index: 5 },
       text: '\t',
     },
   })
-  assert.deepEqual(requests[2].createParagraphBullets.range, {
+  assert.deepEqual(requests[3].createParagraphBullets.range, {
     startIndex: 1,
     endIndex: 7,
   })
 })
 
-test('indent maps empty nested descendant after subtree move', () => {
+test('list nesting: empty nested descendant gets tab at correct index', () => {
   const doc = schema.nodeFromJSON({
     type: 'doc',
     content: [{
@@ -188,9 +346,57 @@ test('indent maps empty nested descendant after subtree move', () => {
   })
   const { step } = indentStep(doc, 'child')
   const requests = stepToGoogleDocsRequests(step, doc)
+  const tabInserts = requests.filter((request) => request.insertText)
 
-  assert.deepEqual(requests.slice(1, 3), [
-    { insertText: { location: { index: 14 }, text: '\t' } },
-    { insertText: { location: { index: 8 }, text: '\t' } },
+  assert.equal(tabInserts.length, 2)
+  assert.deepEqual(tabInserts.map((request) => request.insertText.text), ['\t\t', '\t'])
+  assert.deepEqual(tabInserts.map((request) => request.insertText.location.index), [14, 8])
+})
+
+test('list nesting: subtree outdent re-inserts tabs for remaining nested items', () => {
+  const baseDoc = schema.nodeFromJSON({
+    type: 'doc',
+    content: [{
+      type: 'bulletList',
+      content: [
+        {
+          type: 'listItem',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'parent' }] }],
+        },
+        {
+          type: 'listItem',
+          content: [
+            { type: 'paragraph', content: [{ type: 'text', text: 'child' }] },
+            {
+              type: 'bulletList',
+              content: [{
+                type: 'listItem',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'grandchild' }] }],
+              }],
+            },
+          ],
+        },
+      ],
+    }],
+  })
+  const { nextDoc: doc } = indentStep(baseDoc, 'child')
+  const { step } = outdentStep(doc, 'child')
+  const requests = stepToGoogleDocsRequests(step, doc)
+
+  assert.deepEqual(requestKinds(requests), [
+    'deleteParagraphBullets',
+    'updateParagraphStyle',
+    'insertText',
+    'createParagraphBullets',
   ])
+  assert.deepEqual(requests[2].insertText, {
+    location: { index: 14 },
+    text: '\t',
+  })
+})
+
+test('list nesting: paragraph count mismatch returns no requests', () => {
+  const before = listDoc(['one', 'two'])
+  const after = listDoc(['one'])
+  assert.deepEqual(listNestingRequests(before, after), [])
 })

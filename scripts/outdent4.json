@@ -1,0 +1,80 @@
+{
+  "requests": [
+    {
+      "insertText": {
+        "location": {"index": 1},
+        "text": "test\ntest\ntest\ntest123\ntest2\ntest3"
+      }
+    },
+    {
+      "insertText": {
+        "location": {"index": 30},
+        "text": "\t"
+      }
+    },
+    {
+      "insertText": {
+        "location": {"index": 24},
+        "text": "\t"
+      }
+    },
+    {
+      "insertText": {
+        "location": {"index": 16},
+        "text": "\t"
+      }
+    },
+    {
+      "insertText": {
+        "location": {"index": 6},
+        "text": "\t"
+      }
+    },
+    {
+      "createParagraphBullets": {
+        "range": {"startIndex": 1, "endIndex": 40},
+        "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"
+      }
+    },
+    {
+      "deleteParagraphBullets": {
+        "range": {"startIndex": 1, "endIndex": 36}
+      }
+    },
+    {
+      "updateParagraphStyle": {
+        "range": {"startIndex": 1, "endIndex": 36},
+        "paragraphStyle": {
+          "indentStart": {"magnitude": 0, "unit": "PT"},
+          "indentFirstLine": {"magnitude": 0, "unit": "PT"}
+        },
+        "fields": "indentStart,indentFirstLine"
+      }
+    },
+    {
+      "insertText": {
+        "location": {"index": 24},
+        "text": "\t"
+      }
+    },
+    {
+      "insertText": {
+        "location": {"index": 16},
+        "text": "\t"
+      }
+    },
+    {
+      "insertText": {
+        "location": {"index": 6},
+        "text": "\t"
+      }
+    },
+
+    {
+      "createParagraphBullets": {
+        "range": {"startIndex": 1, "endIndex": 39},
+        "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "requests": [
+    {
+      "insertText": {
+        "location": {"index": 1},
+        "text": "ONE\nTWO\nTHREE"
+      }
+    },
+    {
+      "insertText": {
+        "location": {"index": 5},
+        "text": "\t"
+      }
+    },
+    {
+      "insertText": {
+        "location": {"index": 10},
+        "text": "\t\t"
+      }
+    },
+    {
+      "createParagraphBullets": {
+        "range": {"startIndex": 1, "endIndex": 15},
+        "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"
+      }
+    }
+  ]
+}

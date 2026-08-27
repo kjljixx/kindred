@@ -1,0 +1,72 @@
+{
+  "requests": [
+    {
+      "insertText": {
+        "location": {"index": 1},
+        "text": "ONE\nTWO\nTHREE"
+      }
+    },
+    {
+      "insertText": {
+        "location": {"index": 5},
+        "text": "\t"
+      }
+    },
+    {
+      "insertText": {
+        "location": {"index": 10},
+        "text": "\t"
+      }
+    },
+    {
+      "createParagraphBullets": {
+        "range": {"startIndex": 1, "endIndex": 16},
+        "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"
+      }
+    },
+    {
+      "deleteParagraphBullets": {
+        "range": {
+          "startIndex": 5,
+          "endIndex": 15
+        }
+      }
+    },
+    {
+      "updateParagraphStyle": {
+        "range": {
+          "startIndex": 5,
+          "endIndex": 15
+        },
+        "paragraphStyle": {
+          "indentStart": {
+            "magnitude": 0,
+            "unit": "PT"
+          },
+          "indentFirstLine": {
+            "magnitude": 0,
+            "unit": "PT"
+          }
+        },
+        "fields": "indentStart,indentFirstLine"
+      }
+    },
+    {
+      "insertText": {
+        "location": {
+          "index": 5
+        },
+        "text": "\t"
+      }
+    },
+    {
+      "createParagraphBullets": {
+        "range": {
+          "startIndex": 5,
+          "endIndex": 16
+        },
+        "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"
+      }
+    }
+  ]
+}
