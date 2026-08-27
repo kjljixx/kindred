@@ -226,6 +226,14 @@ function containingUnitRange(doc, from, to, unit) {
   const anchor = from;
   let startIdx = ranges.findIndex((r) => anchor >= r.from && anchor < r.to);
   if (startIdx < 0) {
+    for (let i = ranges.length - 1; i >= 0; i--) {
+      if (ranges[i].to <= anchor) {
+        startIdx = i;
+        break;
+      }
+    }
+  }
+  if (startIdx < 0) {
     startIdx = ranges.findIndex((r) => r.from >= anchor);
   }
   if (startIdx < 0 && ranges.length) {
