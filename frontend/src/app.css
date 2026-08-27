@@ -1504,6 +1504,10 @@ button.pane-title {
   background: var(--orange-bg);
 }
 
+.editor .ProseMirror .kindred-list-preview {
+  min-height: 1.75em;
+}
+
 .editor .ProseMirror .kindred-list-preview.kindred-list-side-theirs {
   pointer-events: none;
   user-select: none;
@@ -1511,8 +1515,20 @@ button.pane-title {
   border-radius: var(--radius-2);
   background: var(--blue-bg);
   margin: var(--space-3) 0;
+  margin-top: var(--space-2);
   padding: var(--space-2) var(--space-3) var(--space-2) 0.25em;
   pointer-events: none;
+}
+
+.editor .ProseMirror .kindred-list-preview.kindred-list-side-ours {
+  pointer-events: none;
+  user-select: none;
+  box-sizing: border-box;
+  border-radius: var(--radius-2);
+  background: var(--orange-bg);
+  margin: var(--space-3) 0;
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-2) 0.25em;
 }
 
 .editor .ProseMirror .kindred-list-preview.kindred-list-side-theirs ul,

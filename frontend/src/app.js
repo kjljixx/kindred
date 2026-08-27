@@ -255,8 +255,10 @@ import {
       currentText,
       currentHtml,
     });
-    const marked =
-      unresolvedMergeConflictCount(currentHtml) > 0 ? currentHtml : "";
+    const unresolved = unresolvedMergeConflictCount(currentHtml);
+    const inConflictMode =
+      dirtyReviewing || (!!pendingMerge && unresolved > 0);
+    const marked = inConflictMode && unresolved > 0 ? currentHtml : "";
     const viewing = isViewingHistory();
     const conflictMode = dirtyReviewing ? "review" : "merge";
     const wasSuppressed = suppressEditorUpdate;
@@ -269,6 +271,7 @@ import {
           highlight: null,
           markedHtml: marked,
           conflictMode,
+          showConflictChrome: inConflictMode,
           formatHunks: [],
           imageDiffs: null,
         });
@@ -302,6 +305,7 @@ import {
           highlight: null,
           markedHtml: "",
           conflictMode,
+          showConflictChrome: inConflictMode,
           formatHunks,
           imageDiffs: imageDiffsFromOps(ops),
           tableDiffs: tableDiffsFromOps(ops),
@@ -315,6 +319,7 @@ import {
           showDiffs: false,
           markedHtml: "",
           conflictMode,
+          showConflictChrome: inConflictMode,
           formatHunks: [],
           imageDiffs: null,
           tableDiffs: null,
@@ -1675,6 +1680,17 @@ import {
       return;
     }
     if (pendingMerge && unresolvedMergeConflictCount(currentHtml) > 0) return;
+    if (
+      !pendingMerge &&
+      unresolvedMergeConflictCount(currentHtml) > 0
+    ) {
+      takeAllTheirsConflicts();
+      hasConflict = false;
+      workingDirty = true;
+      applyRevisionToEditor();
+      syncDirtyBodyFromCurrent();
+      persistActiveDraftSoon();
+    }
     dirtyViewMode = mode;
     renderGitPane();
     syncOverlayFromState();

@@ -2158,6 +2158,7 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
   const decorations = [];
   if (!meta) return DecorationSet.empty;
   const conflictMode = meta.conflictMode === "review" ? "review" : "merge";
+  const showConflictChrome = meta.showConflictChrome !== false;
 
   if (meta.conflicts && meta.conflicts.length) {
     let ci = 0;
@@ -2202,27 +2203,29 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     return DecorationSet.create(doc, decorations);
   }
 
-  appendAlignConflictDecorations(
-    doc,
-    decorations,
-    meta.onAlignConflictAction,
-    meta.alignPreview,
-    conflictMode
-  );
-  appendTableConflictDecorations(
-    doc,
-    decorations,
-    meta.onTableConflictAction,
-    meta.tablePreview,
-    conflictMode
-  );
-  appendListConflictDecorations(
-    doc,
-    decorations,
-    meta.onListConflictAction,
-    meta.listPreview,
-    conflictMode
-  );
+  if (showConflictChrome) {
+    appendAlignConflictDecorations(
+      doc,
+      decorations,
+      meta.onAlignConflictAction,
+      meta.alignPreview,
+      conflictMode
+    );
+    appendTableConflictDecorations(
+      doc,
+      decorations,
+      meta.onTableConflictAction,
+      meta.tablePreview,
+      conflictMode
+    );
+    appendListConflictDecorations(
+      doc,
+      decorations,
+      meta.onListConflictAction,
+      meta.listPreview,
+      conflictMode
+    );
+  }
 
   const baseline = meta.baseline || "";
   const currentPlain = meta.currentPlain || "";
@@ -2494,6 +2497,7 @@ const KindredOverlay = Extension.create({
               imageDiffs: null,
               tableDiffs: null,
               listDiffs: null,
+              showConflictChrome: false,
               decorations: DecorationSet.empty,
             };
           },
@@ -2510,6 +2514,7 @@ const KindredOverlay = Extension.create({
                 conflicts: next.conflicts,
                 markedHtml: next.markedHtml,
                 conflictMode: next.conflictMode,
+                showConflictChrome: next.showConflictChrome,
                 formatHunks: next.formatHunks,
                 imageDiffs: next.imageDiffs,
                 tableDiffs: next.tableDiffs,
@@ -2548,6 +2553,7 @@ const KindredOverlay = Extension.create({
                   imageDiffs: next.imageDiffs,
                   tableDiffs: next.tableDiffs,
                   listDiffs: next.listDiffs,
+                  showConflictChrome: next.showConflictChrome !== false,
                   onConflictAction: extension.options.onConflictAction,
                   onAlignConflictAction: extension.options.onAlignConflictAction,
                   onTableConflictAction: extension.options.onTableConflictAction,
@@ -3256,6 +3262,7 @@ export function refreshOverlay(editor, {
   showDiffs = true,
   markedHtml = "",
   conflictMode = "merge",
+  showConflictChrome = false,
   formatHunks = [],
   imageDiffs = null,
   tableDiffs = null,
@@ -3268,6 +3275,7 @@ export function refreshOverlay(editor, {
     currentPlain,
     showDiffs,
     conflictMode,
+    showConflictChrome,
     conflictCount: conflicts?.filter?.((segment) => segment.type === "conflict").length || 0,
     formatHunkCount: formatHunks.length,
     imageDiffs,
@@ -3282,6 +3290,7 @@ export function refreshOverlay(editor, {
     conflicts,
     markedHtml: conflicts ? markedHtml : "",
     conflictMode: conflictMode === "review" ? "review" : "merge",
+    showConflictChrome: conflicts ? true : showConflictChrome,
     formatHunks: conflicts ? [] : formatHunks,
     imageDiffs: conflicts ? null : imageDiffs,
     tableDiffs: conflicts ? null : tableDiffs,
