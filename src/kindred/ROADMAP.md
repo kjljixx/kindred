@@ -23,7 +23,6 @@ TODO
 - Pinning branches - each pinned branch gets a position index equal to the position they were originally in when pinned. When making the ordered list, pinned branches are sorted by their position index, and unpinned branches are sorted by last commit/access time. Unpinned branches are slotted in order into spots left empty by pinned branches.
 - Staging
 - Look at git-appraisal implementation for comments (or maybe tiptap comments are possible?)
-- After committing when esc/enter is pressed on commit message, focus editor
 - Review/Merge mode with arrow keys and enter?
 
 Import/Export

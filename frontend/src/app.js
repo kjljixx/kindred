@@ -565,6 +565,11 @@ import {
     tipTap?.setEditable(editable);
   }
 
+  function focusEditorSoon() {
+    if (!tipTap || !activeDraftId || isViewingHistory()) return;
+    requestAnimationFrame(() => tipTap?.commands.focus());
+  }
+
   function editorIsEmpty() {
     return !(currentText || "").trim();
   }
@@ -1509,6 +1514,7 @@ import {
       }
     }
     await refreshDraftList();
+    if (id === activeDraftId) focusEditorSoon();
   }
 
   draftListEl.addEventListener("click", (e) => {
@@ -1665,12 +1671,14 @@ import {
       syncMergeStatus();
       renderGitPane();
       syncOverlayFromState();
+      focusEditorSoon();
       return;
     }
     if (pendingMerge && unresolvedMergeConflictCount(currentHtml) > 0) return;
     dirtyViewMode = mode;
     renderGitPane();
     syncOverlayFromState();
+    focusEditorSoon();
   }
 
   async function enterDirtyReview() {
@@ -1721,6 +1729,7 @@ import {
     updateCommitBtn();
     persistActiveDraftSoon();
     renderGitPane();
+    focusEditorSoon();
   }
 
   function replaceConflictAt(index, replacement) {
@@ -3314,12 +3323,14 @@ import {
     const trimmed = String(value ?? "").trim();
     if (cancel || !trimmed) {
       renderGitPane();
+      focusEditorSoon();
       return;
     }
     try {
       if (current.kind === "commit") {
         if (current.key !== headOid) {
           renderGitPane();
+          focusEditorSoon();
           return;
         }
         const head = commits.find((c) => c.oid === current.key);
@@ -3347,6 +3358,7 @@ import {
     renderGitPane();
     await refreshWorkingDirty();
     refreshStatusLeft();
+    focusEditorSoon();
   }
 
   async function mergeIntoCurrent(name) {

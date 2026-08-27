@@ -180,6 +180,43 @@ class KindredPage:
   def wait_until_header_title(self, title: str) -> None:
     self.wait.until(lambda d: self.header_title() == title)
 
+  def wait_until_editor_focused(self) -> None:
+    self.wait.until(
+      lambda d: "ProseMirror-focused"
+      in (d.find_element(By.CSS_SELECTOR, "#editor .ProseMirror").get_attribute("class") or "")
+    )
+
+  def click_commit(self) -> None:
+    """Click Commit/Merge without dismissing post-commit message rename."""
+    self.switch_to_git()
+    self._wait_git_idle()
+    self.wait_until_commit_clickable()
+    label = self.commit_button_label()
+    if label not in ("Commit", "Merge"):
+      raise AssertionError(f"expected Commit/Merge button, got {label!r}")
+    before = len(self.driver.find_elements(By.CSS_SELECTOR, '#git-commit-list .git-row[data-git="view"]'))
+    clicked = self.driver.execute_script(
+      """
+      const btn = document.getElementById('commit-btn');
+      if (!btn || btn.disabled || btn.hidden) return false;
+      btn.click();
+      return true;
+      """
+    )
+    if not clicked:
+      raise TimeoutException("commit button not clickable")
+    self.wait.until(
+      lambda d: len(d.find_elements(By.CSS_SELECTOR, '#git-commit-list .git-row[data-git="view"]'))
+      > before
+    )
+    self._wait_git_idle()
+
+  def finish_commit_message_rename(self) -> None:
+    inp = self.wait.until(
+      EC.visibility_of_element_located((By.CSS_SELECTOR, "#git-commit-list .git-row-title-input"))
+    )
+    inp.send_keys(Keys.ENTER)
+
   def replace_editor_text(self, text: str) -> None:
     """Select all editor content and paste replacement plain text."""
     self.press_keys(Keys.CONTROL + "a")
