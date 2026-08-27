@@ -200,7 +200,8 @@ function mergeDocs(
         blockToHtml(ours),
         blockToHtml(theirs),
         labelOurs,
-        labelTheirs
+        labelTheirs,
+        leafMerge
       );
       if (granular) {
         cleanMerge = false;
@@ -213,7 +214,8 @@ function mergeDocs(
         blockToHtml(ours),
         blockToHtml(theirs),
         labelOurs,
-        labelTheirs
+        labelTheirs,
+        leafMerge
       );
       if (merged) {
         if (merged.conflictCount) cleanMerge = false;

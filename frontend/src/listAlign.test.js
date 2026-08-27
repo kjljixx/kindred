@@ -20,6 +20,22 @@ function listConflictsFromHtml(html) {
   return parseListConflicts(list?.getAttribute("data-kindred-list-conflicts"));
 }
 
+function countTextConflictMarkers(html) {
+  return (String(html || "").match(/data-kindred-text-conflict/g) || []).length;
+}
+
+function mockLeafMerge(_base, _ours, _theirs, labelOurs, labelTheirs) {
+  return {
+    cleanMerge: false,
+    mergedText:
+      `<p>Alpha <span data-kindred-text-conflict` +
+      ` data-kindred-label-ours="${labelOurs}"` +
+      ` data-kindred-label-theirs="${labelTheirs}"` +
+      ` data-kindred-ours="Beta"` +
+      ` data-kindred-theirs="Beta changed"></span> Gamma</p>`,
+  };
+}
+
 describe("diffList", () => {
   it("equal lists mark all items as equal", () => {
     const html = "<ul><li><p>Alpha</p></li><li><p>Beta</p></li><li><p>Gamma</p></li></ul>";
@@ -43,11 +59,36 @@ describe("createListReviewConflict", () => {
   it("one edit embeds inline text conflict, not list JSON content conflict", () => {
     const current = "<ul><li><p>Alpha</p></li><li><p>Beta</p></li></ul>";
     const dirty = "<ul><li><p>Alpha</p></li><li><p>Beta changed</p></li></ul>";
-    const html = createListReviewConflict(current, dirty, "Current", "Dirty");
+    const html = createListReviewConflict(
+      current,
+      dirty,
+      "Current",
+      "Dirty",
+      mockLeafMerge
+    );
     expect(html).toBeTruthy();
     expect(html).toContain("data-kindred-text-conflict");
     expect(html).toContain("Beta changed");
+    expect(countTextConflictMarkers(html)).toBe(1);
     expect(listConflictsFromHtml(html)).toBeNull();
+  });
+
+  it("one edit uses leaf merge for word-level conflict spans", () => {
+    const current =
+      "<ul><li><p>Alpha Beta Gamma</p></li></ul>";
+    const dirty =
+      "<ul><li><p>Alpha Beta changed Gamma</p></li></ul>";
+    const html = createListReviewConflict(
+      current,
+      dirty,
+      "Current",
+      "Dirty",
+      mockLeafMerge
+    );
+    expect(html).toBeTruthy();
+    expect(countTextConflictMarkers(html)).toBe(1);
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    expect(parsed.body.textContent.replace(/\s/g, "")).toBe("AlphaGamma");
   });
 
   it("new item produces an item conflict", () => {
@@ -106,11 +147,10 @@ describe("mergeListWithAlign", () => {
   it("embeds inline text conflict when both sides edit the same item", () => {
     const ours = "<ul><li><p>Alpha</p></li><li><p>Beta ours</p></li><li><p>Gamma</p></li></ul>";
     const theirs = "<ul><li><p>Alpha</p></li><li><p>Beta theirs</p></li><li><p>Gamma</p></li></ul>";
-    const merged = mergeListWithAlign(base, ours, theirs, "Ours", "Theirs");
+    const merged = mergeListWithAlign(base, ours, theirs, "Ours", "Theirs", mockLeafMerge);
     expect(merged.conflictCount).toBe(0);
     expect(merged.html).toContain("data-kindred-text-conflict");
-    expect(merged.html).toContain("Beta ours");
-    expect(merged.html).toContain("Beta theirs");
+    expect(countTextConflictMarkers(merged.html)).toBe(1);
     expect(listConflictsFromHtml(merged.html)).toBeNull();
   });
 });

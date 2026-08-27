@@ -246,6 +246,34 @@ function innerHtmlWithTextConflict(labelOurs, labelTheirs, oursHtml, theirsHtml)
   return `<p>${textConflictMarkup(labelOurs, ours, labelTheirs, theirs)}</p>`;
 }
 
+function innerHtmlFromLeafMerge(
+  leafMerge,
+  { review = false },
+  labelOurs,
+  labelTheirs,
+  baseHtml,
+  oursHtml,
+  theirsHtml
+) {
+  if (!leafMerge) {
+    return innerHtmlWithTextConflict(labelOurs, labelTheirs, oursHtml, theirsHtml);
+  }
+  const result = leafMerge(
+    baseHtml || "<p></p>",
+    oursHtml || "<p></p>",
+    theirsHtml || "<p></p>",
+    labelOurs,
+    labelTheirs,
+    { review, leaf: true }
+  );
+  const merged = result?.mergedText || oursHtml || "<p></p>";
+  return innerListItemHtml(merged) || merged;
+}
+
+function htmlHasTextConflictMarkers(html) {
+  return String(html || "").includes("data-kindred-text-conflict");
+}
+
 function liAtPath(listElement, path) {
   if (!listElement || !path?.length) return null;
   let list = listElement;
@@ -376,7 +404,8 @@ export function createListReviewConflict(
   currentHtml,
   dirtyHtml,
   currentLabel,
-  dirtyLabel
+  dirtyLabel,
+  leafMerge = null
 ) {
   const oursNode = listNodeFromDoc(currentHtml);
   const theirsNode = listNodeFromDoc(dirtyHtml);
@@ -399,18 +428,18 @@ export function createListReviewConflict(
       continue;
     }
 
-    const innerHtml =
-      item.action === "edit" || item.action === "move-edit"
-        ? innerHtmlWithTextConflict(
-            currentLabel,
-            dirtyLabel,
-            item.oldHtml,
-            item.newHtml
-          )
-        : displayInnerForItem(item);
-
+    let innerHtml = displayInnerForItem(item);
     if (item.action === "edit" || item.action === "move-edit") {
-      hasTextConflict = true;
+      innerHtml = innerHtmlFromLeafMerge(
+        leafMerge,
+        { review: true },
+        currentLabel,
+        dirtyLabel,
+        item.oldHtml,
+        item.oldHtml,
+        item.newHtml
+      );
+      if (htmlHasTextConflictMarkers(innerHtml)) hasTextConflict = true;
     }
 
     displayItems.push({
@@ -538,7 +567,8 @@ export function mergeListWithAlign(
   oursHtml,
   theirsHtml,
   oursLabel,
-  theirsLabel
+  theirsLabel,
+  leafMerge = null
 ) {
   const baseNode = listNodeFromDoc(baseHtml);
   const oursNode = listNodeFromDoc(oursHtml);
@@ -645,9 +675,12 @@ export function mergeListWithAlign(
       theirsEdited &&
       !sameListItemHtml(oursItem.newHtml, theirsItem.newHtml)
     ) {
-      displayItems[displayItems.length - 1].innerHtml = innerHtmlWithTextConflict(
+      displayItems[displayItems.length - 1].innerHtml = innerHtmlFromLeafMerge(
+        leafMerge,
+        { review: false },
         oursLabel,
         theirsLabel,
+        baseItem.html,
         oursItem.newHtml,
         theirsItem.newHtml
       );
