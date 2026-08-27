@@ -236,6 +236,17 @@ class GoogleDocsTestClient:
     response = self._batch_update([{"insertText": {"location": {"index": index}, "text": text}}])
     return response.get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
+  def append_to_paragraph_text(self, text: str, suffix: str) -> str:
+    for block in self.document().get("body", {}).get("content", []):
+      paragraph = block.get("paragraph", {})
+      paragraph_text = "".join(
+        element.get("textRun", {}).get("content", "")
+        for element in paragraph.get("elements", [])
+      ).rstrip("\n").lstrip("\t")
+      if paragraph_text == text:
+        return self.insert_text(index=block["endIndex"] - 1, text=suffix)
+    raise AssertionError(f"paragraph not found: {text!r}")
+
   def set_text_with_color(
     self,
     text: str,
@@ -373,6 +384,48 @@ class GoogleDocsTestClient:
       ]
     )
     response = self._batch_update(requests)
+    return response.get("writeControl", {}).get("requiredRevisionId", self.revision_id())
+
+  def reset_body(self) -> None:
+    document = self.document()
+    content = document.get("body", {}).get("content", [])
+    bullet_requests = [
+      {
+        "deleteParagraphBullets": {
+          "range": {
+            "startIndex": block["startIndex"],
+            "endIndex": block["endIndex"],
+          },
+        },
+      }
+      for block in content
+      if block.get("paragraph", {}).get("bullet")
+    ]
+    if bullet_requests:
+      self._batch_update(bullet_requests)
+    document = self.document()
+    content = document.get("body", {}).get("content", [])
+    end_index = content[-1].get("endIndex", 2) if content else 2
+    if end_index > 2:
+      self._batch_update([{
+        "deleteContentRange": {
+          "range": {"startIndex": 1, "endIndex": end_index - 1},
+        },
+      }])
+
+  def set_nested_bullet_list_outdent2(self) -> str:
+    self.reset_body()
+    response = self._batch_update([
+      {"insertText": {"location": {"index": 1}, "text": "ONE\nTWO\nTHREE"}},
+      {"insertText": {"location": {"index": 5}, "text": "\t"}},
+      {"insertText": {"location": {"index": 10}, "text": "\t\t"}},
+      {
+        "createParagraphBullets": {
+          "range": {"startIndex": 1, "endIndex": 15},
+          "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
+        },
+      },
+    ])
     return response.get("writeControl", {}).get("requiredRevisionId", self.revision_id())
 
 
@@ -812,6 +865,48 @@ def test_google_docs_ordered_list_downsyncs_to_kindred(kindred, google_docs):
   assert "<ol>" in kindred.editor_html()
   assert ">one</p>" in kindred.editor_html()
   assert ">two</p>" in kindred.editor_html()
+
+
+def test_google_docs_nested_bullet_list_downsyncs_to_kindred(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_nested_bullet_list_outdent2()
+  assert google_docs.paragraph_nesting_level("ONE") == 0
+  assert google_docs.paragraph_nesting_level("TWO") == 1
+  assert google_docs.paragraph_nesting_level("THREE") == 2
+  wait_for_editor_text(kindred, "ONETWOTHREE")
+  html = kindred.editor_html()
+  assert html.count("<ul>") >= 2
+  assert ">ONE</p>" in html
+  assert ">TWO</p>" in html
+  assert ">THREE</p>" in html
+
+
+def test_kindred_nested_list_roundtrip(kindred, google_docs):
+  kindred.open()
+  kindred.wait_until_ready()
+  kindred.replace_editor_text("seed")
+  kindred.wait_until_draft_active()
+  kindred.wait_for_sync_idle()
+  google_docs.set_text_with_bullets("one\ntwo")
+  wait_for_editor_text(kindred, "onetwo")
+  kindred.wait_for_sync_idle()
+
+  kindred.select_editor_text(4, 4)
+  kindred.send_active_keys(Keys.TAB)
+  kindred.wait_for_sync_idle()
+  assert google_docs.paragraph_nesting_level("two") == 1
+  assert kindred.editor_html().count("<ul>") >= 2
+
+  kindred.pause_sync()
+  google_docs.append_to_paragraph_text("two", "!")
+  assert "two!" in google_docs.body_text()
+  kindred.resume_sync()
+  wait_for_editor_text(kindred, "onetwo!")
+  assert kindred.editor_html().count("<ul>") >= 2
 
 
 def test_google_docs_font_color_downsyncs_to_kindred(kindred, google_docs):

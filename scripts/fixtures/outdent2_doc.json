@@ -1,0 +1,134 @@
+﻿{
+  "documentId": "1sADU8OrbDmZW1VyuaARqjVNjmWLHl2wWl3R71WkCEDI",
+  "revisionId": "AIroW37f_z2ITqVxFDmHKGDDttkuIK-e1HR0hWmLwzZb97Om8g6kUWi3qnhzuh3hZUA1reHQg4whqOXAF0aE0wYHCK25zTxgZ1iT2nq6kq7ifFM",
+  "suggestionsViewMode": "SUGGESTIONS_INLINE",
+  "body": {
+    "content": [
+      {
+        "endIndex": 1,
+        "sectionBreak": {
+          "sectionStyle": {
+            "columnSeparatorStyle": "NONE",
+            "contentDirection": "LEFT_TO_RIGHT",
+            "sectionType": "CONTINUOUS"
+          }
+        }
+      },
+      {
+        "startIndex": 1,
+        "endIndex": 5,
+        "paragraph": {
+          "elements": [
+            {
+              "startIndex": 1,
+              "endIndex": 5,
+              "textRun": {
+                "content": "ONE\n",
+                "textStyle": {}
+              }
+            }
+          ],
+          "paragraphStyle": {
+            "namedStyleType": "NORMAL_TEXT",
+            "alignment": "START",
+            "direction": "LEFT_TO_RIGHT",
+            "indentFirstLine": {
+              "magnitude": 18,
+              "unit": "PT"
+            },
+            "indentStart": {
+              "magnitude": 36,
+              "unit": "PT"
+            }
+          },
+          "bullet": {
+            "listId": "kix.pcqif6f627g2",
+            "textStyle": {
+              "underline": false
+            }
+          }
+        }
+      },
+      {
+        "startIndex": 5,
+        "endIndex": 9,
+        "paragraph": {
+          "elements": [
+            {
+              "startIndex": 5,
+              "endIndex": 9,
+              "textRun": {
+                "content": "TWO\n",
+                "textStyle": {}
+              }
+            }
+          ],
+          "paragraphStyle": {
+            "namedStyleType": "NORMAL_TEXT",
+            "alignment": "START",
+            "direction": "LEFT_TO_RIGHT",
+            "indentFirstLine": {
+              "magnitude": 54,
+              "unit": "PT"
+            },
+            "indentStart": {
+              "magnitude": 72,
+              "unit": "PT"
+            }
+          },
+          "bullet": {
+            "listId": "kix.pcqif6f627g2",
+            "nestingLevel": 1,
+            "textStyle": {
+              "underline": false
+            }
+          }
+        }
+      },
+      {
+        "startIndex": 9,
+        "endIndex": 15,
+        "paragraph": {
+          "elements": [
+            {
+              "startIndex": 9,
+              "endIndex": 14,
+              "textRun": {
+                "content": "THREE",
+                "textStyle": {}
+              }
+            },
+            {
+              "startIndex": 14,
+              "endIndex": 15,
+              "textRun": {
+                "content": "\n",
+                "textStyle": {}
+              }
+            }
+          ],
+          "paragraphStyle": {
+            "namedStyleType": "NORMAL_TEXT",
+            "alignment": "START",
+            "direction": "LEFT_TO_RIGHT",
+            "indentFirstLine": {
+              "magnitude": 90,
+              "unit": "PT"
+            },
+            "indentStart": {
+              "magnitude": 108,
+              "unit": "PT"
+            }
+          },
+          "bullet": {
+            "listId": "kix.pcqif6f627g2",
+            "nestingLevel": 2,
+            "textStyle": {
+              "underline": false
+            }
+          }
+        }
+      }
+    ]
+  }
+}

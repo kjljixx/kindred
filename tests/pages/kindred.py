@@ -387,6 +387,11 @@ class KindredPage:
   def resume_sync(self) -> None:
     self.driver.execute_script("window.__syncTest.resume();")
 
+  def pull_from_google_docs(self) -> None:
+    self.driver.execute_async_script(
+      "window.__syncTest.pull().then(() => arguments[arguments.length - 1]());"
+    )
+
   def wait_for_sync_idle(self) -> None:
     self.wait.until(
       lambda d: (

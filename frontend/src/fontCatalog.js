@@ -1,4 +1,4 @@
-import googleFontsLatin from "./googleFontsLatin.json";
+import googleFontsLatin from "./googleFontsLatin.json" with { type: "json" };
 
 export const DEFAULT_FONT_NAME = "Noto Sans";
 export const DEFAULT_FONT_FAMILY = `'${DEFAULT_FONT_NAME}', sans-serif`;

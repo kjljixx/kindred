@@ -222,6 +222,9 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
     resume() {
       syncPausedForTest = false;
     },
+    async pull() {
+      await pullFromGoogleDocs();
+    },
     getState() {
       return getSyncState();
     },
