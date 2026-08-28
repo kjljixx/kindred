@@ -4278,11 +4278,11 @@ import {
   
       const key = e.key.toLowerCase();
 
-      if (key === ";" && compactLayout.matches) {
+      if (key === ";") {
         e.preventDefault();
         e.stopPropagation();
-        setWorkspace("draft");
-        requestAnimationFrame(() => tipTap?.commands.focus());
+        if (compactLayout.matches) setWorkspace("draft");
+        focusEditorSoon();
       }
       else if (key === "[") {
         if (activeDraftId) {
