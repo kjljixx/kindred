@@ -8,6 +8,7 @@ import {
   plainToHtml,
   conflictDisplayHtml,
   parseConflictSegments,
+  resolveBlockStateConflicts,
   conflictMarkerCount,
   htmlHasAlignConflict,
   htmlHasTableConflict,
@@ -810,7 +811,7 @@ import {
   /** Resolve conflict HTML to one side (ours = base branch, theirs = incoming/dirty). */
   function htmlTakingSide(sourceHtml, side) {
     const takeTheirs = side === "theirs";
-    let html = sourceHtml || "<p></p>";
+    let html = resolveBlockStateConflicts(sourceHtml || "<p></p>", side);
   
     // 1. Resolve inline text conflicts
     const segments = parseConflictSegments(html);
@@ -1877,30 +1878,36 @@ import {
     focusEditorSoon();
   }
 
-  function replaceConflictAt(index, replacement) {
-    const segments = parseConflictSegments(currentHtml);
-    if (!segments) return;
-    let conflictI = 0;
-    const parts = [];
-    for (const seg of segments) {
-      if (seg.type === "text") {
-        parts.push(seg.text);
-        continue;
+  function replaceConflictAt(index, replacement, blockSide = "") {
+    if (blockSide) {
+      currentHtml = resolveBlockStateConflicts(currentHtml, blockSide, index);
+    } else {
+      const segments = parseConflictSegments(currentHtml);
+      if (!segments) return;
+      let conflictI = 0;
+      const parts = [];
+      for (const seg of segments) {
+        if (seg.type === "text") {
+          parts.push(seg.text);
+          continue;
+        }
+        if (conflictI === index) parts.push(replacement);
+        else {
+          parts.push(
+            formatConflictMarkers(
+              seg.oursLabel,
+              seg.ours,
+              seg.theirsLabel,
+              seg.theirs,
+              seg.oursState,
+              seg.theirsState
+            )
+          );
+        }
+        conflictI++;
       }
-      if (conflictI === index) parts.push(replacement);
-      else {
-        parts.push(
-          formatConflictMarkers(
-            seg.oursLabel,
-            seg.ours,
-            seg.theirsLabel,
-            seg.theirs
-          )
-        );
-      }
-      conflictI++;
+      currentHtml = parts.join("");
     }
-    currentHtml = parts.join("");
     workingDirty = true;
     applyRevisionToEditor();
     syncDirtyBodyFromCurrent();
@@ -1919,10 +1926,18 @@ import {
     const seg = conflicts[index];
     if (!seg) return;
     if (action === "ours") {
+      if (seg.oursState === "deleted" || seg.theirsState === "deleted") {
+        replaceConflictAt(index, "", "ours");
+        return;
+      }
       replaceConflictAt(index, seg.ours);
       return;
     }
     if (action === "theirs") {
+      if (seg.oursState === "deleted" || seg.theirsState === "deleted") {
+        replaceConflictAt(index, "", "theirs");
+        return;
+      }
       replaceConflictAt(index, seg.theirs);
       return;
     }

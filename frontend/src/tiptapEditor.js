@@ -376,13 +376,22 @@ function ensureHtml(content) {
 }
 
 /** Structured text-conflict node (not git textual markers). */
-export function formatConflictMarkers(labelOurs, oursStr, labelTheirs, theirsStr) {
+export function formatConflictMarkers(
+  labelOurs,
+  oursStr,
+  labelTheirs,
+  theirsStr,
+  oursState = "",
+  theirsState = ""
+) {
   return (
     `<span data-kindred-text-conflict` +
     ` data-kindred-label-ours="${escapeHtml(labelOurs)}"` +
     ` data-kindred-label-theirs="${escapeHtml(labelTheirs)}"` +
     ` data-kindred-ours="${escapeHtml(oursStr)}"` +
     ` data-kindred-theirs="${escapeHtml(theirsStr)}"` +
+    (oursState ? ` data-kindred-ours-state="${escapeHtml(oursState)}"` : "") +
+    (theirsState ? ` data-kindred-theirs-state="${escapeHtml(theirsState)}"` : "") +
     `></span>`
   );
 }
@@ -405,6 +414,8 @@ function parseStructuredConflictSegments(html) {
     theirsLabel: el.getAttribute("data-kindred-label-theirs") || "",
     ours: el.getAttribute("data-kindred-ours") || "",
     theirs: el.getAttribute("data-kindred-theirs") || "",
+    oursState: el.getAttribute("data-kindred-ours-state") || "",
+    theirsState: el.getAttribute("data-kindred-theirs-state") || "",
   }));
 
   const ph = (i) => `\uE000KINDRED_TC_${i}\uE000`;
@@ -426,6 +437,39 @@ function parseStructuredConflictSegments(html) {
 /** Parse structured text conflicts. */
 export function parseConflictSegments(text) {
   return parseStructuredConflictSegments(text);
+}
+
+export function resolveBlockStateConflicts(html, side, targetIndex = null) {
+  const doc = new DOMParser().parseFromString(
+    `<div id="__kindred_block_conflicts">${html || ""}</div>`,
+    "text/html"
+  );
+  const root = doc.getElementById("__kindred_block_conflicts");
+  if (!root) return html || "<p></p>";
+
+  const markers = [...root.querySelectorAll("[data-kindred-text-conflict]")];
+  markers.forEach((marker, index) => {
+    if (targetIndex != null && index !== targetIndex) return;
+    const oursState = marker.getAttribute("data-kindred-ours-state") || "";
+    const theirsState = marker.getAttribute("data-kindred-theirs-state") || "";
+    if (oursState !== "deleted" && theirsState !== "deleted") return;
+
+    const shell = marker.parentElement?.tagName === "P" ? marker.parentElement : marker;
+    const state = marker.getAttribute(`data-kindred-${side}-state`) || "";
+    const chosen = marker.getAttribute(`data-kindred-${side}`) || "";
+    if (state === "deleted" || !chosen.trim()) {
+      shell.remove();
+      return;
+    }
+
+    const replacementRoot = doc.createElement("div");
+    replacementRoot.innerHTML = chosen;
+    const replacements = [...replacementRoot.childNodes]
+      .map((node) => doc.importNode(node, true));
+    shell.replaceWith(...replacements);
+  });
+
+  return root.innerHTML || "<p></p>";
 }
 
 export function conflictMarkerCount(text) {
@@ -626,7 +670,9 @@ export function mergeCleanEditsIntoMarked(markedHtml, tipTapHtml) {
       seg.oursLabel,
       seg.ours,
       seg.theirsLabel,
-      seg.theirs
+      seg.theirs,
+      seg.oursState,
+      seg.theirsState
     );
     if (!out.includes(ph(i))) return null;
     out = out.split(ph(i)).join(markers);
@@ -806,6 +852,8 @@ function createConflictWidget(seg, index, onAction, conflictMode = "merge") {
     wrap.dataset.conflictIndex = String(index);
     wrap.dataset.oursLabel = seg.oursLabel;
     wrap.dataset.theirsLabel = seg.theirsLabel;
+    if (seg.oursState) wrap.dataset.oursState = seg.oursState;
+    if (seg.theirsState) wrap.dataset.theirsState = seg.theirsState;
 
     const formatOnly = isFormatOnlyConflict(seg.ours, seg.theirs);
     const review = conflictMode === "review";
@@ -2185,7 +2233,7 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
             createConflictWidget(seg, ci, meta.onConflictAction, conflictMode),
             {
               side: 0,
-              key: `conflict-${ci}:${conflictMode}:${String(seg.ours || "").slice(0, 40)}|${String(seg.theirs || "").slice(0, 40)}`,
+              key: `conflict-${ci}:${conflictMode}:${seg.oursState}|${seg.theirsState}:${String(seg.ours || "").slice(0, 40)}|${String(seg.theirs || "").slice(0, 40)}`,
             }
           )
         );

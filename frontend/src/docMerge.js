@@ -14,7 +14,7 @@ import {
   mergeListWithAlign,
 } from "./listAlign.js";
 
-function formatConflict(labelOurs, oursStr, labelTheirs, theirsStr) {
+function formatConflict(labelOurs, oursStr, labelTheirs, theirsStr, deletedSide = "") {
   const esc = (value) =>
     String(value ?? "")
       .replace(/&/g, "&amp;")
@@ -26,6 +26,7 @@ function formatConflict(labelOurs, oursStr, labelTheirs, theirsStr) {
     ` data-kindred-label-theirs="${esc(labelTheirs)}"` +
     ` data-kindred-ours="${esc(oursStr)}"` +
     ` data-kindred-theirs="${esc(theirsStr)}"` +
+    (deletedSide ? ` data-kindred-${deletedSide}-state="deleted"` : "") +
     `></span>`
   );
 }
@@ -160,7 +161,26 @@ function mergeDocs(
     const theirsHtml = blockToHtml(theirsNode);
     // Whole-block conflict inside a paragraph shell for TipTap display.
     return wrapPara(
-      formatConflict(labelOurs, oursHtml, labelTheirs, theirsHtml)
+      formatConflict(
+        labelOurs,
+        oursNode ? oursHtml : "",
+        labelTheirs,
+        theirsNode ? theirsHtml : "",
+        oursNode ? (theirsNode ? "" : "theirs") : "ours"
+      )
+    );
+  }
+
+  function deletedParagraphConflict(oursNode, theirsNode) {
+    cleanMerge = false;
+    return wrapPara(
+      formatConflict(
+        labelOurs,
+        oursNode ? blockToHtml(oursNode) : "",
+        labelTheirs,
+        theirsNode ? blockToHtml(theirsNode) : "",
+        oursNode ? "theirs" : "ours"
+      )
     );
   }
 
@@ -292,7 +312,7 @@ function mergeDocs(
           } else if (isAtomicBlock(op.node)) {
             parts.push(conflictBlock(op.node, null));
           } else {
-            parts.push(leaf("<p></p>", blockToHtml(op.node), "<p></p>"));
+            parts.push(deletedParagraphConflict(op.node, null));
           }
         } else {
           parts.push(blockToHtml(op.node));
@@ -309,7 +329,7 @@ function mergeDocs(
         } else if (isAtomicBlock(op.node)) {
           parts.push(conflictBlock(null, op.node));
         } else {
-          parts.push(leaf("<p></p>", "<p></p>", blockToHtml(op.node)));
+          parts.push(deletedParagraphConflict(null, op.node));
         }
       } else {
         parts.push(blockToHtml(op.node));
@@ -330,13 +350,7 @@ function mergeDocs(
           } else if (isAtomicBlock(op.ours || op.base)) {
             parts.push(conflictBlock(op.ours || op.base, null));
           } else {
-            parts.push(
-              leaf(
-                blockToHtml(op.base),
-                blockToHtml(op.ours || op.base),
-                "<p></p>"
-              )
-            );
+            parts.push(deletedParagraphConflict(op.ours || op.base, null));
           }
         } else if (nodesMatchBase(op.ours, op.base)) {
           logDecision(op, "drop-deleted-base");
@@ -367,13 +381,7 @@ function mergeDocs(
         } else if (isAtomicBlock(op.theirs || op.base)) {
           parts.push(conflictBlock(null, op.theirs || op.base));
         } else {
-          parts.push(
-            leaf(
-              blockToHtml(op.base),
-              "<p></p>",
-              blockToHtml(op.theirs || op.base)
-            )
-          );
+          parts.push(deletedParagraphConflict(null, op.theirs || op.base));
         }
       } else if (nodesMatchBase(op.theirs, op.base)) {
         logDecision(op, "drop-deleted-base");

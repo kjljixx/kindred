@@ -1,0 +1,1 @@
+- Build frontend with `npm run build`
