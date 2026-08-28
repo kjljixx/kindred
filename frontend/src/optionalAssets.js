@@ -56,11 +56,11 @@ export function loadColoris() {
         format: "hex",
         swatches: [
           "#d4d4d4",
-          "rgba(255, 235, 59, 1.0)",
-          "rgba(76, 175, 80, 1.0)",
-          "rgba(33, 150, 243, 1.0)",
-          "rgba(233, 30, 99, 1.0)",
-          "rgba(156, 39, 176, 1.0)",
+          "#ff9687",
+          "#e9cd64",
+          "#87e29e",
+          "#98e0ff",
+          "#e1aaff"
         ],
       });
     
@@ -69,11 +69,12 @@ export function loadColoris() {
         alpha: false,
         format: "mixed",
         swatches: [
-          "rgba(117, 114, 12, 1.0)",
-          "rgba(0, 111, 0, 1.0)",
-          "rgba(0, 93, 93, 1.0)",
-          "rgba(255, 75, 75, 1.0)",
-          "rgba(252, 0, 252, 1.0)",
+          "#75720c",
+          "#b23434",
+          "#006f00",
+          "#005d5d",
+          "#af00af",
+          "#545454",
         ],
       });
     }).catch((error) => {
