@@ -92,3 +92,179 @@ describe("review deletion semantics", () => {
     expect(resolved).not.toContain("<p><p>");
   });
 });
+
+const imageSrc = (hex) => `kindred-image:assets/${hex.repeat(64)}.png`;
+
+function imageHtml(src, alt, title) {
+  return `<img src="${src}" alt="${alt}" title="${title}">`;
+}
+
+function reviewImageMerge(base, current, incoming) {
+  return mergeHtmlViaAst(
+    base,
+    current,
+    incoming,
+    "HEAD",
+    "dirty",
+    { review: true },
+    () => ({ cleanMerge: false, mergedText: "" })
+  );
+}
+
+function conflictImages(html) {
+  const doc = new DOMParser().parseFromString(
+    `<div>${html}</div>`,
+    "text/html"
+  );
+  return [...doc.querySelectorAll("img")];
+}
+
+function expectImageSide(html, expected) {
+  const images = conflictImages(html);
+  expect(images).toHaveLength(1);
+  expect(images[0].getAttribute("src")).toBe(expected.src);
+  expect(images[0].getAttribute("alt")).toBe(expected.alt);
+  expect(images[0].getAttribute("title")).toBe(expected.title);
+}
+
+describe("review image conflicts", () => {
+  it("represents review image insertion as one atomic conflict", () => {
+    const incoming = {
+      src: imageSrc("a"),
+      alt: "Incoming diagram",
+      title: "Dirty diagram",
+    };
+    const result = reviewImageMerge(
+      "<p>Before</p>",
+      "<p>Before</p>",
+      `<p>Before</p>${imageHtml(incoming.src, incoming.alt, incoming.title)}`
+    );
+    const conflicts = parseConflictSegments(result.mergedText).filter(
+      (segment) => segment.type === "conflict"
+    );
+
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].oursState).toBe("deleted");
+    expect(conflicts[0].theirsState).toBe("");
+    expectImageSide(conflicts[0].theirs, incoming);
+    expect(conflictImages(conflicts[0].ours)).toHaveLength(0);
+  });
+
+  it("represents review image deletion as one atomic conflict", () => {
+    const current = {
+      src: imageSrc("b"),
+      alt: "Current chart",
+      title: "HEAD chart",
+    };
+    const base = `<p>Before</p>${imageHtml(current.src, current.alt, current.title)}<p>After</p>`;
+    const result = reviewImageMerge(
+      base,
+      base,
+      "<p>Before</p><p>After</p>"
+    );
+    const conflicts = parseConflictSegments(result.mergedText).filter(
+      (segment) => segment.type === "conflict"
+    );
+
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].oursState).toBe("");
+    expect(conflicts[0].theirsState).toBe("deleted");
+    expectImageSide(conflicts[0].ours, current);
+    expect(conflictImages(conflicts[0].theirs)).toHaveLength(0);
+  });
+
+  it("represents review image replacement as one atomic conflict", () => {
+    const original = {
+      src: imageSrc("c"),
+      alt: "Original photo",
+      title: "Base photo",
+    };
+    const current = {
+      src: imageSrc("d"),
+      alt: "Current photo",
+      title: "HEAD photo",
+    };
+    const incoming = {
+      src: imageSrc("e"),
+      alt: "Incoming photo",
+      title: "Dirty photo",
+    };
+    const result = reviewImageMerge(
+      imageHtml(original.src, original.alt, original.title),
+      imageHtml(current.src, current.alt, current.title),
+      imageHtml(incoming.src, incoming.alt, incoming.title)
+    );
+    const conflicts = parseConflictSegments(result.mergedText).filter(
+      (segment) => segment.type === "conflict"
+    );
+
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].oursState).toBe("");
+    expect(conflicts[0].theirsState).toBe("");
+    expectImageSide(conflicts[0].ours, current);
+    expectImageSide(conflicts[0].theirs, incoming);
+  });
+
+  it("preserves selected image HTML when resolving an image conflict", () => {
+    const current = {
+      src: imageSrc("f"),
+      alt: "Current map",
+      title: "HEAD map",
+    };
+    const base = `<p>Before</p>${imageHtml(current.src, current.alt, current.title)}<p>After</p>`;
+    const result = reviewImageMerge(
+      base,
+      base,
+      "<p>Before</p><p>After</p>"
+    );
+    const resolved = resolveBlockStateConflicts(result.mergedText, "ours");
+
+    expectImageSide(resolved, current);
+    expect(resolved).toContain("<p>Before</p>");
+    expect(resolved).toContain("<p>After</p>");
+  });
+
+  it("removes an inserted image without leaving an empty paragraph", () => {
+    const incoming = {
+      src: imageSrc("a"),
+      alt: "Dirty logo",
+      title: "Incoming logo",
+    };
+    const result = reviewImageMerge(
+      "<p>Before</p>",
+      "<p>Before</p>",
+      `<p>Before</p>${imageHtml(incoming.src, incoming.alt, incoming.title)}`
+    );
+    const resolved = resolveBlockStateConflicts(result.mergedText, "ours");
+    const doc = new DOMParser().parseFromString(resolved, "text/html");
+
+    expect(doc.querySelectorAll("img")).toHaveLength(0);
+    expect([...doc.querySelectorAll("p")].map((paragraph) => paragraph.textContent)).toEqual([
+      "Before",
+    ]);
+    expect(resolved).not.toContain("<p></p>");
+  });
+
+  it("removes a deleted image without leaving an empty paragraph", () => {
+    const current = {
+      src: imageSrc("b"),
+      alt: "Current logo",
+      title: "HEAD logo",
+    };
+    const base = `<p>Before</p>${imageHtml(current.src, current.alt, current.title)}<p>After</p>`;
+    const result = reviewImageMerge(
+      base,
+      base,
+      "<p>Before</p><p>After</p>"
+    );
+    const resolved = resolveBlockStateConflicts(result.mergedText, "theirs");
+    const doc = new DOMParser().parseFromString(resolved, "text/html");
+
+    expect(doc.querySelectorAll("img")).toHaveLength(0);
+    expect([...doc.querySelectorAll("p")].map((paragraph) => paragraph.textContent)).toEqual([
+      "Before",
+      "After",
+    ]);
+    expect(resolved).not.toContain("<p></p>");
+  });
+});

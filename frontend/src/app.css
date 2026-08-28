@@ -2511,7 +2511,7 @@ button.pane-title {
 }
 
 .merge-conflict-btn:hover {
-  background: var(--neutral-700);
+  filter: brightness(1.4);
 }
 
 .merge-conflict-ours {
@@ -2519,20 +2519,65 @@ button.pane-title {
   color: var(--orange-text);
 }
 
-.merge-conflict-ours:hover {
-  background: var(--orange-bg);
-  color: var(--orange-text);
-  filter: brightness(1.15);
-}
-
 .merge-conflict-theirs {
   background: var(--blue-bg);
   color: var(--blue-text);
 }
 
-.merge-conflict-theirs:hover {
-  background: hsla(217, 91%, 60%, 0.28);
-  color: var(--primary-300);
+.merge-image-conflict {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  align-items: stretch;
+  gap: var(--space-3);
+  width: 100%;
+  margin: var(--space-4) 0;
+  line-height: var(--line-height-2);
+}
+
+.merge-image-conflict .merge-conflict-btn {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: 8rem;
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-2);
+  text-align: center;
+  vertical-align: top;
+  white-space: normal;
+}
+
+.editor .ProseMirror .merge-image-conflict .merge-conflict-btn img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 10rem;
+  height: auto;
+  margin: 0;
+  border-radius: var(--radius-1);
+  object-fit: contain;
+}
+
+.merge-image-conflict .merge-conflict-file-name {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: var(--font-size-2);
+  font-weight: var(--font-weight-2);
+  line-height: var(--line-height-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.merge-image-conflict .merge-conflict-btn:hover {
+  filter: brightness(1.4);
 }
 
 /* Inline mark styles (color/font-size/font-family) beat button chrome via cascade. */
@@ -2547,11 +2592,6 @@ button.pane-title {
   font-style: normal;
   text-decoration: none;
   padding: var(--space-1) var(--space-2);
-}
-
-.merge-conflict-both:hover {
-  color: var(--color-text);
-  background: var(--neutral-700);
 }
 
 .editor .ProseMirror-hideselection,

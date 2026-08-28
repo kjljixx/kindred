@@ -287,6 +287,7 @@ import {
           formatHunks: [],
           imageDiffs: null,
         });
+        if (store) void store.hydrateImageElements(activeDraftId, editor, viewingOid);
       } else if (dirtyViewMode === "Diff") {
         // Dirty: vs HEAD. History: vs previous commit (baseline set by loadSnapshotState).
         const basePlain = viewing ? baseline : headPlain;

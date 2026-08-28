@@ -245,6 +245,72 @@ const CONFLICT_PREVIEW_TAGS = new Set([
   "BR",
 ]);
 
+const SAFE_CONFLICT_IMAGE_SRC = /^(?:https?:|data:image\/|kindred-image:assets\/[a-f0-9]{64}\.[a-z0-9]+)$/i;
+
+function conflictImageFromHtml(html) {
+  const root = document.createElement("div");
+  root.innerHTML = String(html || "");
+  let image = null;
+  let valid = true;
+
+  function walk(node) {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        if (child.nodeValue?.trim()) valid = false;
+        continue;
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) {
+        valid = false;
+        continue;
+      }
+      if (child.tagName === "IMG") {
+        if (image) valid = false;
+        image = child;
+        continue;
+      }
+      if (child.tagName !== "P" && child.tagName !== "DIV") valid = false;
+      walk(child);
+    }
+  }
+
+  walk(root);
+  const src = image?.getAttribute("src") || "";
+  if (!valid || !image || !SAFE_CONFLICT_IMAGE_SRC.test(src)) return null;
+  return {
+    src,
+    alt: image.getAttribute("alt") || "",
+    title: image.getAttribute("title") || "",
+  };
+}
+
+/** True when both conflict sides are whole image blocks (or one side is absent). */
+export function isImageOnlyConflictSegment(segment) {
+  if (!segment || segment.type !== "conflict") return false;
+  const ours = conflictImageFromHtml(segment.ours);
+  const theirs = conflictImageFromHtml(segment.theirs);
+  const oursEmpty = !stripHtml(segment.ours);
+  const theirsEmpty = !stripHtml(segment.theirs);
+  return Boolean((ours || theirs) && (ours || oursEmpty) && (theirs || theirsEmpty));
+}
+
+function fillImageConflictBtn(button, image, sideLabel, html) {
+  button.innerHTML = "";
+  const fileNames = conflictFileNames(html);
+  const name = fileNames[0] || image?.alt || "";
+  button.setAttribute("aria-label", image ? `${sideLabel}: ${name || "Image"}` : `${sideLabel}: Remove`);
+  if (!image) {
+    button.textContent = "Remove";
+    return;
+  }
+
+  const preview = document.createElement("img");
+  preview.setAttribute("src", image.src);
+  preview.alt = image.alt || `${sideLabel} image`;
+  if (image.title) preview.title = image.title;
+  button.appendChild(preview);
+  if (fileNames.length) appendConflictFileNames(button, fileNames);
+}
+
 /** Inline-safe HTML for conflict button labels (TipTap marks only). */
 function conflictPreviewHtml(html) {
   const tmp = document.createElement("div");
@@ -261,10 +327,11 @@ function conflictPreviewHtml(html) {
       const tag = child.tagName;
       if (tag === "IMG") {
         const src = child.getAttribute("src");
-        if (!src || !/^(https?:|data:image\/)/i.test(src)) continue;
+        if (!src || !SAFE_CONFLICT_IMAGE_SRC.test(src)) continue;
         const image = document.createElement("img");
-        image.src = src;
+        image.setAttribute("src", src);
         image.alt = child.getAttribute("alt") || "Image";
+        if (child.getAttribute("title")) image.title = child.getAttribute("title");
         into.appendChild(image);
         continue;
       }
@@ -857,6 +924,38 @@ function createConflictWidget(seg, index, onAction, conflictMode = "merge") {
 
     const formatOnly = isFormatOnlyConflict(seg.ours, seg.theirs);
     const review = conflictMode === "review";
+    const imageOnly = isImageOnlyConflictSegment(seg);
+
+    if (imageOnly) {
+      const oursImage = conflictImageFromHtml(seg.ours);
+      const theirsImage = conflictImageFromHtml(seg.theirs);
+      const theirsLabel = review ? "Dirty" : "Incoming";
+      wrap.className = "merge-conflict merge-image-conflict";
+      wrap.setAttribute("role", "group");
+      wrap.setAttribute("aria-label", "Image conflict");
+
+      const makeImageBtn = (image, action, side, label) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "merge-conflict-btn merge-conflict-" + side + " merge-image-conflict-btn";
+        button.title = image ? "Keep " + label : label + ": Remove";
+        button.dataset.conflictAction = action;
+        button.dataset.conflictIndex = String(index);
+        fillImageConflictBtn(button, image, label, image ? (action === "ours" ? seg.ours : seg.theirs) : "");
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onAction?.(action, index);
+        });
+        return button;
+      };
+
+      wrap.append(
+        makeImageBtn(oursImage, "ours", "ours", "Current"),
+        makeImageBtn(theirsImage, "theirs", "theirs", theirsLabel)
+      );
+      return wrap;
+    }
 
     const oursBtn = document.createElement("button");
     oursBtn.type = "button";
