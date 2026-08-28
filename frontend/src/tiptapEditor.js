@@ -29,6 +29,22 @@ import {
 
 const keptSelectionKey = new PluginKey("keptSelection");
 
+function storedMarksMatchLocked(storedMarks, lockedMarksJson, schema) {
+  if (!lockedMarksJson?.length) return true;
+  const expected = lockedMarksJson.map((mark) => schema.markFromJSON(mark));
+  if (!storedMarks) return false;
+  if (storedMarks.length !== expected.length) return false;
+  return expected.every((mark, index) => storedMarks[index].eq(mark));
+}
+
+const formatLockPluginKey = new PluginKey("formatLock");
+
+/** Shared with createKindredEditor handleTextInput (bindToolbar keeps in sync). */
+const formatLockRuntime = {
+  enabled: false,
+  lockedMarks: null,
+};
+
 function createKeptCaretWidget() {
   const el = document.createElement("span");
   el.className = "toolbar-kept-caret";
@@ -60,7 +76,7 @@ const TabIndent = Extension.create({
     return {
       Tab: () => {
         if (this.editor.isActive("listItem")) {
-          return this.editor.commands.sinkListItem();
+          return this.editor.commands.sinkListItem("listItem");
         }
         return this.editor.commands.insertContent("\t");
       },
@@ -2950,22 +2966,47 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
       formatLockButton?.classList.toggle("is-active", false);
       formatLockButton?.setAttribute("aria-pressed", "false");
     }
+    syncFormatLockRuntime();
     syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
   };
 
   const rememberCurrentFormatting = () => {
     const { state } = editor;
     lockedMarks = (state.storedMarks || state.selection.$from.marks()).map((mark) => mark.toJSON());
+    syncFormatLockRuntime();
   };
+  const lockedMarkInstances = () =>
+    lockedMarks?.map((mark) => editor.schema.markFromJSON(mark)) || null;
+
+  const syncFormatLockRuntime = () => {
+    formatLockRuntime.enabled = formatLock;
+    formatLockRuntime.lockedMarks =
+      formatLock && lockedMarks?.length ? lockedMarks : null;
+  };
+
   const applyLockedFormatting = () => {
     if (!formatLock || !lockedMarks) return;
-    const marks = lockedMarks.map((mark) => editor.schema.markFromJSON(mark));
+    const marks = lockedMarkInstances();
+    if (storedMarksMatchLocked(editor.state.storedMarks, lockedMarks, editor.schema)) return;
     editor.view.dispatch(editor.state.tr.setStoredMarks(marks).setMeta("addToHistory", false));
   };
+
+  const formatLockPlugin = new Plugin({
+    key: formatLockPluginKey,
+    appendTransaction(transactions, _oldState, newState) {
+      if (!formatLock || !lockedMarks?.length) return null;
+      if (!transactions.some((tr) => tr.docChanged || tr.selectionSet)) return null;
+      if (storedMarksMatchLocked(newState.storedMarks, lockedMarks, editor.schema)) return null;
+      return newState.tr.setStoredMarks(lockedMarkInstances()).setMeta("addToHistory", false);
+    },
+  });
+  editor.registerPlugin(formatLockPlugin);
+  syncFormatLockRuntime();
   const setFormatLock = (enabled) => {
     formatLock = enabled;
     if (enabled) rememberCurrentFormatting();
     else lockedMarks = null;
+    syncFormatLockRuntime();
     formatLockButton?.classList.toggle("is-active", enabled);
     formatLockButton?.setAttribute("aria-pressed", String(enabled));
     syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
@@ -3365,6 +3406,7 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
     editor.off("focus", onEditorFocus);
     document.removeEventListener("pointerdown", onDocPointerDown);
     editor.off("selectionUpdate", onSel);
+    editor.unregisterPlugin(formatLockPluginKey);
     },
   };
 }
@@ -3413,6 +3455,17 @@ export function createKindredEditor({
         mousedown(_view, event) {
           return openModifiedClickLink(event);
         },
+      },
+      handleTextInput(view, from, to, text) {
+        if (view.composing) return false;
+        if (!formatLockRuntime.enabled || !formatLockRuntime.lockedMarks?.length) return false;
+        const marks = formatLockRuntime.lockedMarks.map((mark) =>
+          view.state.schema.markFromJSON(mark),
+        );
+        const tr = view.state.tr.replaceWith(from, to, view.state.schema.text(text, marks));
+        tr.setStoredMarks(marks);
+        view.dispatch(tr);
+        return true;
       },
       // Remove handlePaste and handleDrop to let TipTap parse HTML & paragraphs natively
     },

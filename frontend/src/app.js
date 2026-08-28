@@ -1265,8 +1265,8 @@ import {
     workingDirty = !!(text || "").trim();
     paneMode = "chat";
     clearChatState();
-    toolbarController?.applyState?.({ formatLock: false, lockedMarks: null });
     await refreshDraftList();
+    await persistUiStateNow();
     return draft;
   }
 

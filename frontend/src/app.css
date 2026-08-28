@@ -963,14 +963,10 @@ button.pane-title {
 }
 
 .editor-toolbar .toolbar-color:hover {
-  background: var(--color-bg-raised);
-}
-.editor-toolbar .toolbar-color.is-active {
   background: var(--color-border-strong);
 }
-
 .editor-toolbar .toolbar-color.is-active {
-  border-color: var(--color-border);
+  background: var(--neutral-600);
 }
 
 .editor-toolbar .toolbar-color {
