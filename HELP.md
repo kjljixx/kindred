@@ -2,6 +2,7 @@
 - Similarly, right-clicking a head commit and right-clicking a branch name allows you to rename it
 - Similarly, right-clicking the highlight button allows you to change the highlight color
 - Actually, right-clicking basically anything that has a name allows you to rename it
+- On touch devices, long press is the equivalent of right click
 - Ctrl-click a link in the editor to open and switch to it in a new tab
 
 Chat Pane:

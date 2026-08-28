@@ -1154,18 +1154,18 @@ button.pane-title {
   max-width: 100%;
   outline: 3px solid var(--accent-success-300);
   outline-offset: 2px;
-  filter: sepia(1) saturate(2.5) hue-rotate(85deg);
 }
 
 .diff-image-del {
   display: block;
+  width: min(100%, 48rem);
+  background: var(--color-danger-bg);
   margin: var(--space-2) 0;
-  opacity: 0.72;
 }
 
 .diff-image-del img {
   outline-color: var(--accent-danger-300);
-  filter: sepia(1) saturate(3) hue-rotate(300deg);
+  opacity: 0.65;
 }
 
 /* Active column resize handle line */

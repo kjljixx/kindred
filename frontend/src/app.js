@@ -324,6 +324,7 @@ import {
           tableDiffs: tableDiffsFromOps(ops),
           listDiffs: listDiffsFromOps(ops),
         });
+        if (store) void store.hydrateImageElements(activeDraftId, editor, viewingOid);
       } else {
         refreshOverlay(tipTap, {
           baseline: "",
