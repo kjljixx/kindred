@@ -1138,7 +1138,11 @@ function createListPreviewWidget(listHtml, side) {
     const wrap = document.createElement("div");
     wrap.className = `kindred-list-preview kindred-list-side-${side}`;
     wrap.contentEditable = "false";
-    wrap.innerHTML = listHtml || "";
+    if (String(listHtml || "").trim()) {
+      wrap.innerHTML = listHtml;
+    } else {
+      wrap.innerHTML = "<p></p>";
+    }
     return wrap;
   };
 }
@@ -1635,36 +1639,30 @@ function appendListConflictDecorations(
       )
     );
 
-    const isHoverTheirs =
+    const activePreviewSide =
       listPreview &&
       listPreview.listPos === pos &&
-      listPreview.side === "theirs";
+      (listPreview.side === "theirs" || listPreview.side === "ours")
+        ? listPreview.side
+        : "ours";
+    const previewHtml =
+      activePreviewSide === "theirs" ? node.attrs.listTheirs : node.attrs.listOurs;
 
-    if (isHoverTheirs) {
-      decorations.push(
-        Decoration.node(pos, pos + node.nodeSize, {
-          style: "display: none !important;",
-        })
-      );
-      if (node.attrs.listTheirs && node.attrs.listTheirs.trim()) {
-        decorations.push(
-          Decoration.widget(
-            pos,
-            createListPreviewWidget(node.attrs.listTheirs, "theirs"),
-            {
-              side: 0,
-              key: `list-theirs-preview-${pos}`,
-            }
-          )
-        );
-      }
-    } else {
-      decorations.push(
-        Decoration.node(pos, pos + node.nodeSize, {
-          class: "kindred-list-conflict-node kindred-list-side-ours",
-        })
-      );
-    }
+    decorations.push(
+      Decoration.node(pos, pos + node.nodeSize, {
+        style: "display: none !important;",
+      })
+    );
+    decorations.push(
+      Decoration.widget(
+        pos,
+        createListPreviewWidget(previewHtml || "", activePreviewSide),
+        {
+          side: 0,
+          key: `list-${activePreviewSide}-preview-${pos}`,
+        }
+      )
+    );
   });
 }
 
