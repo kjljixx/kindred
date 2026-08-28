@@ -498,9 +498,10 @@ export async function htmlToPdfBlob(html, options = {}) {
  * @returns {ExportFormat}
  */
 export function exportFormatById(formatId) {
+  const fallbackId = CONFIG.export.defaultFormat || "docx";
   return (
     EXPORT_FORMATS.find((f) => f.id === formatId) ||
-    EXPORT_FORMATS.find((f) => f.id === "docx") ||
+    EXPORT_FORMATS.find((f) => f.id === fallbackId) ||
     EXPORT_FORMATS[0]
   );
 }
@@ -510,7 +511,11 @@ export function exportFormatById(formatId) {
  * @param {string} [formatId]
  * @returns {Promise<{ blob: Blob, format: ExportFormat }>}
  */
-export async function htmlToExportBlob(html, formatId = "docx", options = {}) {
+export async function htmlToExportBlob(
+  html,
+  formatId = CONFIG.export.defaultFormat || "docx",
+  options = {},
+) {
   const { styledDiff = false } = options;
   const format = exportFormatById(formatId);
 

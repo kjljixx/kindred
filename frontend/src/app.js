@@ -617,7 +617,7 @@ import {
    * Clean HTML for export (never conflict protocol).
    * Dirty review → working-tree (theirs); live merge → base branch (ours).
    */
-  function htmlForExport(formatId = "docx") {
+  function htmlForExport(formatId = CONFIG.export.defaultFormat) {
     const html = currentHtml || "<p></p>";
     if (unresolvedMergeConflictCount(html) > 0) {
       return dirtyReviewing ? htmlTakingTheirs(html) : htmlTakingOurs(html);
@@ -3333,7 +3333,7 @@ import {
     openImportDialog();
   });
 
-  async function exportDraft(formatId = "docx") {
+  async function exportDraft(formatId = CONFIG.export.defaultFormat) {
     if (exportBtn.disabled) return;
     setExportMenuOpen(false);
     converting = true;
@@ -3361,7 +3361,7 @@ import {
       const { htmlToExportBlob } = await loadPandocModule();
       const { blob, format } = await htmlToExportBlob(
         exportHtml,
-        formatId || "docx",
+        formatId || CONFIG.export.defaultFormat,
         { styledDiff },
       );
       clearTimeout(slowTimer);
@@ -3387,7 +3387,7 @@ import {
   }
 
   exportBtn.addEventListener("click", () => {
-    void exportDraft("docx");
+    void exportDraft();
   });
 
   exportMenuBtn.addEventListener("click", (e) => {

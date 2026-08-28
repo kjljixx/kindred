@@ -16,7 +16,8 @@ export const CONFIG = {
     },
   },
   export: {
-    invertColorsForDarkMode: true,
+    invertColorsForDarkMode: true, // whether or not to invert colors during import/export to account for the fact that Kindred is a dark mode editor
     diffModeExport: "styledDiff", // "text" | "styledDiff"
+    defaultFormat: "docx", // "docx" | "md" | "html" | "txt" | "pdf"
   },
 };
