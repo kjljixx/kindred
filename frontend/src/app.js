@@ -19,6 +19,8 @@ import {
   stripHtml,
   mergeCleanEditsIntoMarked,
   stripKindredProtocol,
+  plainOffsetsToPmRange,
+  plainOffsetForPmPos,
 } from "./tiptapEditor.js";
 import { bindLongPress } from "./longPress.js";
 import { loadColoris, loadHtmlDiff } from "./optionalAssets.js";
@@ -2288,12 +2290,12 @@ import {
     return parts;
   }
 
-  /** Plain offsets for TipTap selection (paragraphs joined with \n\n). */
   function caretSelectionOffsets() {
     if (!tipTap) return { from: 0, to: 0 };
     const { from, to } = tipTap.state.selection;
-    const fromOff = tipTap.state.doc.textBetween(0, from, "\n\n", "\n").length;
-    const toOff = tipTap.state.doc.textBetween(0, to, "\n\n", "\n").length;
+    const doc = tipTap.state.doc;
+    const fromOff = plainOffsetForPmPos(doc, from);
+    const toOff = plainOffsetForPmPos(doc, to);
     return { from: Math.min(fromOff, toOff), to: Math.max(fromOff, toOff) };
   }
 
@@ -2573,24 +2575,14 @@ import {
     return [...textConflicts, ...alignmentConflicts].join("\n\n");
   }
 
-  function plainOffsetToDocPosition(offset) {
-    if (!tipTap) return null;
-    const target = Math.max(0, Math.min(Number(offset) || 0, currentText.length));
-    const doc = tipTap.state.doc;
-    for (let pos = 0; pos <= doc.content.size; pos++) {
-      if (doc.textBetween(0, pos, "\n\n", "\n").length >= target) return pos;
-    }
-    return doc.content.size;
-  }
-
   function draftRange(start, end) {
-    const from = plainOffsetToDocPosition(start);
-    const to = plainOffsetToDocPosition(end);
-    if (from == null || to == null || to < from) {
+    if (!tipTap) return null;
+    const range = plainOffsetsToPmRange(tipTap.state.doc, start, end);
+    if (range.to < range.from) {
       setStatus("the requested character range is invalid", "warn");
       return null;
     }
-    return { from, to };
+    return range;
   }
 
   function mentionDraftRange(start, end) {
@@ -2701,10 +2693,8 @@ import {
     tipTap.commands.focus();
     tipTap.view.dispatch(tipTap.state.tr.insertText(replacement, range.from, range.to));
     pullFromEditor();
-    tipTap.commands.setTextSelection({
-      from: range.from,
-      to: range.from + replacement.length,
-    });
+    const sel = plainOffsetsToPmRange(tipTap.state.doc, start, Number(start) + replacement.length);
+    tipTap.commands.setTextSelection(sel);
     workingDirty = true;
     persistActiveDraftSoon();
     setStatus("suggestion applied");
@@ -2795,7 +2785,7 @@ import {
     ).replace(/\[{1,2}suggest:(\d+):(\d+)=(?:>|&gt;)([\s\S]*?)\]{1,2}/g, (_, start, end, replacement) =>
       `<span class="chat-suggestion">` +
       `<button type="button" class="btn btn-tertiary suggestion-current" data-chat-action="current" data-preview="current" data-start="${start}" data-end="${end}">${escapeHtml(currentText.slice(Number(start), Number(end)))}</button>` +
-      `<button type="button" class="btn btn-tertiary" data-chat-action="suggest" data-preview="replacement" data-stack-index="${stackIdx}" data-msg-index="${msgIndex}" data-start="${start}" data-end="${end}" data-replacement="${escapeHtml(replacement)}">${escapeHtml(replacement)}</button>` +
+      `<button type="button" class="btn btn-tertiary" data-chat-action="suggest" data-preview="replacement" data-stack-index="${stackIndex}" data-msg-index="${msgIndex}" data-start="${start}" data-end="${end}" data-replacement="${escapeHtml(replacement)}">${escapeHtml(replacement)}</button>` +
       `</span>`
     ).replace(/\[{1,2}replaced:(?!\d+:\d+:)([^\]]*?)=(?:>|&gt;)([\s\S]*?)\]{1,2}/g, (_, current, replacement) =>
       '<span class="chat-suggestion chat-suggestion-replaced">' +
@@ -3949,9 +3939,13 @@ import {
   feedbackEl.addEventListener("pointerover", (e) => {
     const button = e.target.closest("[data-preview]");
     if (!button || !feedbackEl.contains(button) || chatBusy) return;
+    const anchor = button.dataset.anchor
+      ? parseTextAnchor(decodeURIComponent(button.dataset.anchor))
+      : null;
+    const location = anchor ? resolveTextAnchor(anchor) : null;
     showSuggestionPreview(
-      button.dataset.start,
-      button.dataset.end,
+      location?.start ?? button.dataset.start,
+      location?.end ?? button.dataset.end,
       button.dataset.preview === "replacement" ? button.dataset.replacement || "" : null
     );
   });

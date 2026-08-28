@@ -721,6 +721,21 @@ function pmPosForPlain(map, offset) {
   return map.plainToPm[o] ?? map.plainToPm[map.plainLen] ?? 1;
 }
 
+export function plainOffsetsToPmRange(doc, start, end) {
+  const map = buildPlainPmMap(doc);
+  return { from: pmPosForPlain(map, start), to: pmPosForPlain(map, end) };
+}
+
+export function plainOffsetForPmPos(doc, pmPos) {
+  const map = buildPlainPmMap(doc);
+  let offset = 0;
+  for (let i = 0; i <= map.plainLen; i++) {
+    if (map.plainToPm[i] <= pmPos) offset = i;
+    else break;
+  }
+  return offset;
+}
+
 function createDeleteWidget(text, html = "") {
   return (view, getPos) => {
     const span = document.createElement("span");
