@@ -1780,6 +1780,7 @@ import {
     syncHeaderTitle();
     updateCommitBtn();
     persistActiveDraftSoon();
+    focusEditorSoon();
   }
 
   function handleConflictAction(action, index) {
@@ -1878,6 +1879,7 @@ import {
     syncHeaderTitle();
     updateCommitBtn();
     persistActiveDraftSoon();
+    focusEditorSoon();
   }
 
   function handleTableConflictAction(action, tablePos, conflictId = null) {
@@ -1922,6 +1924,7 @@ import {
     syncHeaderTitle();
     updateCommitBtn();
     persistActiveDraftSoon();
+    focusEditorSoon();
   }
 
   function listBlockIndexAtPos(doc, listPos) {
@@ -2007,6 +2010,7 @@ import {
     syncHeaderTitle();
     updateCommitBtn();
     persistActiveDraftSoon();
+    focusEditorSoon();
   }
 
   function getCurrentText() {

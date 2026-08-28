@@ -20,7 +20,6 @@ TODO
 
 Git
 TODO
-- Make Ctrl+Y/Z work in merge conflict resolution
 - Staging
 - Look at git-appraisal implementation for comments (or maybe tiptap comments are possible?)
 - Review/Merge mode with arrow keys and enter?
