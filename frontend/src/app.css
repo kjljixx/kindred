@@ -75,9 +75,13 @@
 
   /* Merge conflict side colors (ours / theirs) */
   --orange-bg: var(--color-warn-bg);
+  --orange-bg-raised: hsla(32, 100%, 50%, 0.35);
   --orange-text: var(--accent-warn-500);
+  --orange-text-bright: hsl(32, 100%, 60%);
   --blue-bg: hsla(217, 91%, 60%, 0.18);
+  --blue-bg-raised: hsla(217, 91%, 60%, 0.35);
   --blue-text: var(--primary-400);
+  --blue-text-bright: var(--primary-300);
 
   /* Semantic aliases */
   --color-bg: var(--neutral-900);
@@ -2510,18 +2514,24 @@ button.pane-title {
   text-decoration: line-through;
 }
 
-.merge-conflict-btn:hover {
-  filter: brightness(1.4);
-}
-
 .merge-conflict-ours {
   background: var(--orange-bg);
   color: var(--orange-text);
 }
 
+.merge-conflict-ours:hover {
+  background: var(--orange-bg-raised);
+  color: var(--orange-text-bright);
+}
+
 .merge-conflict-theirs {
   background: var(--blue-bg);
   color: var(--blue-text);
+}
+
+.merge-conflict-theirs:hover {
+  background: var(--blue-bg-raised);
+  color: var(--blue-text-bright);
 }
 
 .merge-image-conflict {
@@ -2576,10 +2586,6 @@ button.pane-title {
   white-space: nowrap;
 }
 
-.merge-image-conflict .merge-conflict-btn:hover {
-  filter: brightness(1.4);
-}
-
 /* Inline mark styles (color/font-size/font-family) beat button chrome via cascade. */
 
 .merge-conflict-both {
@@ -2592,6 +2598,11 @@ button.pane-title {
   font-style: normal;
   text-decoration: none;
   padding: var(--space-1) var(--space-2);
+}
+
+.merge-conflict-both:hover {
+  background: var(--color-border-strong);
+  color: var(--color-text);  
 }
 
 .editor .ProseMirror-hideselection,
