@@ -2,6 +2,7 @@ import LightningFS from "@isomorphic-git/lightning-fs";
 import git from "isomorphic-git";
 import { mergeHtmlViaAst } from "./docMerge.js";
 import { canonicalizeTextHtml, htmlToPlainText } from "./kindredSchema.js";
+import { CONFIG } from "./config.js";
 
 const VOLUME = "kindred";
   const ROOT = "/texts";
@@ -13,7 +14,7 @@ const VOLUME = "kindred";
   const BRANCH_ACCESS_FILE = "branch-access.json";
   const CHATS_FILE = "draft-chats.json";
   const UI_STATE_FILE = "draft-ui.json";
-  const DEFAULT_MODEL = "openai/gpt-5.6-luna";
+  const DEFAULT_MODEL = CONFIG.chat.model;
   const DEFAULT_CHAT_TITLE = "New Chat";
   const DEFAULT_HIGHLIGHT_COLOR = "rgba(117, 114, 12, 1.0)";
 

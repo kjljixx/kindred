@@ -1,4 +1,7 @@
 export const CONFIG = {
+  chat: {
+    model: "openrouter/google/gemini-3.7-flash",
+  },
   debug: {
     enabled: false,
     verbose: false,

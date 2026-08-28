@@ -134,7 +134,7 @@ import {
   const compactLayout = window.matchMedia("(max-width: 770px)");
   const touchInput = window.matchMedia("(hover: none), (pointer: coarse)");
 
-  const DEFAULT_MODEL = "openrouter/google/gemini-3.7-flash";
+  const DEFAULT_MODEL = CONFIG.chat.model;
   const EPHEMERAL_STATUS_MESSAGES = new Set([
     "suggestion applied",
     "restored into working tree",

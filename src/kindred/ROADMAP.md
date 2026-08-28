@@ -8,10 +8,6 @@ Chat
 - Horizontal chatting & message chunks
 - RAG message stacks
 
-Settings
-TODO
-- Setting for the Model - Low
-
 Git
 TODO
 - Staging
