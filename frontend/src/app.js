@@ -712,6 +712,7 @@ import {
   function setWorkspace(next) {
     if (next !== "draft" && next !== "chat" && next !== "history") return;
     activeWorkspace = next;
+    if (!activeDraftId) clearEditorForHome();
     if (next === "chat") setPaneMode("chat");
     if (next === "history") setPaneMode("git");
     syncWorkspaceNavigation();
@@ -1499,14 +1500,12 @@ import {
     syncRightPane();
   }
 
-  function resetEditorState({ text = "", keepHistory = false } = {}) {
+  function clearEditorForHome({ text = "" } = {}) {
     baseline = "";
     baselineHtml = "";
     currentHtml = text ? plainToHtml(text) : "<p></p>";
     currentText = "";
-    clearChatState();
     currentModel = DEFAULT_MODEL;
-    draftCost = 0;
     commits = [];
     activeCommitIndex = -1;
     viewingOid = null;
@@ -1517,14 +1516,14 @@ import {
     branches = [];
     hasConflict = false;
     pendingMerge = null;
+    dirtyViewMode = "Text";
     dirtyReviewing = false;
     workingDirty = false;
     renamingGit = null;
-    if (!keepHistory) clearHistory();
     suppressEditorUpdate = true;
     rendering = true;
     try {
-      setHtml(tipTap, currentHtml, { emitUpdate: false, source: "resetEditorState" });
+      setHtml(tipTap, currentHtml, { emitUpdate: false, source: "clearEditorForHome" });
       currentText = getPlain(tipTap);
       syncOverlayFromState();
     } finally {
@@ -1533,22 +1532,33 @@ import {
     }
     syncDirtyBodyFromCurrent();
     setEditorEditable(true);
+    toolbarController?.applyState?.({ formatLock: false, lockedMarks: null });
+    if (editor) editor.scrollTop = 0;
+    if (tipTap) {
+      const pos = Math.min(1, tipTap.state.doc.content.size);
+      tipTap.commands.setTextSelection({ from: pos, to: pos });
+    }
     updateMeta();
     setStatus("");
     refreshStatusLeft();
     updateCommitBtn();
+  }
+
+  function resetEditorState({ text = "", keepHistory = false } = {}) {
+    clearEditorForHome({ text });
+    clearChatState();
+    draftCost = 0;
+    if (!keepHistory) clearHistory();
     syncRightPane();
   }
 
-  async function goHome() {
+  async function enterDraftsHome() {
     await flushSaveTimer();
     await flushUiStateTimer();
     activeDraftId = null;
     paneMode = "chat";
     activeWorkspace = "draft";
-    clearChatState();
     resetEditorState({ text: "" });
-    toolbarController?.applyState?.({ formatLock: false, lockedMarks: null });
     syncWorkspaceNavigation();
     syncHeaderTitle();
     tipTap?.commands.focus();
@@ -1602,11 +1612,11 @@ import {
       if (!ok) return;
     }
     await flushSaveTimer();
+    await flushUiStateTimer();
     await store.deleteDraft(id);
     if (activeDraftId === id) {
       activeDraftId = null;
       activeWorkspace = "draft";
-      clearChatState();
       resetEditorState({ text: "" });
       syncWorkspaceNavigation();
     }
@@ -1715,7 +1725,7 @@ import {
   });
 
   homeBtn.addEventListener("click", () => {
-    goHome();
+    void enterDraftsHome();
   });
 
   function syncMergeStatus() {
