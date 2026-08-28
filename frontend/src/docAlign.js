@@ -72,7 +72,7 @@ function reconcileEditedStructuralBlocks(baseBlocks, sideBlocks, mapping) {
   for (let baseIndex = 0; baseIndex < baseBlocks.length; baseIndex++) {
     if (mapping.baseToSide[baseIndex] != null) continue;
     const family = blockFamily(baseBlocks[baseIndex]);
-    if (family !== "table" && family !== "list") continue;
+    if (family !== "p" && family !== "table" && family !== "list") continue;
     const insertIndex = mapping.inserts.findIndex((insert) => {
       const nearby =
         insert.afterBase === baseIndex || insert.afterBase === baseIndex - 1;
