@@ -42,6 +42,7 @@ import {
   const DIFF_INSERT = 1;
   const DIFF_DELETE = -1;
   const SAVE_DEBOUNCE_MS = 250;
+  const UI_STATE_DEBOUNCE_MS = 300;
   let store = null;
   const storeReady = import("./gitStore.js").then(async ({ KindredGitStore }) => {
     store = KindredGitStore;
@@ -179,6 +180,9 @@ import {
   let drafts = [];
   let activeDraftId = null;
   let saveTimer = null;
+  let uiSaveTimer = null;
+  /** @type {{ destroy: Function, getState: Function, applyState: Function } | null} */
+  let toolbarController = null;
   let commits = [];
   let activeCommitIndex = -1;
   let viewingOid = null;
@@ -508,8 +512,14 @@ import {
       setStatus(String(err.message || err), "danger");
     }
   });
-  tipTap.on("selectionUpdate", refreshStatusLeft);
-  bindToolbar(tipTap, toolbarEl);
+  tipTap.on("selectionUpdate", () => {
+    refreshStatusLeft();
+    persistUiStateSoon();
+  });
+  toolbarController = bindToolbar(tipTap, toolbarEl, {
+    onStateChange: () => persistUiStateSoon(),
+  });
+  editor?.addEventListener("scroll", () => persistUiStateSoon(), { passive: true });
   resetEditorState({ text: "" });
   requestAnimationFrame(() => tipTap?.commands.focus());
   toolbarEl.querySelectorAll(".toolbar-color")?.forEach((el) => {
@@ -705,6 +715,7 @@ import {
     if (next === "chat") setPaneMode("chat");
     if (next === "history") setPaneMode("git");
     syncWorkspaceNavigation();
+    persistUiStateSoon();
   }
 
   workspaceActions.forEach((tab) => {
@@ -1024,6 +1035,86 @@ import {
     renderDraftList();
   }
 
+  function uiStateSnapshot() {
+    const { from, to } = tipTap?.state?.selection || { from: 0, to: 0 };
+    return {
+      toolbar: toolbarController?.getState?.() || {},
+      view: {
+        paneMode,
+        activeWorkspace,
+        dirtyViewMode,
+        viewingOid,
+        editorScrollTop: editor?.scrollTop || 0,
+        selection: { from, to },
+      },
+    };
+  }
+
+  async function persistUiStateNow() {
+    if (!activeDraftId || !store) return;
+    try {
+      await store.saveUiState(activeDraftId, uiStateSnapshot());
+    } catch (err) {
+      console.warn("failed to save ui state", err);
+    }
+  }
+
+  function persistUiStateSoon() {
+    if (!activeDraftId || !store) return;
+    if (uiSaveTimer != null) clearTimeout(uiSaveTimer);
+    uiSaveTimer = setTimeout(() => {
+      uiSaveTimer = null;
+      void persistUiStateNow();
+    }, UI_STATE_DEBOUNCE_MS);
+  }
+
+  async function flushUiStateTimer() {
+    if (uiSaveTimer != null) {
+      clearTimeout(uiSaveTimer);
+      uiSaveTimer = null;
+      await persistUiStateNow();
+    }
+  }
+
+  function restoreEditorChrome(view = {}) {
+    requestAnimationFrame(() => {
+      if (tipTap && view.selection && typeof view.selection.from === "number") {
+        const size = tipTap.state.doc.content.size;
+        const from = Math.min(Math.max(0, view.selection.from), size);
+        const to = Math.min(Math.max(from, Number(view.selection.to) || from), size);
+        tipTap.commands.setTextSelection({ from, to });
+      }
+      const scrollTop = Number(view.editorScrollTop);
+      if (editor && Number.isFinite(scrollTop) && scrollTop >= 0) {
+        editor.scrollTop = scrollTop;
+      }
+    });
+  }
+
+  async function applySavedUiState(ui, { hasConflict = false } = {}) {
+    if (!ui) return;
+    toolbarController?.applyState?.(ui.toolbar);
+
+    if (compactLayout.matches) {
+      const ws = ui.view?.activeWorkspace;
+      if (ws === "draft" || ws === "chat" || ws === "history") {
+        setWorkspace(ws);
+      } else {
+        setPaneMode(hasConflict ? "git" : ui.view?.paneMode === "git" ? "git" : "chat");
+      }
+    } else if (hasConflict || ui.view?.paneMode === "git") {
+      setPaneMode("git");
+    } else if (ui.view?.paneMode === "chat") {
+      setPaneMode("chat");
+    }
+
+    if (!viewingOid && ui.view?.dirtyViewMode === "Diff") {
+      await setDirtyEditView("Diff");
+    }
+
+    restoreEditorChrome(ui.view);
+  }
+
   function snapshotState() {
     return {
       html: currentHtml,
@@ -1159,6 +1250,7 @@ import {
     workingDirty = !!(text || "").trim();
     paneMode = "chat";
     clearChatState();
+    toolbarController?.applyState?.({ formatLock: false, lockedMarks: null });
     await refreshDraftList();
     return draft;
   }
@@ -1450,11 +1542,13 @@ import {
 
   async function goHome() {
     await flushSaveTimer();
+    await flushUiStateTimer();
     activeDraftId = null;
     paneMode = "chat";
     activeWorkspace = "draft";
     clearChatState();
     resetEditorState({ text: "" });
+    toolbarController?.applyState?.({ formatLock: false, lockedMarks: null });
     syncWorkspaceNavigation();
     syncHeaderTitle();
     tipTap?.commands.focus();
@@ -1467,22 +1561,32 @@ import {
     syncWorkspaceNavigation();
     try {
       await flushSaveTimer();
+      await flushUiStateTimer();
       const draft = findDraft(id) || (await store.readWorkingFiles(id));
       if (!draft) return;
+      const ui = await store.readUiState(id);
       activeDraftId = id;
-      paneMode = "chat";
       viewingOid = null;
       renamingGit = null;
+      paneMode = "chat";
       const wt = await store.readWorkingFiles(id);
       hasConflict = !!wt.hasConflict;
       pendingMerge = wt.pendingMerge || null;
-      if (hasConflict) paneMode = "git";
-      if (compactLayout.matches && paneMode === "git") activeWorkspace = "history";
+      if (compactLayout.matches && hasConflict) activeWorkspace = "history";
       syncWorkspaceNavigation();
       await refreshCommits();
       await loadChatsForDraft(id);
-      loadSnapshotState(wt, { historical: false });
-      if (commits.length) activeCommitIndex = commits.length - 1;
+
+      const savedOid = ui.view?.viewingOid;
+      const restoreCommit = savedOid && commits.some((c) => c.oid === savedOid);
+      if (restoreCommit) {
+        await viewCommitOid(savedOid);
+      } else {
+        loadSnapshotState(wt, { historical: false });
+        if (commits.length) activeCommitIndex = commits.length - 1;
+      }
+
+      await applySavedUiState(ui, { hasConflict });
       await refreshDraftList();
       if (paneMode === "git") renderGitPane();
       await refreshWorkingDirty();
@@ -1679,6 +1783,7 @@ import {
       renderGitPane();
       syncOverlayFromState();
       focusEditorSoon();
+      persistUiStateSoon();
       return;
     }
     if (pendingMerge && unresolvedMergeConflictCount(currentHtml) > 0) return;
@@ -1697,6 +1802,7 @@ import {
     renderGitPane();
     syncOverlayFromState();
     focusEditorSoon();
+    persistUiStateSoon();
   }
 
   async function enterDirtyReview() {
@@ -2909,6 +3015,7 @@ import {
       renderGitPane();
       void refreshWorkingDirty();
     }
+    persistUiStateSoon();
   }
 
   paneModeCluster.addEventListener("click", (e) => {
@@ -3403,6 +3510,7 @@ import {
     loadSnapshotState(wt, { historical: false });
     await refreshWorkingDirty();
     renderGitPane();
+    persistUiStateSoon();
   }
 
   async function viewCommitOid(oid) {
@@ -3426,6 +3534,7 @@ import {
     });
     renderGitPane();
     updateCommitBtn();
+    persistUiStateSoon();
   }
 
   async function restoreCommitOid(oid) {

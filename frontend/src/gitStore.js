@@ -12,8 +12,10 @@ const VOLUME = "kindred";
   const TITLE_FILE = "title.txt";
   const BRANCH_ACCESS_FILE = "branch-access.json";
   const CHATS_FILE = "draft-chats.json";
+  const UI_STATE_FILE = "draft-ui.json";
   const DEFAULT_MODEL = "openai/gpt-5.6-luna";
   const DEFAULT_CHAT_TITLE = "New Chat";
+  const DEFAULT_HIGHLIGHT_COLOR = "rgba(117, 114, 12, 1.0)";
 
   const fs = new LightningFS(VOLUME);
   const pfs = fs.promises;
@@ -461,6 +463,70 @@ const VOLUME = "kindred";
     return next;
   }
 
+  function normalizeToolbarState(raw) {
+    const t = raw && typeof raw === "object" ? raw : {};
+    const formatLock = !!t.formatLock;
+    let lockedMarks = null;
+    if (formatLock && Array.isArray(t.lockedMarks) && t.lockedMarks.length) {
+      lockedMarks = t.lockedMarks.filter(
+        (mark) => mark && typeof mark === "object" && typeof mark.type === "string"
+      );
+      if (!lockedMarks.length) lockedMarks = null;
+    }
+    const lastHighlightColor =
+      typeof t.lastHighlightColor === "string" && t.lastHighlightColor.trim()
+        ? t.lastHighlightColor.trim()
+        : DEFAULT_HIGHLIGHT_COLOR;
+    return { formatLock, lockedMarks, lastHighlightColor };
+  }
+
+  function normalizeViewState(raw) {
+    const v = raw && typeof raw === "object" ? raw : {};
+    const paneMode = v.paneMode === "git" ? "git" : "chat";
+    const activeWorkspace =
+      v.activeWorkspace === "chat" || v.activeWorkspace === "history"
+        ? v.activeWorkspace
+        : "draft";
+    const dirtyViewMode = v.dirtyViewMode === "Diff" ? "Diff" : "Text";
+    const viewingOid =
+      typeof v.viewingOid === "string" && v.viewingOid.trim()
+        ? v.viewingOid.trim()
+        : null;
+    return {
+      paneMode,
+      activeWorkspace,
+      dirtyViewMode,
+      viewingOid,
+      editorScrollTop: Math.max(0, Number(v.editorScrollTop) || 0),
+      selection: normalizeSelection(v.selection),
+    };
+  }
+
+  function normalizeUiState(raw) {
+    const empty = {
+      toolbar: normalizeToolbarState(null),
+      view: normalizeViewState(null),
+    };
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return empty;
+    return {
+      toolbar: normalizeToolbarState(raw.toolbar),
+      view: normalizeViewState(raw.view),
+    };
+  }
+
+  async function readUiState(id) {
+    const dir = textDir(id);
+    return normalizeUiState(await readJson(`${dir}/${UI_STATE_FILE}`, null));
+  }
+
+  async function saveUiState(id, state) {
+    const dir = textDir(id);
+    const next = normalizeUiState(state);
+    await writeJson(`${dir}/${UI_STATE_FILE}`, next);
+    await flush();
+    return next;
+  }
+
   async function writeTitleFile(dir, title) {
     await writeText(`${dir}/${TITLE_FILE}`, title || "");
   }
@@ -695,6 +761,7 @@ const VOLUME = "kindred";
       chats: [],
       totalCost: 0,
     });
+    await writeJson(`${dir}/${UI_STATE_FILE}`, normalizeUiState(null));
     await touchBranchAccess(dir, "main", now);
     await flush();
     return readWorkingFiles(id);
@@ -3124,6 +3191,8 @@ const KindredGitStore = {
   readWorkingFiles,
   readChats,
   saveChats,
+  readUiState,
+  saveUiState,
   autoMessage,
   nextSequentialName,
   titleFromText,

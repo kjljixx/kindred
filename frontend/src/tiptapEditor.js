@@ -2746,11 +2746,12 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
   }
 }
 
-export function bindToolbar(editor, toolbarEl) {
-  if (!toolbarEl) return () => { };
+export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
+  if (!toolbarEl) return { destroy() {}, getState() { return {}; }, applyState() {} };
   const colorInput = toolbarEl.querySelector("[data-color-input]");
   const highlightInput = toolbarEl.querySelector("[data-highlight-input]");
   const highlightBtn = toolbarEl.querySelector("[data-highlight-btn]");
+  const highlightSwatch = toolbarEl.querySelector(".tb-highlight-swatch");
   const fontSizeInput = toolbarEl.querySelector("[data-font-size]");
   const fontFamilySelect = toolbarEl.querySelector("[data-font-family]");
   const fontFamilyPicker = fontFamilySelect
@@ -2766,6 +2767,40 @@ export function bindToolbar(editor, toolbarEl) {
   let formatLock = false;
   let lockedMarks = null;
   let lastHighlightColor = "rgba(117, 114, 12, 1.0)";
+
+  const getToolbarState = () => ({
+    formatLock,
+    lockedMarks: formatLock && lockedMarks?.length ? lockedMarks : null,
+    lastHighlightColor,
+  });
+  const notifyStateChange = () => {
+    onStateChange?.(getToolbarState());
+  };
+  const applyToolbarState = (state) => {
+    if (!state || typeof state !== "object") return;
+    if (typeof state.lastHighlightColor === "string" && state.lastHighlightColor.trim()) {
+      lastHighlightColor = state.lastHighlightColor.trim();
+      if (highlightInput) highlightInput.value = lastHighlightColor;
+      if (highlightSwatch) highlightSwatch.style.background = lastHighlightColor;
+    }
+    if (state.formatLock) {
+      if (Array.isArray(state.lockedMarks) && state.lockedMarks.length) {
+        lockedMarks = state.lockedMarks;
+      } else {
+        rememberCurrentFormatting();
+      }
+      formatLock = true;
+      formatLockButton?.classList.toggle("is-active", true);
+      formatLockButton?.setAttribute("aria-pressed", "true");
+      applyLockedFormatting();
+    } else {
+      formatLock = false;
+      lockedMarks = null;
+      formatLockButton?.classList.toggle("is-active", false);
+      formatLockButton?.setAttribute("aria-pressed", "false");
+    }
+    syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
+  };
 
   const rememberCurrentFormatting = () => {
     const { state } = editor;
@@ -2783,6 +2818,7 @@ export function bindToolbar(editor, toolbarEl) {
     formatLockButton?.classList.toggle("is-active", enabled);
     formatLockButton?.setAttribute("aria-pressed", String(enabled));
     syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
+    notifyStateChange();
   };
   const onFormatLockPointerDown = (event) => event.preventDefault();
   const onFormatLockClick = (event) => {
@@ -3006,6 +3042,7 @@ export function bindToolbar(editor, toolbarEl) {
       rememberCurrentFormatting();
     }
     syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
+    notifyStateChange();
     if (pickerOpen && stashedSelection) {
       editor.commands.setKeptSelection(stashedSelection);
     } else if (!pickerOpen) {
@@ -3134,7 +3171,10 @@ export function bindToolbar(editor, toolbarEl) {
   };
   editor.on("selectionUpdate", onSel);
   syncToolbar(editor, toolbarEl);
-  return () => {
+  return {
+    getState: getToolbarState,
+    applyState: applyToolbarState,
+    destroy() {
     alignTrigger?.removeEventListener("click", onAlignTriggerClick);
     document.removeEventListener("click", onDocClick);
     document.removeEventListener("keydown", onDocKeydown);
@@ -3174,6 +3214,7 @@ export function bindToolbar(editor, toolbarEl) {
     editor.off("focus", onEditorFocus);
     document.removeEventListener("pointerdown", onDocPointerDown);
     editor.off("selectionUpdate", onSel);
+    },
   };
 }
 
