@@ -135,12 +135,12 @@ import {
 
   const DEFAULT_MODEL = "openrouter/google/gemini-3.7-flash";
   const EPHEMERAL_STATUS_MESSAGES = new Set([
-    "suggestion applied.",
+    "suggestion applied",
     "restored into working tree",
     "nothing to commit",
-    "nothing to export.",
-    "the requested character range is invalid.",
-    "suggestion could not be safely located in the current draft.",
+    "nothing to export",
+    "the requested character range is invalid",
+    "suggestion could not be safely located in the current draft",
   ]);
   // HtmlDiff treats "<...>" as tags; shield raw "<" in plain text.
   const HTMLDIFF_LT = "\uE000";
