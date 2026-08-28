@@ -1288,7 +1288,7 @@ const VOLUME = "kindred";
       normalize(value) {
         const raw = String(value || "").trim().toLowerCase();
         if (!raw) return null;
-        if (/^\d+(\.\d+)?$/.test(raw)) return `${raw}px`;
+        if (/^\d+(\.\d+)?$/.test(raw)) return `${raw}pt`;
         const m = /^(\d+(\.\d+)?)(px|pt|em|rem|%)$/.exec(raw);
         if (m) return `${m[1]}${m[3]}`;
         return raw.replace(/\s+/g, "");

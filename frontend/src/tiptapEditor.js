@@ -2651,19 +2651,23 @@ function colorToHex(value) {
   return `#${hex(rgb[1])}${hex(rgb[2])}${hex(rgb[3])}`;
 }
 
+const DEFAULT_FONT_SIZE_PT = 12;
+
 function normalizeToolbarFontSize(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (!raw) return "";
-  if (/^\d+(\.\d+)?$/.test(raw)) return `${raw}px`;
+  if (/^\d+(\.\d+)?$/.test(raw)) return `${raw}pt`;
   const m = /^(\d+(\.\d+)?)(px|pt|em|rem|%)$/.exec(raw);
   return m ? `${m[1]}${m[3]}` : raw.replace(/\s+/g, "");
 }
 
-function fontSizeToToolbarNumber(value, fallback = 16) {
+function fontSizeToToolbarNumber(value, fallback = DEFAULT_FONT_SIZE_PT) {
   const normalized = normalizeToolbarFontSize(value);
-  const m = /^(\d+(\.\d+)?)/.exec(normalized);
+  const m = /^(\d+(\.\d+)?)(px|pt|em|rem|%)?$/.exec(normalized);
   if (!m) return fallback;
-  const n = Number(m[1]);
+  let n = Number(m[1]);
+  const unit = m[3] || "pt";
+  if (unit === "px") n = Math.round(n * 0.75);
   return Number.isFinite(n) ? n : fallback;
 }
 
@@ -2768,7 +2772,7 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
   highlightBtn?.classList.toggle("is-active", isHlActive);
   const fontSizeInput = toolbarEl.querySelector("[data-font-size]");
   if (fontSizeInput && document.activeElement !== fontSizeInput) {
-    const next = String(fontSizeToToolbarNumber(attrs.fontSize, 16));
+    const next = String(fontSizeToToolbarNumber(attrs.fontSize, DEFAULT_FONT_SIZE_PT));
     if (fontSizeInput.value !== next) fontSizeInput.value = next;
   }
   const fontFamilySelect = toolbarEl.querySelector("[data-font-family]");
@@ -3105,7 +3109,7 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
       chain.setTextSelection(stashedSelection);
     }
     if (!Number.isFinite(n) || n <= 0) {
-      fontSizeInput.value = "16";
+      fontSizeInput.value = String(DEFAULT_FONT_SIZE_PT);
       chain.unsetFontSize().run();
       if (formatLock) {
         rememberCurrentFormatting();
@@ -3119,8 +3123,8 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
     }
     const clamped = Math.min(96, Math.max(8, Math.round(n)));
     if (String(clamped) !== fontSizeInput.value) fontSizeInput.value = String(clamped);
-    if (clamped === 16) chain.unsetFontSize().run();
-    else chain.setFontSize(`${clamped}px`).run();
+    if (clamped === DEFAULT_FONT_SIZE_PT) chain.unsetFontSize().run();
+    else chain.setFontSize(`${clamped}pt`).run();
     if (formatLock) {
       rememberCurrentFormatting();
     }
