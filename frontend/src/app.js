@@ -31,6 +31,11 @@ import { listDiffsFromAlignOps, resolveListConflictHtml, resolveAllListConflicts
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { CONFIG } from "./config.js";
+import {
+  wantsStyledDiffExport,
+  hasDiffMarkers,
+  serializeDiffEditorHtml,
+} from "./diffExport.js";
 import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.js";
 import {
   resolveAllTableConflicts,
@@ -609,12 +614,18 @@ import {
    * Clean HTML for export (never conflict protocol).
    * Dirty review → working-tree (theirs); live merge → base branch (ours).
    */
-  function htmlForExport() {
+  function htmlForExport(formatId = "docx") {
     const html = currentHtml || "<p></p>";
     if (unresolvedMergeConflictCount(html) > 0) {
       return dirtyReviewing ? htmlTakingTheirs(html) : htmlTakingOurs(html);
     }
-    return dirtyHtml || html;
+    const textHtml = dirtyHtml || html;
+    const wantsStyled = wantsStyledDiffExport(CONFIG, dirtyViewMode, formatId);
+    if (wantsStyled && tipTap) {
+      const styledHtml = serializeDiffEditorHtml(tipTap);
+      if (hasDiffMarkers(styledHtml)) return styledHtml;
+    }
+    return textHtml;
   }
 
   function setExportMenuOpen(open) {
@@ -3314,7 +3325,10 @@ import {
     try {
       pullFromEditor();
       syncDirtyBodyFromCurrent();
-      const exportHtml = htmlForExport();
+      const exportHtml = htmlForExport(formatId);
+      const styledDiff =
+        wantsStyledDiffExport(CONFIG, dirtyViewMode, formatId) &&
+        hasDiffMarkers(exportHtml);
       const exportPlain = store.htmlToPlain(exportHtml);
       if (!(exportPlain || "").trim() && exportHtml === "<p></p>") {
         setStatus("nothing to export", "warn");
@@ -3331,6 +3345,7 @@ import {
       const { blob, format } = await htmlToExportBlob(
         exportHtml,
         formatId || "docx",
+        { styledDiff },
       );
       clearTimeout(slowTimer);
       setStatus("exporting...");

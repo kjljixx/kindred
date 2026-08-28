@@ -235,6 +235,94 @@ export function invertStyleDeclaration(styleStr, invertFn = invertColor) {
   );
 }
 
+export function colorToHex(colorStr) {
+  const parsed = parseColor(colorStr);
+  if (!parsed) return colorStr;
+  const { r, g, b } = parsed;
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** @returns {{ r: number, g: number, b: number } | null} */
+export function getEditorSurfaceRgb() {
+  if (typeof document === "undefined") return null;
+  let el = document.querySelector(".editor .ProseMirror") || document.querySelector(".editor");
+  while (el) {
+    const parsed = parseColor(getComputedStyle(el).backgroundColor);
+    if (parsed && parsed.a > 0) {
+      return { r: parsed.r, g: parsed.g, b: parsed.b };
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
+/**
+ * @param {string} colorStr
+ * @param {{ r: number, g: number, b: number }} surfaceRgb
+ */
+export function compositeColorOverBackground(colorStr, surfaceRgb) {
+  const parsed = parseColor(colorStr);
+  if (!parsed || !surfaceRgb) return colorStr;
+  const { r, g, b, a } = parsed;
+  if (a >= 1) return colorStr;
+  const { r: br, g: bg, b: bb } = surfaceRgb;
+  return `rgb(${Math.round(r * a + br * (1 - a))}, ${Math.round(g * a + bg * (1 - a))}, ${Math.round(b * a + bb * (1 - a))})`;
+}
+
+function blendStyleBackgrounds(styleStr, surfaceRgb) {
+  return styleStr.replace(
+    /(background-color|background)\s*:\s*([^;]+)(;?)/gi,
+    (match, prop, value, semi) => {
+      const trimmed = value.trim();
+      if (/^(inherit|initial|unset|revert|currentColor)$/i.test(trimmed)) return match;
+      const parsed = parseColor(trimmed);
+      if (!parsed || parsed.a >= 1) return match;
+      return `${prop}: ${compositeColorOverBackground(trimmed, surfaceRgb)}${semi}`;
+    },
+  );
+}
+
+/**
+ * @param {string} html
+ * @param {{ r: number, g: number, b: number } | null} [surfaceRgb]
+ */
+export function blendTransparentBackgroundsInHtml(html, surfaceRgb = getEditorSurfaceRgb()) {
+  if (!surfaceRgb) return html;
+  const doc = new DOMParser().parseFromString(html || "<p></p>", "text/html");
+  for (const el of doc.querySelectorAll("[style]")) {
+    const style = el.getAttribute("style");
+    if (style) {
+      el.setAttribute("style", blendStyleBackgrounds(style, surfaceRgb));
+    }
+  }
+  return doc.body.innerHTML;
+}
+
+export function normalizeHtmlColorsToHex(html) {
+  const doc = new DOMParser().parseFromString(html || "<p></p>", "text/html");
+  for (const el of doc.querySelectorAll("[style]")) {
+    const style = el.getAttribute("style");
+    if (style) {
+      el.setAttribute("style", invertStyleDeclaration(style, colorToHex));
+    }
+  }
+  return doc.body.innerHTML;
+}
+
+export function normalizeBackgroundForDocx(html) {
+  const doc = new DOMParser().parseFromString(html || "<p></p>", "text/html");
+  for (const el of doc.querySelectorAll("[style]")) {
+    const style = el.getAttribute("style");
+    if (!style || !/(^|;)\s*background\s*:/i.test(style)) continue;
+    if (/(^|;)\s*background-color\s*:/i.test(style)) continue;
+    el.setAttribute(
+      "style",
+      style.replace(/(^|;)\s*background\s*:/gi, "$1background-color:"),
+    );
+  }
+  return doc.body.innerHTML;
+}
+
 export function invertHtmlColors(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
 

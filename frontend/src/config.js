@@ -17,5 +17,6 @@ export const CONFIG = {
   },
   export: {
     invertColorsForDarkMode: true,
+    diffModeExport: "styledDiff", // "text" | "styledDiff"
   },
 };

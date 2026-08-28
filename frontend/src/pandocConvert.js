@@ -4,8 +4,9 @@ const WASM_CANDIDATES = [
 ];
 
 import { importDocxToHtml, htmlToDocxBlob as docshiftHtmlToDocxBlob } from './docshiftConvert.js';
-import { invertHtmlColors } from './colorInvert.js';
+import { invertHtmlColors, normalizeHtmlColorsToHex, normalizeBackgroundForDocx, blendTransparentBackgroundsInHtml } from './colorInvert.js';
 import { CONFIG } from './config.js';
+import { wrapStyledDiffHtml, DIFF_EXPORT_EMBEDDED_CSS } from './diffExport.js';
 
 /** @type {Promise<{ convert: Function }> | null} */
 let pandocPromise = null;
@@ -471,21 +472,25 @@ export const EXPORT_FORMATS = [
 
 import html2pdf from "html2pdf.js";
 
-export async function htmlToPdfBlob(html) {
+export async function htmlToPdfBlob(html, options = {}) {
+  const { styledDiff = false } = options;
   const container = document.createElement("div");
   container.innerHTML = html;
-  container.style.color = "#000000";
+  if (!styledDiff) {
+    container.style.color = "#000000";
+  }
   const style = document.createElement("style");
   style.textContent = `
     mark { color: inherit; }
+    ${styledDiff ? DIFF_EXPORT_EMBEDDED_CSS : ""}
   `;
   container.prepend(style);
-  const options = {
+  const pdfLayout = {
     margin: [15, 15, 15, 15], // [top, right, bottom, left] in millimeters
     html2canvas: { scale: 2, useCORS: true },
     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
   };
-  return html2pdf().set(options).from(container).outputPdf("blob");
+  return html2pdf().set(pdfLayout).from(container).outputPdf("blob");
 }
 
 /**
@@ -505,16 +510,23 @@ export function exportFormatById(formatId) {
  * @param {string} [formatId]
  * @returns {Promise<{ blob: Blob, format: ExportFormat }>}
  */
-export async function htmlToExportBlob(html, formatId = "docx") {
+export async function htmlToExportBlob(html, formatId = "docx", options = {}) {
+  const { styledDiff = false } = options;
   const format = exportFormatById(formatId);
 
   let exportHtml = html;
   if (CONFIG.export.invertColorsForDarkMode && format.id !== "md" && format.id !== "txt") {
-    exportHtml = invertHtmlColors(html || "<p></p>");
+    exportHtml = invertHtmlColors(exportHtml || "<p></p>");
+    exportHtml = blendTransparentBackgroundsInHtml(exportHtml, { r: 255, g: 255, b: 255 });
+  }
+  if (styledDiff && format.id === "html") {
+    exportHtml = wrapStyledDiffHtml(exportHtml);
   }
 
   // Use docshift for DOCX export (better client-side support)
   if (format.id === "docx") {
+    exportHtml = normalizeHtmlColorsToHex(exportHtml);
+    exportHtml = normalizeBackgroundForDocx(exportHtml);
     const blob = await docshiftHtmlToDocxBlob(exportHtml);
     return { blob, format };
   }
@@ -524,7 +536,7 @@ export async function htmlToExportBlob(html, formatId = "docx") {
   const { convert } = await ensurePandoc();
   const { html: src, files, media } = materializeEmbeddedImages(exportHtml || "<p></p>");
   if (format.id === "pdf") {
-    const blob = await htmlToPdfBlob(exportHtml);
+    const blob = await htmlToPdfBlob(exportHtml, { styledDiff });
     return { blob, format };
   }
   const alignments =
