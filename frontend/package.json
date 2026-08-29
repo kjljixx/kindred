@@ -36,6 +36,7 @@
     "isomorphic-git": "^1.27.1",
     "katex": "^0.18.4",
     "marked": "^15.0.7",
+    "mathml2omml": "^0.5.0",
     "pandoc-wasm": "^1.1.0"
   },
   "devDependencies": {

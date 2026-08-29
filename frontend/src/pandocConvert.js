@@ -13,6 +13,7 @@ import {
   injectMathExportStylesIntoHtml,
   htmlHasRenderedMath,
 } from './mathRender.js';
+import { prepareHtmlForDocxMath, patchDocxMath } from './mathDocxExport.js';
 
 const MATH_EXPORT_FORMATS = new Set(["html", "pdf", "docx"]);
 
@@ -539,13 +540,16 @@ export async function htmlToExportBlob(
   if (styledDiff && format.id === "html") {
     exportHtml = wrapStyledDiffHtml(exportHtml);
   }
-  console.log(exportHtml);
 
   // Use docshift for DOCX export (better client-side support)
   if (format.id === "docx") {
-    exportHtml = normalizeHtmlColorsToHex(exportHtml);
+    const { html: mathHtml, mathEntries } = prepareHtmlForDocxMath(exportHtml);
+    exportHtml = normalizeHtmlColorsToHex(mathHtml);
     exportHtml = normalizeBackgroundForDocx(exportHtml);
-    const blob = await docshiftHtmlToDocxBlob(exportHtml);
+    let blob = await docshiftHtmlToDocxBlob(exportHtml);
+    if (mathEntries.length) {
+      blob = await patchDocxMath(blob, mathEntries);
+    }
     return { blob, format };
   }
   if (format.id === "html" && !styledDiff) {
@@ -603,5 +607,10 @@ export async function htmlToExportBlob(
  */
 export async function htmlToDocxBlob(html, filename = "export.docx") {
   void filename;
-  return docshiftHtmlToDocxBlob(html);
+  const { html: preparedHtml, mathEntries } = prepareHtmlForDocxMath(html);
+  let blob = await docshiftHtmlToDocxBlob(preparedHtml);
+  if (mathEntries.length) {
+    blob = await patchDocxMath(blob, mathEntries);
+  }
+  return blob;
 }
