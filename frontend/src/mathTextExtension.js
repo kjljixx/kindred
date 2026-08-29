@@ -153,12 +153,25 @@ function selectionOverlapsRange(selection, from, to) {
   return selection.from < to && selection.to > from;
 }
 
-function createMathFakeCaret() {
+function mathBlockStyleAt(doc, from, to, caretPos) {
+  const samplePos = caretPos === from ? from : Math.max(from, to - 1);
+  const $pos = doc.resolve(Math.min(samplePos, doc.content.size - 1));
+  const textStyle = $pos.marks().find((mark) => mark.type.name === "textStyle");
+  const attrs = textStyle?.attrs || {};
+  return {
+    fontSize: attrs.fontSize || null,
+    color: attrs.color || null,
+  };
+}
+
+function createMathFakeCaret(style = {}) {
   return () => {
     const el = document.createElement("span");
     el.className = "kindred-math-fake-caret";
     el.contentEditable = "false";
     el.setAttribute("aria-hidden", "true");
+    if (style.fontSize) el.style.fontSize = style.fontSize;
+    if (style.color) el.style.backgroundColor = style.color;
     return el;
   };
 }
@@ -196,8 +209,9 @@ function buildMathDecorations(doc, selection, state) {
       const caret = mathCaretAtBoundary(selection, from, to);
 
       if (caret) {
+        const style = mathBlockStyleAt(doc, from, to, caret.pos);
         decorations.push(
-          Decoration.widget(caret.pos, createMathFakeCaret(), {
+          Decoration.widget(caret.pos, createMathFakeCaret(style), {
             side: caret.side,
             key: `${key}-caret`,
           }),

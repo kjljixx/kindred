@@ -805,7 +805,7 @@ button.pane-title {
   display: inline-block;
   width: 1px;
   height: 1.1em;
-  vertical-align: -0.1em;
+  vertical-align: -0.17em;
   transform: scaleY(1.25);
   transform-origin: center;
   background: currentColor;
