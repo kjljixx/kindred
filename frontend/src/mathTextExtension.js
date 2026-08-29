@@ -133,6 +133,23 @@ function selectionOverlapsRange(selection, from, to) {
   return selection.from < to && selection.to > from;
 }
 
+function createMathFakeCaret() {
+  return () => {
+    const el = document.createElement("span");
+    el.className = "kindred-math-fake-caret";
+    el.contentEditable = "false";
+    el.setAttribute("aria-hidden", "true");
+    return el;
+  };
+}
+
+function mathCaretAtBoundary(selection, from, to) {
+  if (!selection.empty) return null;
+  if (selection.from === from) return { pos: from, side: -1 };
+  if (selection.from === to) return { pos: to, side: 1 };
+  return null;
+}
+
 function buildMathDecorations(doc, selection, state) {
   if (isDiffOverlayActive(state)) {
     return [];
@@ -156,6 +173,16 @@ function buildMathDecorations(doc, selection, state) {
 
       const mathText = linearText.slice(range.start, range.end);
       const key = `math-${from}-${to}-${mathText}`;
+      const caret = mathCaretAtBoundary(selection, from, to);
+
+      if (caret) {
+        decorations.push(
+          Decoration.widget(caret.pos, createMathFakeCaret(), {
+            side: caret.side,
+            key: `${key}-caret`,
+          }),
+        );
+      }
 
       decorations.push(
         Decoration.inline(from, to, { class: "kindred-math-source" }),
