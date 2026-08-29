@@ -7,6 +7,14 @@ import { importDocxToHtml, htmlToDocxBlob as docshiftHtmlToDocxBlob } from './do
 import { invertHtmlColors, normalizeHtmlColorsToHex, normalizeBackgroundForDocx, blendTransparentBackgroundsInHtml } from './colorInvert.js';
 import { CONFIG } from './config.js';
 import { wrapStyledDiffHtml, DIFF_EXPORT_EMBEDDED_CSS } from './diffExport.js';
+import {
+  getMathExportEmbeddedCss,
+  renderMathForExport,
+  injectMathExportStylesIntoHtml,
+  htmlHasRenderedMath,
+} from './mathRender.js';
+
+const MATH_EXPORT_FORMATS = new Set(["html", "pdf", "docx"]);
 
 /** @type {Promise<{ convert: Function }> | null} */
 let pandocPromise = null;
@@ -483,6 +491,7 @@ export async function htmlToPdfBlob(html, options = {}) {
   style.textContent = `
     mark { color: inherit; }
     ${styledDiff ? DIFF_EXPORT_EMBEDDED_CSS : ""}
+    ${htmlHasRenderedMath(html) ? getMathExportEmbeddedCss() : ""}
   `;
   container.prepend(style);
   const pdfLayout = {
@@ -524,6 +533,9 @@ export async function htmlToExportBlob(
     exportHtml = invertHtmlColors(exportHtml || "<p></p>");
     exportHtml = blendTransparentBackgroundsInHtml(exportHtml, { r: 255, g: 255, b: 255 });
   }
+  if (MATH_EXPORT_FORMATS.has(format.id) && !styledDiff) {
+    exportHtml = renderMathForExport(exportHtml);
+  }
   if (styledDiff && format.id === "html") {
     exportHtml = wrapStyledDiffHtml(exportHtml);
   }
@@ -535,6 +547,18 @@ export async function htmlToExportBlob(
     const blob = await docshiftHtmlToDocxBlob(exportHtml);
     return { blob, format };
   }
+  if (format.id === "html" && !styledDiff) {
+    let output = exportHtml;
+  
+    if (htmlHasRenderedMath(output)) {
+      output = injectMathExportStylesIntoHtml(output);
+    }
+  
+    return {
+      blob: new Blob([output], { type: format.mime }),
+      format
+    };
+  }
 
   // WASI-safe output key; caller picks the download filename separately.
   const outName = `export.${format.ext}`;
@@ -544,8 +568,6 @@ export async function htmlToExportBlob(
     const blob = await htmlToPdfBlob(exportHtml, { styledDiff });
     return { blob, format };
   }
-  const alignments =
-    format.pandoc === "docx" ? extractParagraphAlignments(src) : [];
   const result = await convert(
     { from: "html", to: format.pandoc, "output-file": outName },
     src,
@@ -568,11 +590,6 @@ export async function htmlToExportBlob(
   if (media.length && (format.pandoc === "html" || format.pandoc === "markdown")) {
     const restored = replaceImagePaths(await out.text(), media);
     out = new Blob([restored], { type: format.mime });
-  }
-  if (format.pandoc === "docx") {
-    out = await patchDocxParagraphAlignments(out, alignments);
-  } else if (out.type !== format.mime) {
-    out = new Blob([out], { type: format.mime });
   }
   return { blob: out, format };
 }

@@ -5,10 +5,9 @@ import { classifyMath } from "./mathTextDetector.js";
 import { createMathWidget } from "./mathRender.js";
 
 const mathTextKey = new PluginKey("kindredMathText");
-const overlayKey = new PluginKey("kindredOverlay");
 
 function isDiffOverlayActive(state) {
-  const overlay = overlayKey.getState(state);
+  const overlay = state["kindredOverlay$"];
   if (!overlay?.showDiffs) return false;
 
   const baseline = overlay.baseline || "";
@@ -108,8 +107,7 @@ export const MathText = Extension.create({
               buildMathDecorations(state.doc, state.selection, state),
             ),
           apply(tr, prev, _oldState, newState) {
-            const overlayChanged = tr.getMeta(overlayKey) !== undefined;
-            if (!overlayChanged && !tr.docChanged && !tr.selectionSet) {
+            if (!tr.docChanged && !tr.selectionSet) {
               return prev.map(tr.mapping, tr.doc);
             }
             return DecorationSet.create(
