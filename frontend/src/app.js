@@ -24,7 +24,7 @@ import {
   plainOffsetForPmPos,
 } from "./tiptapEditor.js";
 import { bindLongPress } from "./longPress.js";
-import { loadColoris, loadHtmlDiff } from "./optionalAssets.js";
+import { loadColoris, loadHtmlDiff, preloadOptionalAssets } from "./optionalAssets.js";
 import { warmPopularGoogleFonts } from "./fontCatalog.js";
 import { alignTwoWay } from "./docAlign.js";
 import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, isStructuralBlock, isTableBlock } from "./kindredSchema.js";
@@ -535,6 +535,7 @@ import {
       void loadColoris().catch((error) => console.warn("Color picker failed to load:", error));
     }, { once: true });
   });
+  preloadOptionalAssets();
 
   const stashChatKeptSelection = () => {
     if (!tipTap) return;

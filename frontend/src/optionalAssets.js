@@ -24,6 +24,7 @@ function loadScript(src) {
     }
     const script = document.createElement("script");
     script.src = src;
+    script.fetchPriority = "low";
     script.onload = resolve;
     script.onerror = () => reject(new Error(`Failed to load ${src}`));
     document.head.appendChild(script);
@@ -93,4 +94,17 @@ export function loadHtmlDiff() {
     });
   }
   return htmlDiffPromise;
+}
+
+export function preloadOptionalAssets() {
+  const warm = () => {
+    void loadColoris().catch((error) => console.warn("Color picker preload failed:", error));
+    void loadHtmlDiff().catch((error) => console.warn("HtmlDiff preload failed:", error));
+  };
+
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(warm, { timeout: 5000 });
+  } else {
+    window.setTimeout(warm, 1000);
+  }
 }

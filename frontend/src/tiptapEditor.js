@@ -27,6 +27,7 @@ import {
   summarizeTransaction,
 } from "./debug.js";
 import { MathText } from "./mathTextExtension.js";
+import { loadColoris } from "./optionalAssets.js";
 
 const keptSelectionKey = new PluginKey("keptSelection");
 
@@ -3159,8 +3160,15 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
     syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
     stashedSelection = null;
   };
-  const openHighlightPicker = () => {
+  const openHighlightPicker = async () => {
     if (!highlightInput || !highlightBtn) return;
+
+    try {
+      await loadColoris();
+    } catch (error) {
+      console.warn("Color picker failed to load:", error);
+      return;
+    }
 
     // 1. Measure the exact screen position of the 'H' button
     const rect = highlightBtn.getBoundingClientRect();
