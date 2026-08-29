@@ -26,6 +26,7 @@
     "@tiptap/extension-underline": "^3.30.1",
     "@tiptap/pm": "^3.30.1",
     "@tiptap/starter-kit": "^3.30.1",
+    "asciimath2tex": "^1.5.0",
     "buffer": "^6.0.3",
     "daff": "^1.4.2",
     "docshift": "^0.0.73",
@@ -33,6 +34,7 @@
     "fflate": "^0.8.2",
     "html2pdf.js": "^0.14.0",
     "isomorphic-git": "^1.27.1",
+    "katex": "^0.18.4",
     "marked": "^15.0.7",
     "pandoc-wasm": "^1.1.0"
   },

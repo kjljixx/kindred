@@ -26,6 +26,7 @@ import {
   summarizeEditor,
   summarizeTransaction,
 } from "./debug.js";
+import { MathText } from "./mathTextExtension.js";
 
 const keptSelectionKey = new PluginKey("keptSelection");
 
@@ -3442,6 +3443,7 @@ export function createKindredEditor({
       ConflictParagraph,
       KeptSelection,
       SelectionUnits,
+      MathText,
       Placeholder.configure({ placeholder }),
       KindredOverlay.configure({ diffsFn, onConflictAction, onAlignConflictAction, onTableConflictAction, onListConflictAction }),
     ],

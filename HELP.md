@@ -24,7 +24,7 @@ Editor Keyboard Shortcuts
 - Ctrl+L: Select the next highest organizational unit (word, sentence, paragraph) of text. For example, if your cursor is in the middle of a word, Ctrl+L will select the entire word. If you Ctrl+L again, it will select the entire sentence. If you Ctrl+L again, it will select the entire paragraph.
 - Alt+Up/Down: Move the current organizational unit up or down in the text. This is useful for rearranging sentences in a paragraph or rearranging paragraphs in a document.
 - Alt+[ and Alt+]: Shift the current selection left or right by one organizational unit. For example, if you have a sentence selected, Alt+[ will select the previous sentence, and Alt+] will select the next sentence. If you have a paragraph selected, Alt+[ will select the previous paragraph, and Alt+] will select the next paragraph.
-- Ctrl+;: Focus the editor pane (on narrow screens)
+- Ctrl+;: Focus the editor pane and the editor
 - Ctrl+[: Focus chat pane
 - Ctrl+]: Focus editor pane
 - Ctrl+8: Switch to Text view mode

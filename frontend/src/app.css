@@ -790,6 +790,29 @@ button.pane-title {
   outline-offset: 2px;
 }
 
+.editor .ProseMirror .kindred-math-source {
+  display: inline-block;
+  width: 0;
+  overflow: visible;
+  vertical-align: baseline;
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+  caret-color: auto;
+}
+
+.editor .ProseMirror .kindred-math-katex {
+  display: inline-block;
+  vertical-align: baseline;
+  pointer-events: none;
+  border-radius: var(--radius-1);
+  padding: 0 0.12em;
+}
+
+.editor .ProseMirror .kindred-math-katex .katex {
+  font-size: 1em;
+}
+
 .merge-conflict-btn img {
   display: block;
   max-width: 12rem;
