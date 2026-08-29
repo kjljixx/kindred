@@ -1,4 +1,5 @@
 import { Extension } from "@tiptap/core";
+import { evaluate } from "mathjs";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { overlayKey } from "./editorKeys.js";
@@ -6,6 +7,7 @@ import { classifyMath } from "./mathTextDetector.js";
 import { createMathWidget } from "./mathRender.js";
 
 const mathTextKey = new PluginKey("kindredMathText");
+const mathAutoCalcKey = new PluginKey("kindredMathAutoCalc");
 
 function getOverlayState(state) {
   const fromKey = overlayKey.getState(state);
@@ -40,9 +42,7 @@ function isDiffOverlayActive(state) {
 }
 
 const MATH_BLOCK_TYPES = new Set([
-  "paragraph",
-  "tableCell",
-  "tableHeader",
+  "paragraph"
 ]);
 
 function collectLinearText(node, blockPos) {
@@ -69,6 +69,61 @@ function pmPosForOffset(segments, offset) {
     }
   }
   return null;
+}
+
+function linearOffsetForPmPos(segments, pmPos) {
+  for (const segment of segments) {
+    const length = segment.end - segment.start;
+    const segPmEnd = segment.pmStart + length;
+    if (pmPos >= segment.pmStart && pmPos <= segPmEnd) {
+      return segment.start + (pmPos - segment.pmStart);
+    }
+  }
+  return null;
+}
+
+/** Evaluate a math run slice that ends with "="; null if not calculable. */
+export function evaluateHangingEquals(slice) {
+  if (!slice.endsWith("=")) return null;
+  const expr = slice.slice(0, -1).trim();
+  if (!expr) return null;
+  try {
+    const value = evaluate(expr);
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    return String(value);
+  } catch {
+    return null;
+  }
+}
+
+function findAutoCalcTransaction(state) {
+  if (isDiffOverlayActive(state) || !state.selection.empty) return null;
+
+  let transaction = null;
+
+  state.doc.descendants((node, pos) => {
+    if (transaction || !MATH_BLOCK_TYPES.has(node.type.name)) return;
+
+    const { linearText, segments } = collectLinearText(node, pos);
+    const cursorOffset = linearOffsetForPmPos(segments, state.selection.from);
+    if (cursorOffset == null) return;
+
+    for (const range of classifyMath(linearText).ranges) {
+      if (range.end !== cursorOffset) continue;
+      const result = evaluateHangingEquals(
+        linearText.slice(range.start, range.end),
+      );
+      if (result == null) continue;
+      const insertPos = pmPosForOffset(segments, range.end);
+      if (insertPos == null) continue;
+      transaction = state.tr
+        .insertText(result, insertPos)
+        .setMeta("mathAutoCalc", true);
+      return false;
+    }
+  });
+
+  return transaction;
 }
 
 function selectionOverlapsRange(selection, from, to) {
@@ -114,6 +169,28 @@ function buildMathDecorations(doc, selection, state) {
 
   return decorations;
 }
+
+export const MathAutoCalc = Extension.create({
+  name: "mathAutoCalc",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: mathAutoCalcKey,
+        appendTransaction(transactions, _oldState, newState) {
+          if (
+            !transactions.some(
+              (tr) => tr.docChanged && !tr.getMeta("mathAutoCalc"),
+            )
+          ) {
+            return null;
+          }
+          return findAutoCalcTransaction(newState);
+        },
+      }),
+    ];
+  },
+});
 
 export const MathText = Extension.create({
   name: "mathText",

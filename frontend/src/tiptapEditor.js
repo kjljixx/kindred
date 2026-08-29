@@ -26,7 +26,7 @@ import {
   summarizeEditor,
   summarizeTransaction,
 } from "./debug.js";
-import { MathText } from "./mathTextExtension.js";
+import { MathAutoCalc, MathText } from "./mathTextExtension.js";
 import { overlayKey } from "./editorKeys.js";
 import { loadColoris } from "./optionalAssets.js";
 
@@ -3451,6 +3451,7 @@ export function createKindredEditor({
       KeptSelection,
       SelectionUnits,
       MathText,
+      MathAutoCalc,
       Placeholder.configure({ placeholder }),
       KindredOverlay.configure({ diffsFn, onConflictAction, onAlignConflictAction, onTableConflictAction, onListConflictAction }),
     ],
