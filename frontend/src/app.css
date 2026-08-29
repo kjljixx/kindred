@@ -804,8 +804,6 @@ button.pane-title {
 .editor .ProseMirror .kindred-math-katex {
   display: inline-block;
   vertical-align: baseline;
-  pointer-events: none;
-  border-radius: var(--radius-1);
   padding: 0 0.12em;
 }
 

@@ -5,6 +5,18 @@ import { classifyMath } from "./mathTextDetector.js";
 import { createMathWidget } from "./mathRender.js";
 
 const mathTextKey = new PluginKey("kindredMathText");
+const overlayKey = new PluginKey("kindredOverlay");
+
+function isDiffOverlayActive(state) {
+  const overlay = overlayKey.getState(state);
+  if (!overlay?.showDiffs) return false;
+
+  const baseline = overlay.baseline || "";
+  const currentPlain = overlay.currentPlain || "";
+  if (baseline !== currentPlain) return true;
+
+  return (overlay.formatHunks?.length || 0) > 0;
+}
 
 const MATH_BLOCK_TYPES = new Set([
   "paragraph",
@@ -45,7 +57,11 @@ function selectionOverlapsRange(selection, from, to) {
   return selection.from < to && selection.to > from;
 }
 
-function buildMathDecorations(doc, selection) {
+function buildMathDecorations(doc, selection, state) {
+  if (isDiffOverlayActive(state)) {
+    return [];
+  }
+
   const decorations = [];
 
   doc.descendants((node, pos) => {
@@ -89,15 +105,16 @@ export const MathText = Extension.create({
           init: (_, state) =>
             DecorationSet.create(
               state.doc,
-              buildMathDecorations(state.doc, state.selection),
+              buildMathDecorations(state.doc, state.selection, state),
             ),
           apply(tr, prev, _oldState, newState) {
-            if (!tr.docChanged && !tr.selectionSet) {
+            const overlayChanged = tr.getMeta(overlayKey) !== undefined;
+            if (!overlayChanged && !tr.docChanged && !tr.selectionSet) {
               return prev.map(tr.mapping, tr.doc);
             }
             return DecorationSet.create(
               newState.doc,
-              buildMathDecorations(newState.doc, newState.selection),
+              buildMathDecorations(newState.doc, newState.selection, newState),
             );
           },
         },
