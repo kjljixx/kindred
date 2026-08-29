@@ -1,6 +1,7 @@
 import { Extension } from "@tiptap/core";
 import { evaluate } from "mathjs";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { ReplaceStep } from "@tiptap/pm/transform";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { overlayKey } from "./editorKeys.js";
 import { classifyMath } from "./mathTextDetector.js";
@@ -80,6 +81,25 @@ function linearOffsetForPmPos(segments, pmPos) {
     }
   }
   return null;
+}
+
+/** True when a user transaction inserted "=" (not auto-calc or pure deletion). */
+export function userInsertedEquals(transactions) {
+  for (const tr of transactions) {
+    if (!tr.docChanged || tr.getMeta("mathAutoCalc")) continue;
+
+    for (const step of tr.steps) {
+      if (!(step instanceof ReplaceStep)) continue;
+
+      const inserted = step.slice.content.textBetween(
+        0,
+        step.slice.content.size,
+        "",
+      );
+      if (inserted.includes("=")) return true;
+    }
+  }
+  return false;
 }
 
 /** Evaluate a math run slice that ends with "="; null if not calculable. */
@@ -210,6 +230,9 @@ export const MathAutoCalc = Extension.create({
               (tr) => tr.docChanged && !tr.getMeta("mathAutoCalc"),
             )
           ) {
+            return null;
+          }
+          if (!userInsertedEquals(transactions)) {
             return null;
           }
           return findAutoCalcTransaction(newState);
