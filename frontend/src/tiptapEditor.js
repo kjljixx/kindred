@@ -27,6 +27,7 @@ import {
   summarizeTransaction,
 } from "./debug.js";
 import { MathText } from "./mathTextExtension.js";
+import { overlayKey } from "./editorKeys.js";
 import { loadColoris } from "./optionalAssets.js";
 
 const keptSelectionKey = new PluginKey("keptSelection");
@@ -195,8 +196,6 @@ function alignPillContent(align) {
   const key = String(align || "left").toLowerCase();
   return ALIGN_LABEL[key] || ALIGN_LABEL.left;
 }
-const overlayKey = new PluginKey("kindredOverlay");
-
 const DIFF_EQUAL = 0;
 const DIFF_INSERT = 1;
 const DIFF_DELETE = -1;

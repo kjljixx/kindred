@@ -1,13 +1,35 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { overlayKey } from "./editorKeys.js";
 import { classifyMath } from "./mathTextDetector.js";
 import { createMathWidget } from "./mathRender.js";
 
 const mathTextKey = new PluginKey("kindredMathText");
 
+function getOverlayState(state) {
+  const fromKey = overlayKey.getState(state);
+  if (fromKey) return fromKey;
+  for (const key of Object.getOwnPropertyNames(state)) {
+    if (key.startsWith("kindredOverlay")) return state[key];
+  }
+  return null;
+}
+
+function overlayMathInputsChanged(oldState, newState) {
+  const a = getOverlayState(oldState);
+  const b = getOverlayState(newState);
+  if (!a || !b) return a !== b;
+  return (
+    a.showDiffs !== b.showDiffs ||
+    a.baseline !== b.baseline ||
+    a.currentPlain !== b.currentPlain ||
+    (a.formatHunks?.length || 0) !== (b.formatHunks?.length || 0)
+  );
+}
+
 function isDiffOverlayActive(state) {
-  const overlay = state["kindredOverlay$"];
+  const overlay = getOverlayState(state);
   if (!overlay?.showDiffs) return false;
 
   const baseline = overlay.baseline || "";
@@ -106,8 +128,12 @@ export const MathText = Extension.create({
               state.doc,
               buildMathDecorations(state.doc, state.selection, state),
             ),
-          apply(tr, prev, _oldState, newState) {
-            if (!tr.docChanged && !tr.selectionSet) {
+          apply(tr, prev, oldState, newState) {
+            const overlayChanged =
+              Boolean(tr.getMeta(overlayKey)) ||
+              overlayMathInputsChanged(oldState, newState);
+
+            if (!tr.docChanged && !tr.selectionSet && !overlayChanged) {
               return prev.map(tr.mapping, tr.doc);
             }
             return DecorationSet.create(
