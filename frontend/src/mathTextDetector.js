@@ -1,6 +1,6 @@
 const mathFunctions = new Set([
   "sin", "cos", "tan", "sec", "csc", "cot", "log", "ln", "sqrt", "lim",
-  "max", "min", "det", "gcd", "lcm",
+  "max", "min", "det", "gcd", "lcm", "sum", "int"
 ]);
 
 const mathPunctuation = new Set([
@@ -10,7 +10,7 @@ const mathPunctuation = new Set([
 const apostrophes = new Set(["'", "’"]);
 
 const mathWords = new Set([
-  "pi", "sigma", "inf", "theta", "alpha", "beta", "gamma", "delta", "phi", "lambda",
+  "pi", "sigma", "theta", "alpha", "beta", "gamma", "delta", "phi", "lambda", "oo" //oo = infinity
 ]);
 
 const differentialVariables = new Set([

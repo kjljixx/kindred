@@ -31,3 +31,7 @@ Editor Keyboard Shortcuts
 - Ctrl+9: Switch to Diff view mode
 - Ctrl+0: Switch to Review view mode
 - Ctrl+/: Focus chat input box
+
+Editor Features
+- Auto-Detect/Calculate math: Type in any math formula and it will be automatically rendered in LaTeX. If you enter a calculation (must end with an equals sign), it will be automatically calculated and the result will be displayed. For example, typing "2+2=" will display "4" in the editor.
+- Formatting Lock: You can lock formatting in the editor so that it stays the same no matter what formatting is underneath your Caret. This is useful for filling out forms, where you want your responses to have different formatting than the questions.
