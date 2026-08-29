@@ -3344,24 +3344,29 @@ import {
       pullFromEditor();
       syncDirtyBodyFromCurrent();
       const exportHtml = htmlForExport(formatId);
+      const embeddedHtml = await store.embedAssetImagesForExport(
+        activeDraftId,
+        exportHtml,
+        viewingOid,
+      );
       const styledDiff =
         wantsStyledDiffExport(CONFIG, dirtyViewMode, formatId) &&
-        hasDiffMarkers(exportHtml);
-      const exportPlain = store.htmlToPlain(exportHtml);
-      if (!(exportPlain || "").trim() && exportHtml === "<p></p>") {
+        hasDiffMarkers(embeddedHtml);
+      const exportPlain = store.htmlToPlain(embeddedHtml);
+      if (!(exportPlain || "").trim() && embeddedHtml === "<p></p>") {
         setStatus("nothing to export", "warn");
         return;
       }
       const base = sanitizeDownloadBase(
         activeDraftDisplayTitle() ||
-          store.titleFromText(exportHtml || dirtyHtml || dirtyText || ""),
+          store.titleFromText(embeddedHtml || dirtyHtml || dirtyText || ""),
       );
       let slowTimer = setTimeout(() => {
         setStatus("exporting... please be patient, pandoc may be downloading...");
       }, 3000);
       const { htmlToExportBlob } = await loadPandocModule();
       const { blob, format } = await htmlToExportBlob(
-        exportHtml,
+        embeddedHtml,
         formatId || CONFIG.export.defaultFormat,
         { styledDiff },
       );

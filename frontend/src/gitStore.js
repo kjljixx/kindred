@@ -268,6 +268,28 @@ const VOLUME = "kindred";
     return `kindred-image:${path}`;
   }
 
+  function imageMimeFromPath(path) {
+    const byExt = {
+      avif: "image/avif",
+      gif: "image/gif",
+      jpeg: "image/jpeg",
+      jpg: "image/jpeg",
+      png: "image/png",
+      svg: "image/svg+xml",
+      webp: "image/webp",
+    };
+    return byExt[imageExtension({ name: path })] || "image/png";
+  }
+
+  function blobToDataUri(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Failed to read image asset"));
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(blob);
+    });
+  }
+
   async function hydrateImageElements(id, root, oid = null) {
     if (!id || !root) return;
     const dir = textDir(id);
@@ -285,6 +307,34 @@ const VOLUME = "kindred";
         console.warn("kindred: image asset unavailable", path, err);
       }
     }));
+  }
+
+  async function embedAssetImagesForExport(id, html, oid = null) {
+    const raw = String(html || "");
+    if (!id || !raw.includes("kindred-image:")) return raw;
+    const doc = new DOMParser().parseFromString(
+      `<div id="kindred-embed-root">${raw}</div>`,
+      "text/html",
+    );
+    const root = doc.getElementById("kindred-embed-root");
+    if (!root) return raw;
+    const dir = textDir(id);
+    const images = [...root.querySelectorAll("img[src^='kindred-image:']")];
+    if (!images.length) return raw;
+    await Promise.all(images.map(async (image) => {
+      const path = assetPathFromReference(image.getAttribute("src"));
+      if (!path) return;
+      try {
+        let bytes;
+        if (oid) ({ blob: bytes } = await git.readBlob({ fs, dir, oid, filepath: path }));
+        else bytes = await pfs.readFile(`${dir}/${path}`);
+        const mime = imageMimeFromPath(path);
+        image.setAttribute("src", await blobToDataUri(new Blob([bytes], { type: mime })));
+      } catch (err) {
+        console.warn("kindred: export image asset unavailable", path, err);
+      }
+    }));
+    return root.innerHTML;
   }
 
   async function copyAssetsFromOid(dir, oid, html) {
@@ -3203,6 +3253,7 @@ const KindredGitStore = {
   dumpFsTree,
   addImage,
   hydrateImageElements,
+  embedAssetImagesForExport,
   DEFAULT_CHAT_TITLE,
 };
 

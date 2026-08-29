@@ -539,6 +539,7 @@ export async function htmlToExportBlob(
   if (styledDiff && format.id === "html") {
     exportHtml = wrapStyledDiffHtml(exportHtml);
   }
+  console.log(exportHtml);
 
   // Use docshift for DOCX export (better client-side support)
   if (format.id === "docx") {
@@ -559,15 +560,16 @@ export async function htmlToExportBlob(
       format
     };
   }
+  if (format.id === "pdf") {
+    const blob = await htmlToPdfBlob(exportHtml, { styledDiff });
+    return { blob, format };
+  }
 
   // WASI-safe output key; caller picks the download filename separately.
   const outName = `export.${format.ext}`;
   const { convert } = await ensurePandoc();
   const { html: src, files, media } = materializeEmbeddedImages(exportHtml || "<p></p>");
-  if (format.id === "pdf") {
-    const blob = await htmlToPdfBlob(exportHtml, { styledDiff });
-    return { blob, format };
-  }
+  
   const result = await convert(
     { from: "html", to: format.pandoc, "output-file": outName },
     src,
