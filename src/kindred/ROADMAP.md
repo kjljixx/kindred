@@ -8,7 +8,7 @@ Chat
 
 Git
 - Staging
-- Look at git-appraisal implementation for comments (or maybe tiptap comments are possible?)
+- Look at git-appraise implementation for comments (or maybe tiptap comments are possible?)
 - Review/Merge mode with arrow keys and enter?
 
 Import/Export

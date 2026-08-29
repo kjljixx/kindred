@@ -550,7 +550,7 @@ button.pane-title {
 .draft-header-right {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -579,14 +579,23 @@ button.pane-title {
   background: var(--btn-secondary-bg-hover);
 }
 
+#import-btn svg,
+#export-btn svg {
+  display: block;
+  width: 1.6rem;
+  height: 1.6rem;
+  fill: currentColor;
+}
+
 #export-btn {
-  padding: var(--btn-pad-y) 0 var(--btn-pad-y) var(--btn-pad-x);
+  padding: var(--btn-tertiary-pad-y) var(--space-2) var(--btn-tertiary-pad-y) var(--btn-tertiary-pad-x);
   border-top-left-radius: var(--btn-radius);
   border-bottom-left-radius: var(--btn-radius);
 }
 
 .export-menu-btn {
   padding: 0 var(--space-3);
+  padding-left: var(--space-1);
   border-top-right-radius: var(--btn-radius);
   border-bottom-right-radius: var(--btn-radius);
 }
