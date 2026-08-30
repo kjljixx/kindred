@@ -1,0 +1,20 @@
+[
+  {
+    "insertTable": {
+      "rows": 1,
+      "columns": 1,
+      "location": {
+        "index": 4
+      }
+    }
+  },
+  {
+    "insertTable": {
+      "rows": 1,
+      "columns": 1,
+      "location": {
+        "index": 2
+      }
+    }
+  }
+]

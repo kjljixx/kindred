@@ -1,0 +1,18 @@
+[
+  {
+    "insertText": {
+      "location": {
+        "index": 8
+      },
+      "text": "Delete"
+    }
+  },
+  {
+    "insertText": {
+      "location": {
+        "index": 5
+      },
+      "text": "Keep"
+    }
+  }
+]

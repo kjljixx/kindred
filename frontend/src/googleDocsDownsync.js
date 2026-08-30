@@ -1,4 +1,48 @@
 import { fontFamilyCssValue } from './fontCatalog.js'
+import { debugEvent } from './debug.js'
+
+function documentIdSummary(documentId) {
+  const value = String(documentId || '').trim()
+  return {
+    documentIdLength: value.length,
+    documentIdSuffix: value ? value.slice(-6) : null,
+  }
+}
+
+function syncElementCounts(elements = []) {
+  const counts = {
+    elementCount: elements.length,
+    paragraphCount: 0,
+    tableCount: 0,
+    listCount: 0,
+  }
+  for (const element of elements) {
+    if (element.kind === 'table') counts.tableCount += 1
+    else if (element.kind === 'paragraph') counts.paragraphCount += 1
+    else if (element.kind === 'bulletList' || element.kind === 'orderedList') counts.listCount += 1
+  }
+  return counts
+}
+
+function syncStateSummary(syncState) {
+  return syncElementCounts(syncState?.baseDocument?.elements || [])
+}
+
+function operationCounts(requests = []) {
+  const counts = {}
+  for (const request of requests) {
+    const operation = Object.keys(request || {})[0] || 'unknown'
+    counts[operation] = (counts[operation] || 0) + 1
+  }
+  return counts
+}
+
+function errorSummary(error) {
+  return {
+    errorType: error?.name || 'Error',
+    batchAccepted: error?.batchAccepted === true,
+  }
+}
 
 function cssColorFromGoogle(color) {
   const rgb = color?.color?.rgbColor
@@ -254,14 +298,224 @@ export function parseStructuralElements(elements, googleDoc) {
 }
 
 export function parseGoogleDocument(googleDoc) {
-  return {
-    elements: parseGoogleStructuralElements(googleDoc.body?.content || [], googleDoc),
+  const sourceElements = googleDoc.body?.content || []
+  const elements = parseGoogleStructuralElements(sourceElements, googleDoc)
+  debugEvent('gdocs-downsync', 'parse-document', {
+    sourceElementCount: sourceElements.length,
+    ...syncElementCounts(elements),
+  })
+  return { elements }
+}
+
+export function buildGoogleDocsSyncState(googleDoc) {
+  const baseDocument = parseGoogleDocument(googleDoc)
+  const syncState = {
+    baseDocument,
+    tiptapDocument: {
+      type: 'doc',
+      content: baseDocument.elements.map((element) => element.tiptap),
+    },
+  }
+  debugEvent('gdocs-downsync', 'state-built', syncStateSummary(syncState))
+  return syncState
+}
+
+export function applyGoogleDocsSyncState({
+  googleDocument,
+  editor,
+  buildState = buildGoogleDocsSyncState,
+}) {
+  const syncState = buildState(googleDocument)
+  debugEvent('gdocs-downsync', 'state-apply-start', syncStateSummary(syncState))
+  editor.commands.setContent(syncState.tiptapDocument)
+  editor.setGoogleDocsBaseDocument(syncState.baseDocument)
+  debugEvent('gdocs-downsync', 'state-applied', syncStateSummary(syncState))
+  return syncState
+}
+
+function googleDocsSyncError(message, batchAccepted = false) {
+  const error = new Error(message)
+  error.batchAccepted = batchAccepted
+  return error
+}
+
+function acceptedBatchError(error, acceptedRevisionId = null) {
+  if (error?.batchAccepted) return error
+  const wrapped = googleDocsSyncError(
+    error instanceof Error ? error.message : String(error),
+    true,
+  )
+  wrapped.acceptedRevisionId = acceptedRevisionId
+  wrapped.cause = error
+  return wrapped
+}
+
+export async function refetchGoogleDocsBaseAndAcknowledge({
+  documentId,
+  fetchImpl = fetch,
+  editor,
+  buildState = buildGoogleDocsSyncState,
+}) {
+  const normalizedDocumentId = String(documentId || '').trim()
+  if (!normalizedDocumentId) throw googleDocsSyncError('Google Docs document ID is required')
+  let phase = 'request'
+  debugEvent('gdocs-downsync', 'metadata-refetch-start', {
+    ...documentIdSummary(normalizedDocumentId),
+  })
+  try {
+    const documentResponse = await fetchImpl(
+      `/api/google-docs/document?documentId=${encodeURIComponent(normalizedDocumentId)}`,
+      { method: 'GET' },
+    )
+    phase = 'response'
+    debugEvent('gdocs-downsync', 'metadata-refetch-response', {
+      ...documentIdSummary(normalizedDocumentId),
+      ok: documentResponse.ok,
+      status: documentResponse.status || null,
+    })
+    if (!documentResponse.ok) {
+      const error = await documentResponse.json().catch(() => ({}))
+      throw googleDocsSyncError(error.detail || 'Google Docs refetch failed')
+    }
+    let documentResult
+    try {
+      documentResult = await documentResponse.json()
+    } catch {
+      throw googleDocsSyncError('Google Docs refetch response is invalid')
+    }
+    if (!documentResult.revisionId || !documentResult.document) {
+      throw googleDocsSyncError('Google Docs refetch response is incomplete')
+    }
+
+    phase = 'state-build'
+    const syncState = buildState(documentResult.document)
+    debugEvent('gdocs-downsync', 'metadata-refetch-state-built', {
+      ...syncStateSummary(syncState),
+      hasRevisionId: Boolean(documentResult.revisionId),
+    })
+    phase = 'acknowledge'
+    editor.acknowledgeGoogleDocsBaseDocument(syncState.baseDocument)
+    debugEvent('gdocs-downsync', 'metadata-refetch-acknowledged', {
+      ...syncStateSummary(syncState),
+      hasRevisionId: Boolean(documentResult.revisionId),
+    })
+    return { revisionId: documentResult.revisionId }
+  } catch (error) {
+    debugEvent('gdocs-downsync', 'metadata-refetch-failed', {
+      ...documentIdSummary(normalizedDocumentId),
+      phase,
+      ...errorSummary(error),
+    })
+    if (error?.batchAccepted === false) throw error
+    const wrapped = googleDocsSyncError(
+      error instanceof Error ? error.message : String(error),
+    )
+    wrapped.cause = error
+    throw wrapped
+  }
+}
+
+export async function pushGoogleDocsBatchAndAcknowledge({
+  documentId,
+  requests,
+  targetRevisionId = null,
+  fetchImpl = fetch,
+  editor,
+  buildState = buildGoogleDocsSyncState,
+}) {
+  const normalizedDocumentId = String(documentId || '').trim()
+  if (!normalizedDocumentId) throw googleDocsSyncError('Google Docs document ID is required')
+  const body = {
+    documentId: normalizedDocumentId,
+    requests,
+    ...(targetRevisionId ? { targetRevisionId } : {}),
+  }
+  debugEvent('gdocs-downsync', 'batch-post-start', {
+    ...documentIdSummary(normalizedDocumentId),
+    requestCount: requests.length,
+    operationCounts: operationCounts(requests),
+    hasTargetRevision: Boolean(targetRevisionId),
+  })
+  let batchResponse
+  try {
+    batchResponse = await fetchImpl('/api/google-docs/batch-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch (error) {
+    debugEvent('gdocs-downsync', 'batch-post-rejected', {
+      ...documentIdSummary(normalizedDocumentId),
+      requestCount: requests.length,
+      ...errorSummary(error),
+    })
+    throw error
+  }
+  debugEvent('gdocs-downsync', 'batch-post-response', {
+    ...documentIdSummary(normalizedDocumentId),
+    ok: batchResponse.ok,
+    status: batchResponse.status || null,
+  })
+  if (!batchResponse.ok) {
+    const error = await batchResponse.json().catch(() => ({}))
+    debugEvent('gdocs-downsync', 'batch-post-rejected', {
+      ...documentIdSummary(normalizedDocumentId),
+      requestCount: requests.length,
+      batchAccepted: false,
+    })
+    throw googleDocsSyncError(error.detail || 'Google Docs sync failed')
+  }
+  let batchResult
+  try {
+    batchResult = await batchResponse.json()
+  } catch {
+    debugEvent('gdocs-downsync', 'batch-post-rejected', {
+      ...documentIdSummary(normalizedDocumentId),
+      requestCount: requests.length,
+      batchAccepted: true,
+      reason: 'invalid-response',
+    })
+    throw googleDocsSyncError('Google Docs sync response is invalid', true)
+  }
+  if (!batchResult.writeControl?.requiredRevisionId) {
+    debugEvent('gdocs-downsync', 'batch-post-rejected', {
+      ...documentIdSummary(normalizedDocumentId),
+      requestCount: requests.length,
+      batchAccepted: true,
+      reason: 'missing-revision',
+    })
+    throw googleDocsSyncError('Google Docs sync response has no revision', true)
+  }
+  debugEvent('gdocs-downsync', 'batch-post-accepted', {
+    ...documentIdSummary(normalizedDocumentId),
+    requestCount: requests.length,
+    operationCounts: operationCounts(requests),
+    hasRevision: true,
+  })
+
+  try {
+    const result = await refetchGoogleDocsBaseAndAcknowledge({
+      documentId: normalizedDocumentId,
+      fetchImpl,
+      editor,
+      buildState,
+    })
+    debugEvent('gdocs-downsync', 'batch-acknowledged', {
+      ...documentIdSummary(normalizedDocumentId),
+      requestCount: requests.length,
+      hasRevision: Boolean(result.revisionId),
+    })
+    return result
+  } catch (error) {
+    debugEvent('gdocs-downsync', 'batch-acknowledge-failed', {
+      ...documentIdSummary(normalizedDocumentId),
+      requestCount: requests.length,
+      ...errorSummary(error),
+    })
+    throw acceptedBatchError(error, batchResult.writeControl.requiredRevisionId)
   }
 }
 
 export function googleDocsToTipTap(googleDoc) {
-  return {
-    type: 'doc',
-    content: parseStructuralElements(googleDoc.body?.content || [], googleDoc),
-  }
+  return buildGoogleDocsSyncState(googleDoc).tiptapDocument
 }

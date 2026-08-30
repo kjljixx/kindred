@@ -1,0 +1,34 @@
+[
+  {
+    "deleteContentRange": {
+      "range": {
+        "startIndex": 16,
+        "endIndex": 20
+      }
+    }
+  },
+  {
+    "insertText": {
+      "location": {
+        "index": 16
+      },
+      "text": "BetaPlus"
+    }
+  },
+  {
+    "deleteContentRange": {
+      "range": {
+        "startIndex": 5,
+        "endIndex": 10
+      }
+    }
+  },
+  {
+    "insertText": {
+      "location": {
+        "index": 5
+      },
+      "text": "A"
+    }
+  }
+]

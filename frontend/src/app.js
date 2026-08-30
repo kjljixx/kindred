@@ -29,7 +29,11 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { CONFIG } from "./config.js";
 import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.js";
-import { googleDocsToTipTap } from "./googleDocsDownsync.js";
+import {
+  applyGoogleDocsSyncState,
+  pushGoogleDocsBatchAndAcknowledge,
+  refetchGoogleDocsBaseAndAcknowledge,
+} from "./googleDocsDownsync.js";
 
 (() => {
   const DIFF_EQUAL = 0;
@@ -200,19 +204,57 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   let googleDocsPulling = false;
   let googleDocsRevisionChecking = false;
   let googleDocsMerging = false;
+  let googleDocsBaseStale = false;
   let lastGoogleRevisionId = null;
   let syncPausedForTest = false;
   let googleDocsPollTimer = null;
   const GOOGLE_DOCS_POLL_INTERVAL_MS = 200;
 
-  function getSyncState() {
+  function googleDocsIdSummary(documentId) {
+    const value = String(documentId || "").trim();
     return {
+      documentIdLength: value.length,
+      documentIdSuffix: value ? value.slice(-6) : null,
+    };
+  }
+
+  function syncStateCounts(syncState) {
+    const elements = syncState?.baseDocument?.elements || [];
+    return {
+      elementCount: elements.length,
+      paragraphCount: elements.filter((element) => element.kind === "paragraph").length,
+      tableCount: elements.filter((element) => element.kind === "table").length,
+      listCount: elements.filter((element) => element.kind === "bulletList" || element.kind === "orderedList").length,
+    };
+  }
+
+  function syncOperationCounts(requests) {
+    const counts = {};
+    for (const request of requests || []) {
+      const operation = Object.keys(request || {})[0] || "unknown";
+      counts[operation] = (counts[operation] || 0) + 1;
+    }
+    return counts;
+  }
+
+  function syncErrorSummary(error) {
+    return {
+      errorType: error?.name || "Error",
+      batchAccepted: error?.batchAccepted === true,
+    };
+  }
+
+  function getSyncState() {
+    const state = {
       baseRevisionId: lastGoogleRevisionId,
       localDirty: Boolean(tipTap?.getPendingSyncEditorSteps?.().length),
       pushing: googleDocsPushing,
       pulling: googleDocsPulling,
+      baseStale: googleDocsBaseStale,
       paused: syncPausedForTest,
     };
+    debugEvent("gdocs-sync", "sync-state", state);
+    return state;
   }
 
   window.__syncTest = {
@@ -247,28 +289,66 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
     setStatus(`syncing to ${documentTitle ? `"${documentTitle}"` : "google docs"}`);
   }
 
+  async function recoverStaleGoogleDocsBase(documentId) {
+    debugEvent("gdocs-sync", "stale-recovery-start", googleDocsIdSummary(documentId));
+    try {
+      const result = await refetchGoogleDocsBaseAndAcknowledge({
+        documentId,
+        editor: tipTap,
+      });
+      lastGoogleRevisionId = result.revisionId;
+      googleDocsBaseStale = false;
+      debugEvent("gdocs-sync", "stale-base-recovered", {
+        ...googleDocsIdSummary(documentId),
+        revisionId: result.revisionId,
+      });
+      return true;
+    } catch (error) {
+      debugEvent("gdocs-sync", "stale-recovery-failed", {
+        ...googleDocsIdSummary(documentId),
+        ...syncErrorSummary(error),
+      });
+      console.error("[gdocs-downsync] stale base recovery failed", error);
+      return false;
+    }
+  }
+
   async function pullFromGoogleDocs({ allowDuringMerge = false } = {}) {
     if (!store || !activeDraftId || syncPausedForTest || (googleDocsMerging && !allowDuringMerge)) return;
     googleDocsPulling = true;
     try {
       const syncTarget = await activeGoogleDocsSyncTarget();
       if (!syncTarget?.documentId) return;
+      if (googleDocsBaseStale) {
+        await recoverStaleGoogleDocsBase(syncTarget.documentId);
+        return;
+      }
       const response = await fetch(`/api/google-docs/document?documentId=${encodeURIComponent(syncTarget.documentId)}`);
       if (!response.ok) throw new Error(`Google Docs fetch failed (${response.status})`);
       const { revisionId, document: googleDocument } = await response.json();
-      const tipTapDocument = googleDocsToTipTap(googleDocument);
       suppressEditorUpdate = true;
       tipTap.setSuppressStepRecording?.(true);
       try {
-        tipTap.commands.setContent(tipTapDocument);
+        const syncState = applyGoogleDocsSyncState({
+          googleDocument,
+          editor: tipTap,
+        });
         tipTap.clearPendingSyncEditorSteps();
         lastGoogleRevisionId = revisionId;
         pullFromEditor();
-        debugEvent("gdocs-sync", "document applied", { revisionId });
+        debugEvent("gdocs-sync", "pull-applied", {
+          revisionId,
+          ...syncStateCounts(syncState),
+          pendingCleared: true,
+        });
       } finally {
         tipTap.setSuppressStepRecording?.(false);
       }
     } catch (error) {
+      debugEvent("gdocs-sync", "sync-state-failed", {
+        phase: "pull",
+        ...syncErrorSummary(error),
+      });
       console.error("[gdocs-downsync] manual pull failed", error);
     } finally {
       suppressEditorUpdate = false;
@@ -283,16 +363,33 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
     try {
       const syncTarget = await activeGoogleDocsSyncTarget();
       if (!syncTarget?.documentId) return;
+      debugEvent("gdocs-sync", "revision-poll-start", { lastGoogleRevisionId });
+      if (googleDocsBaseStale) {
+        debugEvent("gdocs-sync", "revision-poll-decision", { decision: "recover-stale-base" });
+        await recoverStaleGoogleDocsBase(syncTarget.documentId);
+        return;
+      }
       const response = await fetch(`/api/google-docs/revision?documentId=${encodeURIComponent(syncTarget.documentId)}`);
       if (!response.ok) throw new Error(`Google Docs revision check failed (${response.status})`);
       const { revisionId } = await response.json();
+      debugEvent("gdocs-sync", "revision-poll-result", { revisionId, lastGoogleRevisionId });
       const localChanged = Boolean(tipTap?.getPendingSyncEditorSteps?.().length);
+      debugEvent("gdocs-sync", "revision-poll-local", { localChanged });
       const remoteChanged = revisionId !== lastGoogleRevisionId;
       debugEvent("gdocs-sync", "revision-poll", { localChanged, remoteChanged, lastGoogleRevisionId, revisionId });
-      if (localChanged && remoteChanged) await mergeWithGoogleDocs();
-      else if (localChanged) await pushActiveDraftToGoogleDocs();
-      else if (remoteChanged) await pullFromGoogleDocs();
+      const decision = localChanged && remoteChanged
+        ? "merge"
+        : localChanged
+          ? "push"
+          : remoteChanged
+            ? "pull"
+            : "noop";
+      debugEvent("gdocs-sync", "revision-poll-decision", { decision, localChanged, remoteChanged });
+      if (decision === "merge") await mergeWithGoogleDocs();
+      else if (decision === "push") await pushActiveDraftToGoogleDocs();
+      else if (decision === "pull") await pullFromGoogleDocs();
     } catch (error) {
+      debugEvent("gdocs-sync", "revision-poll-failed", syncErrorSummary(error));
       console.error("[gdocs-downsync] revision polling failed", error);
     } finally {
       googleDocsRevisionChecking = false;
@@ -300,8 +397,10 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
   }
 
   async function pushActiveDraftToGoogleDocs({ targetRevisionId = null, updateBaseRevision = true, allowDuringMerge = false } = {}) {
+    debugEvent("gdocs-sync", "upsync-start", { targetRevisionId, updateBaseRevision, allowDuringMerge, googleDocsBaseStale });
     if (!store || !activeDraftId || syncPausedForTest || (googleDocsMerging && !allowDuringMerge)) return false; // return b/c these will clear pending editor steps
     if (googleDocsPushing || googleDocsPulling) return false;
+    if (googleDocsBaseStale) return false;
     if (!tipTap) return false;
   
     const requests = tipTap.getPendingSyncEditorSteps();
@@ -320,30 +419,43 @@ import { googleDocsToTipTap } from "./googleDocsDownsync.js";
     googleDocsPushing = true;
     
     try {
-      debugEvent("gdocs-sync", "upsync-batch-update", {documentId: docId.trim(), requests});
-      const res = await fetch("/api/google-docs/batch-update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          documentId: docId.trim(),
-          requests,
-          ...(targetRevisionId ? { targetRevisionId } : {}),
-        }),
+      debugEvent("gdocs-sync", "upsync-batch-update", {
+        ...googleDocsIdSummary(docId),
+        requestCount: requests.length,
+        operationCounts: syncOperationCounts(requests),
       });
-      debugEvent("gdocs-sync", "upsync-batch-update-response", {status: res.status, ok: res.ok});
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Google Docs sync failed");
-      }
-      else {
-        let data = await res.json();
-        if (updateBaseRevision) lastGoogleRevisionId = data.writeControl.requiredRevisionId;
-        return true;
-      }
+      const result = await pushGoogleDocsBatchAndAcknowledge({
+        documentId: docId,
+        requests,
+        targetRevisionId,
+        editor: tipTap,
+      });
+      debugEvent("gdocs-sync", "upsync-acknowledged", {
+        ...googleDocsIdSummary(docId),
+        requestCount: requests.length,
+        revisionId: result.revisionId,
+      });
+      if (updateBaseRevision) lastGoogleRevisionId = result.revisionId;
+      return true;
     } catch (err) {
+      debugEvent("gdocs-sync", "upsync-failed", {
+        ...googleDocsIdSummary(docId),
+        requestCount: requests.length,
+        operationCounts: syncOperationCounts(requests),
+        ...syncErrorSummary(err),
+      });
       console.error(err);
-      tipTap.prependPendingSyncEditorSteps(requests);
+      if (err.batchAccepted) {
+        tipTap.markGoogleDocsBaseDocumentStale?.();
+        googleDocsBaseStale = true;
+        if (err.acceptedRevisionId) lastGoogleRevisionId = err.acceptedRevisionId;
+        debugEvent("gdocs-sync", "stale-base-marked", {
+          ...googleDocsIdSummary(docId),
+          acceptedRevisionId: err.acceptedRevisionId || null,
+        });
+      } else {
+        tipTap.prependPendingSyncEditorSteps(requests);
+      }
       return false;
     } finally {
       googleDocsPushing = false;

@@ -1,0 +1,19 @@
+[
+  {
+    "insertText": {
+      "location": {
+        "index": 4
+      },
+      "text": "!"
+    }
+  },
+  {
+    "insertTable": {
+      "rows": 3,
+      "columns": 3,
+      "location": {
+        "index": 2
+      }
+    }
+  }
+]

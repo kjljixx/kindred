@@ -1,0 +1,18 @@
+[
+  {
+    "insertText": {
+      "location": {
+        "index": 11
+      },
+      "text": "Beta"
+    }
+  },
+  {
+    "insertText": {
+      "location": {
+        "index": 5
+      },
+      "text": "Alpha"
+    }
+  }
+]

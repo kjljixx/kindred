@@ -31,6 +31,11 @@ def parse_args() -> argparse.Namespace:
     required=not os.environ.get("GOOGLE_DOCS_DOCUMENT_ID"),
     help="Google document ID; defaults to GOOGLE_DOCS_DOCUMENT_ID",
   )
+  parser.add_argument(
+    "--no-reset",
+    action="store_true",
+    help="Skip clearing the document body before applying requests",
+  )
   return parser.parse_args()
 
 
@@ -123,7 +128,7 @@ def main() -> int:
     "requestCount": len(requests),
   }, file=sys.stderr)
 
-  reset = reset_body(args.document_id, headers)
+  reset = "skipped" if args.no_reset else reset_body(args.document_id, headers)
   print({"resetBody": reset}, file=sys.stderr)
   batch_update(args.document_id, headers, requests)
 

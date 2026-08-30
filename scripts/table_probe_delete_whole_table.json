@@ -1,0 +1,10 @@
+[
+  {
+    "deleteContentRange": {
+      "range": {
+        "startIndex": 2,
+        "endIndex": 11
+      }
+    }
+  }
+]

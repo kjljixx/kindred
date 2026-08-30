@@ -1,0 +1,33 @@
+[
+  {
+    "deleteContentRange": {
+      "range": {
+        "startIndex": 5,
+        "endIndex": 6
+      }
+    }
+  },
+  {
+    "insertText": {
+      "location": {
+        "index": 5
+      },
+      "text": "b"
+    }
+  },
+  {
+    "updateTextStyle": {
+      "range": {
+        "startIndex": 5,
+        "endIndex": 6
+      },
+      "textStyle": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false
+      },
+      "fields": "bold,italic,underline,strikethrough,foregroundColor,backgroundColor,fontSize,weightedFontFamily,link"
+    }
+  }
+]

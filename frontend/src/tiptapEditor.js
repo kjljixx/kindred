@@ -10,7 +10,17 @@ import {
   blockToHtml
 } from "./kindredSchema.js";
 import { bindLongPress } from "./longPress.js";
-import { stepToGoogleDocsRequests } from './googleDocsUpsync.js'
+import {
+  createGoogleDocsSyncQueue,
+  sortGoogleDocsRequestsDescending,
+  stepToGoogleDocsRequests,
+  survivingParagraphTextRequests,
+  tableInsertionIntentsOnly,
+  tableStructuralIntents,
+  transactionOnlyTouchesTopLevelParagraphs,
+  transactionTouchesTable,
+  relaxedSurvivingParagraphIndexes,
+} from './googleDocsUpsync.js'
 import {
   DEFAULT_FONT_FAMILY,
   fontNameFromCssValue,
@@ -475,6 +485,244 @@ export function unresolvedMergeConflictCount(html) {
     tableConflictCount(html) +
     listConflictCount(html)
   );
+}
+
+function stepTouchesTable(doc, step) {
+  return [step.from, step.to].some((position) => {
+    if (!Number.isFinite(position)) return false
+    const resolvedPosition = doc.resolve(Math.min(position, doc.content.size))
+    for (let depth = resolvedPosition.depth; depth >= 0; depth -= 1) {
+      if (resolvedPosition.node(depth).type.name === 'table') return true
+    }
+    return false
+  })
+}
+
+function topLevelTableCount(doc) {
+  let count = 0
+  doc?.forEach?.((node) => {
+    if (node.type.name === 'table') count += 1
+  })
+  return count
+}
+
+function transactionScopes(transaction) {
+  let currentDoc = transaction.before
+  let hasTableStep = false
+  let hasNonTableStep = false
+  for (const step of transaction.steps) {
+    const touchesTable = stepTouchesTable(currentDoc, step)
+    const result = step.apply(currentDoc)
+    const nextDoc = result.doc || currentDoc
+    const changesTableTopology = topLevelTableCount(currentDoc) !==
+      topLevelTableCount(nextDoc)
+    if (touchesTable || changesTableTopology) {
+      hasTableStep = true
+    } else {
+      hasNonTableStep = true
+    }
+    currentDoc = nextDoc
+  }
+  return { hasTableStep, hasNonTableStep }
+}
+
+function recorderStepSummary(transaction) {
+  return (transaction?.steps || []).map((step) => ({
+    stepType: step.toJSON?.().stepType || null,
+    from: step.from,
+    to: step.to,
+  }))
+}
+
+function recorderOperationCounts(requests) {
+  return requests.reduce((counts, request) => {
+    const operation = Object.keys(request || {})[0] || 'unknown'
+    counts[operation] = (counts[operation] || 0) + 1
+    return counts
+  }, {})
+}
+
+export function createGoogleDocsSyncRecorder() {
+  const tableQueue = createGoogleDocsSyncQueue()
+  const pendingLegacyRequests = []
+  const pendingTransactions = []
+  const deferredTransactions = []
+  let baseDocument = null
+  let tablePending = false
+  let baseDocumentStale = false
+
+  return {
+    setBaseDocument(nextBaseDocument) {
+      baseDocument = nextBaseDocument
+      tableQueue.setBaseDocument(nextBaseDocument)
+      pendingLegacyRequests.length = 0
+      pendingTransactions.length = 0
+      deferredTransactions.length = 0
+      tablePending = false
+      baseDocumentStale = false
+      debugEvent('gdocs-recorder', 'base-set', {
+        elementCount: nextBaseDocument?.elements?.length || 0,
+        tableCount: nextBaseDocument?.elements?.filter((element) => element.kind === 'table').length || 0,
+      })
+    },
+    acknowledgeBaseDocument(nextBaseDocument, localDoc) {
+      const wasStale = baseDocumentStale
+      baseDocument = nextBaseDocument
+      if (wasStale) {
+        tableQueue.clear()
+        pendingLegacyRequests.length = 0
+        tablePending = false
+      }
+      tablePending = tableQueue.acknowledgeBaseDocument(nextBaseDocument, localDoc)
+      baseDocumentStale = false
+      if (wasStale) {
+        const transactions = deferredTransactions.splice(0)
+        for (const transaction of transactions) this.recordTransaction(transaction)
+        debugEvent('gdocs-recorder', 'deferred-replay', {
+          transactionCount: transactions.length,
+        })
+      }
+      debugEvent('gdocs-recorder', 'base-acknowledged', {
+        wasStale,
+        replayCount: wasStale ? pendingTransactions.length : 0,
+        tablePending,
+      })
+    },
+    markBaseDocumentStale() {
+      tableQueue.clear()
+      pendingLegacyRequests.length = 0
+      deferredTransactions.push(...pendingTransactions)
+      pendingTransactions.length = 0
+      tablePending = false
+      baseDocumentStale = true
+      debugEvent('gdocs-recorder', 'base-stale', {
+        pendingTransactionCount: pendingTransactions.length,
+        deferredTransactionCount: deferredTransactions.length,
+      })
+    },
+    recordTransaction(transaction) {
+      if (baseDocumentStale) {
+        deferredTransactions.push(transaction)
+        debugEvent('gdocs-recorder', 'transaction-deferred', {
+          stepCount: transaction?.steps?.length || 0,
+          deferredTransactionCount: deferredTransactions.length,
+        })
+        return
+      }
+      const scopes = baseDocument ? transactionScopes(transaction) : null
+      debugVerbose('gdocs-recorder', 'transaction-scope', {
+        stepCount: transaction?.steps?.length || 0,
+        scopes,
+        steps: recorderStepSummary(transaction),
+      })
+      if (scopes?.hasTableStep) {
+        if (scopes.hasNonTableStep) {
+          debugEvent('gdocs-recorder', 'mixed-rejected', { scopes })
+          throw new Error('mixed table and non-table edits are unsupported')
+        }
+        tableQueue.recordTransaction(transaction, tableStructuralIntents(transaction, {
+          baseDocument,
+          pendingIntents: tableQueue.getStructuralIntents(),
+        }))
+        tablePending = true
+        pendingTransactions.push(transaction)
+        return
+      }
+
+      let currentDoc = transaction.before
+      const deletedRanges = new Set()
+      for (const step of transaction.steps) {
+        const requests = stepToGoogleDocsRequests(step, currentDoc)
+        const uniqueRequests = requests.filter((request) => {
+          const range = request.deleteContentRange?.range
+          if (!range) return true
+          const key = `${range.startIndex}:${range.endIndex}`
+          if (deletedRanges.has(key)) return false
+          deletedRanges.add(key)
+          return true
+        })
+        pendingLegacyRequests.push(...uniqueRequests)
+
+        const result = step.apply(currentDoc)
+        if (result.doc) currentDoc = result.doc
+      }
+      pendingTransactions.push(transaction)
+      debugEvent('gdocs-recorder', 'transaction-recorded', {
+        scope: 'legacy',
+        stepCount: transaction?.steps?.length || 0,
+        pendingTransactionCount: pendingTransactions.length,
+      })
+    },
+    getPendingRequests(localDoc) {
+      if (baseDocumentStale) {
+        debugEvent('gdocs-recorder', 'pending-read', { stale: true, requestCount: 0 })
+        return []
+      }
+      const legacyTransactions = pendingTransactions.filter((transaction) => (
+        !transactionTouchesTable(transaction)
+      ))
+      const relaxedParagraphBaseIndexes = legacyTransactions.length
+        ? relaxedSurvivingParagraphIndexes(baseDocument, localDoc)
+        : null
+      const tableRequests = tableQueue.getPendingRequests(localDoc, {
+        relaxedParagraphBaseIndexes,
+      })
+      if (tablePending && legacyTransactions.length) {
+        const combinable = tableInsertionIntentsOnly(tableQueue.getStructuralIntents()) &&
+          legacyTransactions.every((transaction) => (
+            transactionOnlyTouchesTopLevelParagraphs(transaction)
+          ))
+        if (!combinable) {
+          debugEvent('gdocs-recorder', 'mixed-rejected', {
+            tablePending,
+            legacyRequestCount: pendingLegacyRequests.length,
+          })
+          throw new Error('mixed table and non-table edits are unsupported')
+        }
+        const textRequests = survivingParagraphTextRequests(
+          baseDocument,
+          localDoc,
+          tableQueue.getStructuralIntents(),
+        )
+        const requests = sortGoogleDocsRequestsDescending([
+          ...textRequests,
+          ...tableRequests,
+        ])
+        debugEvent('gdocs-recorder', 'pending-read', {
+          stale: false,
+          requestCount: requests.length,
+          operationCounts: recorderOperationCounts(requests),
+          combined: true,
+        })
+        return requests
+      }
+      const requests = tablePending ? tableRequests : [...pendingLegacyRequests]
+      debugEvent('gdocs-recorder', 'pending-read', {
+        stale: false,
+        requestCount: requests.length,
+        operationCounts: recorderOperationCounts(requests),
+      })
+      return requests
+    },
+    clear() {
+      tableQueue.clear()
+      pendingLegacyRequests.length = 0
+      pendingTransactions.length = 0
+      tablePending = false
+      debugEvent('gdocs-recorder', 'cleared')
+    },
+    prepend(requests) {
+      pendingLegacyRequests.unshift(...requests)
+      debugEvent('gdocs-recorder', 'prepended', {
+        requestCount: requests.length,
+        operationCounts: recorderOperationCounts(requests),
+      })
+    },
+  }
+}
+
+export function recordGoogleDocsTransaction(recorder, transaction) {
+  recorder.recordTransaction(transaction)
 }
 
 /**
@@ -2272,7 +2520,7 @@ export function createKindredEditor({
   onUpdate = null,
   placeholder = "Paste or type your text here. Double-click to import.",
 } = {}) {
-  const pendingSyncEditorSteps = [];
+  const syncRecorder = createGoogleDocsSyncRecorder();
   let isRecordingSteps = false;
   let suppressStepRecording = false;
 
@@ -2305,24 +2553,7 @@ export function createKindredEditor({
       // Skip programmatic (e.g. downsync) transactions so remote changes are
       // never echoed back into the upsync queue.
       if (isRecordingSteps && !suppressStepRecording && transaction.docChanged) {
-        let currentDoc = transaction.before
-        const deletedRanges = new Set()
-        for (const step of transaction.steps) {
-          // Translate immediately using the active doc in scope
-          const reqs = stepToGoogleDocsRequests(step, currentDoc)
-          const uniqueReqs = reqs.filter((request) => {
-            const range = request.deleteContentRange?.range
-            if (!range) return true
-            const key = `${range.startIndex}:${range.endIndex}`
-            if (deletedRanges.has(key)) return false
-            deletedRanges.add(key)
-            return true
-          })
-          pendingSyncEditorSteps.push(...uniqueReqs)
-
-          const result = step.apply(currentDoc)
-          if (result.doc) currentDoc = result.doc
-        }
+        recordGoogleDocsTransaction(syncRecorder, transaction)
       }
       if (!transaction.docChanged && !transaction.selectionSet) return;
       debugEvent("editor", "transaction", {
@@ -2338,9 +2569,12 @@ export function createKindredEditor({
 
   editor.startRecordingEditorSteps = () => { isRecordingSteps = true; };
   editor.setSuppressStepRecording = (value) => { suppressStepRecording = Boolean(value); };
-  editor.getPendingSyncEditorSteps = () => [...pendingSyncEditorSteps];
-  editor.clearPendingSyncEditorSteps = () => { pendingSyncEditorSteps.length = 0; };
-  editor.prependPendingSyncEditorSteps = (failedSteps) => {pendingSyncEditorSteps.unshift(...failedSteps);};
+  editor.setGoogleDocsBaseDocument = (baseDocument) => syncRecorder.setBaseDocument(baseDocument);
+  editor.markGoogleDocsBaseDocumentStale = () => syncRecorder.markBaseDocumentStale();
+  editor.acknowledgeGoogleDocsBaseDocument = (baseDocument) => syncRecorder.acknowledgeBaseDocument(baseDocument, editor.state.doc);
+  editor.getPendingSyncEditorSteps = () => syncRecorder.getPendingRequests(editor.state.doc);
+  editor.clearPendingSyncEditorSteps = () => syncRecorder.clear();
+  editor.prependPendingSyncEditorSteps = (failedSteps) => syncRecorder.prepend(failedSteps);
 
   return editor;
 }

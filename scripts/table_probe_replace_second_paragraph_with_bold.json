@@ -1,0 +1,48 @@
+[
+  {
+    "deleteContentRange": {
+      "range": {
+        "startIndex": 5,
+        "endIndex": 8
+      }
+    }
+  },
+  {
+    "insertText": {
+      "location": {
+        "index": 5
+      },
+      "text": "A\nB"
+    }
+  },
+  {
+    "updateTextStyle": {
+      "range": {
+        "startIndex": 5,
+        "endIndex": 6
+      },
+      "textStyle": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false
+      },
+      "fields": "bold,italic,underline,strikethrough,foregroundColor,backgroundColor,fontSize,weightedFontFamily,link"
+    }
+  },
+  {
+    "updateTextStyle": {
+      "range": {
+        "startIndex": 7,
+        "endIndex": 8
+      },
+      "textStyle": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false
+      },
+      "fields": "bold,italic,underline,strikethrough,foregroundColor,backgroundColor,fontSize,weightedFontFamily,link"
+    }
+  }
+]

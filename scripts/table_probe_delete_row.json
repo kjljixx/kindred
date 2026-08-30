@@ -1,0 +1,13 @@
+[
+  {
+    "deleteTableRow": {
+      "tableCellLocation": {
+        "tableStartLocation": {
+          "index": 2
+        },
+        "rowIndex": 1,
+        "columnIndex": 0
+      }
+    }
+  }
+]

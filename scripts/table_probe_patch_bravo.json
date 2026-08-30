@@ -1,0 +1,13 @@
+[
+  {
+    "deleteContentRange": {
+      "range": {"startIndex": 5, "endIndex": 10}
+    }
+  },
+  {
+    "insertText": {
+      "location": {"index": 5},
+      "text": "Bravo"
+    }
+  }
+]
