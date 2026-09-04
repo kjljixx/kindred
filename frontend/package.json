@@ -11,6 +11,7 @@
     "vendor:pandoc": "node scripts/vendor-pandoc.mjs"
   },
   "dependencies": {
+    "@cortex-js/compute-engine": "^0.58.0",
     "@isomorphic-git/lightning-fs": "^4.6.0",
     "@tiptap/core": "^3.30.1",
     "@tiptap/extension-color": "^3.30.1",

@@ -3,6 +3,7 @@ import { Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import { TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { calculateTrailingEquals, isMathLiveEqualsInput } from "./mathCompute.js";
 import { asciiMathToLatex } from "./mathRender.js";
 
 function focusMathField(view, pos, command) {
@@ -30,8 +31,15 @@ export function createMathLiveNodeView({ node, view, getPos }) {
   let lastAsciiMath = node.attrs.asciiMath;
   let documentSelectionDrag = false;
 
-  const persist = () => {
-    const nextAsciiMath = field.getValue("ascii-math");
+  const persist = (event) => {
+    let nextAsciiMath = field.getValue("ascii-math");
+    const calculatedAsciiMath = isMathLiveEqualsInput(event)
+      ? calculateTrailingEquals(nextAsciiMath)
+      : null;
+    if (calculatedAsciiMath && calculatedAsciiMath !== nextAsciiMath) {
+      nextAsciiMath = calculatedAsciiMath;
+      field.value = asciiMathToLatex(nextAsciiMath);
+    }
     if (nextAsciiMath === lastAsciiMath) return;
     const pos = getPos();
     if (typeof pos !== "number") return;
@@ -40,7 +48,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
       view.state.tr.setNodeMarkup(pos, undefined, {
         ...currentNode.attrs,
         asciiMath: nextAsciiMath,
-      }),
+      }).setMeta("mathNodeEditing", pos),
     );
   };
 
