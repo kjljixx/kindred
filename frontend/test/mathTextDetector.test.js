@@ -28,4 +28,12 @@ describe("classifyMath", () => {
     expect(runText).toContain("dx");
     expect(runText).toContain("dt");
   });
+
+  it("does not treat URLs containing math-like text as math", () => {
+    for (const url of ["https://example.com/x^2", "example.com/x^2"]) {
+      const result = classifyMath(`See ${url} for details.`);
+      expect(result.ranges).toHaveLength(0);
+      expect(result.html).not.toContain('class="render-latex"');
+    }
+  });
 });

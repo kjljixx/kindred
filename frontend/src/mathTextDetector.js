@@ -19,6 +19,23 @@ const differentialVariables = new Set([
 
 const textPunctuation = new Set([".", ";", ":", "!", "?"]);
 
+function isUrlLike(value) {
+  const candidate =
+    /^[a-z][a-z0-9+.-]*:\/\//iu.test(value)
+      ? value
+      : `https://${value}`;
+
+  try {
+    const url = new URL(candidate);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.hostname.includes(".")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function findProtectedPieces(text) {
   const pieces = [];
   let index = 1;
@@ -321,6 +338,10 @@ export function classifyMath(text) {
   const mergedRunRanges = [];
 
   for (const range of runRanges) {
+    if (isUrlLike(text.slice(range.start, range.end))) {
+      continue;
+    }
+
     const previousRange = mergedRunRanges[mergedRunRanges.length - 1];
 
     if (previousRange && range.start <= previousRange.end) {
