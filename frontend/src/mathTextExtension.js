@@ -9,6 +9,7 @@ import { createMathWidget } from "./mathRender.js";
 
 const mathTextKey = new PluginKey("kindredMathText");
 const mathAutoCalcKey = new PluginKey("kindredMathAutoCalc");
+const MAX_CALC_DECIMAL_PLACES = 6;
 
 function getOverlayState(state) {
   const fromKey = overlayKey.getState(state);
@@ -110,7 +111,7 @@ export function evaluateHangingEquals(slice) {
   try {
     const value = evaluate(expr);
     if (typeof value !== "number" || !Number.isFinite(value)) return null;
-    return String(value);
+    return String(Number(value.toFixed(MAX_CALC_DECIMAL_PLACES)));
   } catch {
     return null;
   }

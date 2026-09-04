@@ -31,6 +31,11 @@ describe("evaluateHangingEquals", () => {
     expect(evaluateHangingEquals("(1+2)*3=")).toBe("9");
   });
 
+  it("limits calculated results to six decimal places", () => {
+    expect(evaluateHangingEquals("1/3=")).toBe("0.333333");
+    expect(evaluateHangingEquals("1/8=")).toBe("0.125");
+  });
+
   it("returns null without a trailing equals", () => {
     expect(evaluateHangingEquals("2+2")).toBeNull();
     expect(evaluateHangingEquals("x=5")).toBeNull();
