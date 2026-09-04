@@ -25,22 +25,8 @@ const VOLUME = "kindred";
     return `${ROOT}/${id}`;
   }
 
-  function pad2(n) {
-    return String(n).padStart(2, "0");
-  }
-
-  function formatStamp(date = new Date()) {
-    const y = date.getFullYear();
-    const m = pad2(date.getMonth() + 1);
-    const d = pad2(date.getDate());
-    const h = pad2(date.getHours());
-    const min = pad2(date.getMinutes());
-    const s = pad2(date.getSeconds());
-    return `${y}-${m}-${d} at ${h}:${min}:${s}`;
-  }
-
-  function autoMessage(verb, date) {
-    return `${verb} on ${formatStamp(date)}`;
+  function autoMessage(verb) {
+    return `${verb} changes`;
   }
 
   /** `base`, then `base2`, `base3`, … skipping names already in `existing`. */
@@ -933,7 +919,7 @@ const VOLUME = "kindred";
     }
     const oid = await commitFiles(
       dir,
-      autoMessage(messageVerb, new Date(now)),
+      autoMessage(messageVerb),
       extra
     );
     await flush();

@@ -952,8 +952,6 @@ import {
     if (activeDraftId) {
       let statusParts = [];
       if (currentBranchName) statusParts.push(currentBranchName);
-      const oid = viewingOid || headOid;
-      if (oid) statusParts.push(shortOid(oid));
       metaEl.textContent = `${statusParts.join(" · ")}\u2003|\u2003${currentModel} · ${formatCost(draftCost)} total`;
     }
     else {
@@ -3063,10 +3061,6 @@ import {
     setPaneMode(tab.dataset.pane);
   });
 
-  function shortOid(oid) {
-    return (oid || "").slice(0, 7);
-  }
-
   function renderGitPane() {
     if (!activeDraftId) return;
     const branchRows = branches
@@ -3125,7 +3119,7 @@ import {
         .reverse()
         .map((c) => {
           const active = viewingOid === c.oid ? " active" : "";
-          const head = c.oid === headOid ? " · head" : "";
+          const head = c.oid === headOid ? "head · " : "";
           const msg = (c.message || "").split("\n")[0];
           const isHead = c.oid === headOid;
           const renaming =
@@ -3144,7 +3138,7 @@ import {
             `<div class="git-row${active}" role="listitem" data-git="view" data-oid="${escapeHtml(c.oid)}">` +
             `<div class="git-row-body">` +
             titleHtml +
-            `<span class="git-row-meta">${escapeHtml(shortOid(c.oid))}${head} · ${escapeHtml(formatDraftTime(c.timestamp))}</span>` +
+            `<span class="git-row-meta">${head}${escapeHtml(formatDraftTime(c.timestamp))}</span>` +
             `</div>${actions}</div>`
           );
         })
