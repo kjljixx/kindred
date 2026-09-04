@@ -6,12 +6,12 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { calculateTrailingEquals, isMathLiveEqualsInput } from "./mathCompute.js";
 import { asciiMathToLatex } from "./mathRender.js";
 
-function focusMathField(view, pos, command) {
+function focusMathField(view, pos, commands) {
   const nodeDom = view.nodeDOM(pos);
   const field = nodeDom?.querySelector?.("math-field");
   if (!field) return false;
   field.focus();
-  field.executeCommand(command);
+  for (const command of commands) field.executeCommand(command);
   return true;
 }
 
@@ -30,6 +30,15 @@ export function createMathLiveNodeView({ node, view, getPos }) {
   let currentNode = node;
   let lastAsciiMath = node.attrs.asciiMath;
   let documentSelectionDrag = false;
+
+  const exitToDocument = (direction) => {
+    const pos = getPos();
+    if (typeof pos !== "number") return;
+    const before = direction === "backward" || direction === "upward";
+    const selectionPos = before ? pos : pos + currentNode.nodeSize;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, selectionPos)));
+    view.focus();
+  };
 
   const persist = (event) => {
     let nextAsciiMath = field.getValue("ascii-math");
@@ -53,13 +62,22 @@ export function createMathLiveNodeView({ node, view, getPos }) {
   };
 
   const moveOut = (event) => {
-    const pos = getPos();
-    if (typeof pos !== "number") return;
-    const direction = event.detail?.direction;
-    const before = direction === "backward" || direction === "upward";
-    const selectionPos = before ? pos : pos + currentNode.nodeSize;
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, selectionPos)));
-    view.focus();
+    event.preventDefault();
+    exitToDocument(event.detail?.direction);
+  };
+
+  const exitBesideFormulaEdge = (event) => {
+    if (!field.selectionIsCollapsed) return;
+    const forward = event.key === "ArrowRight";
+    const backward = event.key === "ArrowLeft";
+    if (!forward && !backward) return;
+    const edgeAsciiMath = forward
+      ? field.getValue(field.position, field.lastOffset, "ascii-math")
+      : field.getValue(0, field.position, "ascii-math");
+    if (Array.from(String(edgeAsciiMath).trim()).length !== 1) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    exitToDocument(forward ? "forward" : "backward");
   };
 
   const clearDocumentSelection = () => {
@@ -73,6 +91,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
   field.addEventListener("input", persist);
   field.addEventListener("move-out", moveOut);
   field.addEventListener("focus", clearDocumentSelection);
+  field.addEventListener("keydown", exitBesideFormulaEdge, true);
 
   const stopEvent = (event) => {
     if (!event.target.closest?.(".kindred-math-node")) return false;
@@ -117,6 +136,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
       field.removeEventListener("input", persist);
       field.removeEventListener("move-out", moveOut);
       field.removeEventListener("focus", clearDocumentSelection);
+      field.removeEventListener("keydown", exitBesideFormulaEdge, true);
     },
   };
 }
@@ -142,18 +162,29 @@ export const MathLiveNavigation = Extension.create({
           return DecorationSet.create(state.doc, decorations);
         },
         handleKeyDown(view, event) {
-          if (!view.state.selection.empty || event.shiftKey) return false;
+          if (
+            !view.state.selection.empty ||
+            event.shiftKey ||
+            event.altKey ||
+            event.ctrlKey ||
+            event.metaKey
+          ) return false;
           const { $from } = view.state.selection;
           const forward = event.key === "ArrowRight";
-          const backward = event.key === "ArrowLeft";
-          if (!forward && !backward) return false;
+          const left = event.key === "ArrowLeft";
+          const backspace = event.key === "Backspace";
+          if (!forward && !left && !backspace) return false;
 
           const target = forward ? $from.nodeAfter : $from.nodeBefore;
           if (target?.type.name !== "mathLive") return false;
 
           const pos = forward ? $from.pos : $from.pos - target.nodeSize;
-          const command = forward ? "moveToMathfieldStart" : "moveToMathfieldEnd";
-          if (!focusMathField(view, pos, command)) return false;
+          const commands = forward
+            ? ["moveToMathfieldStart", "moveToNextChar"]
+            : left
+              ? ["moveToMathfieldEnd", "moveToPreviousChar"]
+              : ["moveToMathfieldEnd", "deleteBackward"];
+          if (!focusMathField(view, pos, commands)) return false;
           event.preventDefault();
           return true;
         },

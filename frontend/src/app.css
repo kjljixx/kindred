@@ -848,8 +848,6 @@ button.pane-title {
 
 .editor .ProseMirror .kindred-math-field::part(content) {
   font-size: 1em;
-  line-height: inherit;
-  padding: 0;
 }
 
 .editor .ProseMirror .kindred-math-field::part(virtual-keyboard-toggle),
