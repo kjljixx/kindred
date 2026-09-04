@@ -52,6 +52,14 @@ export function createMathLiveNodeView({ node, view, getPos }) {
     if (nextAsciiMath === lastAsciiMath) return;
     const pos = getPos();
     if (typeof pos !== "number") return;
+    if (!String(nextAsciiMath).trim()) {
+      const tr = view.state.tr.delete(pos, pos + currentNode.nodeSize);
+      view.dispatch(
+        tr.setSelection(TextSelection.create(tr.doc, pos)).setMeta("mathNodeEditing", pos),
+      );
+      view.focus();
+      return;
+    }
     lastAsciiMath = nextAsciiMath;
     view.dispatch(
       view.state.tr.setNodeMarkup(pos, undefined, {
@@ -75,6 +83,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
       ? field.getValue(field.position, field.lastOffset, "ascii-math")
       : field.getValue(0, field.position, "ascii-math");
     if (Array.from(String(edgeAsciiMath).trim()).length !== 1) return;
+    if (field.getElementInfo(field.position)?.depth !== 0) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     exitToDocument(forward ? "forward" : "backward");

@@ -836,6 +836,10 @@ button.pane-title {
   --caret-color: currentColor;
   --selection-background-color: var(--kindred-selection-background);
   --selection-color: hsl(0 0% 100%);
+  --smart-fence-color: transparent;
+  --smart-fence-opacity: 0;
+  --contains-highlight-color: currentColor;
+  --contains-highlight-background-color: transparent;
 }
 
 .editor .ProseMirror .kindred-math-field::part(container) {
