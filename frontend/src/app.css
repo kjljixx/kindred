@@ -819,14 +819,50 @@ button.pane-title {
   }
 }
 
-.editor .ProseMirror .kindred-math-katex {
+.editor .ProseMirror .kindred-math-widget {
   display: inline-block;
   vertical-align: baseline;
-  padding: 0 0.12em;
+  cursor: text;
 }
 
-.editor .ProseMirror .kindred-math-katex .katex {
+.editor .ProseMirror .kindred-math-field {
+  margin: 0;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  vertical-align: baseline;
+  --caret-color: currentColor;
+  --selection-background-color: hsl(207 90% 62% / 0.25);
+}
+
+.editor .ProseMirror .kindred-math-field::part(container) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.editor .ProseMirror .kindred-math-field::part(content) {
   font-size: 1em;
+  line-height: inherit;
+  padding: 0;
+}
+
+.editor .ProseMirror .kindred-math-field::part(virtual-keyboard-toggle),
+.editor .ProseMirror .kindred-math-field::part(menu-toggle) {
+  display: none;
+}
+
+.editor .ProseMirror .kindred-math-field:focus-visible {
+  outline: 1px solid hsl(207 90% 62% / 0.7);
+  outline-offset: 2px;
 }
 
 .merge-conflict-btn img {

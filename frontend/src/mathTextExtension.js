@@ -184,7 +184,7 @@ function mathCaretAtBoundary(selection, from, to) {
   return null;
 }
 
-function buildMathDecorations(doc, selection, state) {
+function buildMathDecorations(doc, selection, state, editor) {
   if (isDiffOverlayActive(state)) {
     return [];
   }
@@ -221,9 +221,17 @@ function buildMathDecorations(doc, selection, state) {
 
       decorations.push(
         Decoration.inline(from, to, { class: "kindred-math-source" }),
-        Decoration.widget(from, createMathWidget(mathText), {
+        Decoration.widget(from, createMathWidget(mathText, {
+          onCommit(nextMathText) {
+            if (nextMathText === mathText) return;
+            const view = editor.view;
+            if (!view || view.state.doc.textBetween(from, to, "") !== mathText) return;
+            view.dispatch(view.state.tr.insertText(nextMathText, from, to));
+          },
+        }), {
           side: -1,
           key,
+          stopEvent: (event) => event.target.closest?.(".kindred-math-widget") != null,
         }),
       );
     }
@@ -261,6 +269,7 @@ export const MathText = Extension.create({
   name: "mathText",
 
   addProseMirrorPlugins() {
+    const editor = this.editor;
     return [
       new Plugin({
         key: mathTextKey,
@@ -268,7 +277,7 @@ export const MathText = Extension.create({
           init: (_, state) =>
             DecorationSet.create(
               state.doc,
-              buildMathDecorations(state.doc, state.selection, state),
+              buildMathDecorations(state.doc, state.selection, state, editor),
             ),
           apply(tr, prev, oldState, newState) {
             const overlayChanged =
@@ -280,7 +289,7 @@ export const MathText = Extension.create({
             }
             return DecorationSet.create(
               newState.doc,
-              buildMathDecorations(newState.doc, newState.selection, newState),
+              buildMathDecorations(newState.doc, newState.selection, newState, editor),
             );
           },
         },

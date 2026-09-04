@@ -1,4 +1,5 @@
 import katex from "katex";
+import "mathlive";
 import "katex/dist/katex.min.css";
 import katexCssBundled from "katex/dist/katex.min.css?raw";
 import AsciiMathParser from "asciimath2tex";
@@ -18,12 +19,17 @@ export function getMathExportEmbeddedCss() {
 
 const asciiMathParser = new AsciiMathParser();
 
+/** Convert the editor's stored ASCIIMath source to MathLive's LaTeX input. */
+export function asciiMathToLatex(source) {
+  return asciiMathParser.parse(String(source || "").trim());
+}
+
 /** Render KaTeX into a detached element (export/preview only — never PM view DOM). */
 export function renderKatexInto(element, source) {
   const text = String(source || "").trim();
   if (!text) return;
   try {
-    const tex = asciiMathParser.parse(text);
+    const tex = asciiMathToLatex(text);
     katex.render(tex, element, { throwOnError: false });
   } catch {
     element.textContent = text;
@@ -81,15 +87,32 @@ ${body}
 </html>`;
 }
 
-/** ProseMirror widget factory — KaTeX overlay, does not touch doc text nodes. */
-export function createMathWidget(source) {
+/**
+ * ProseMirror widget factory. MathLive owns formula hit-testing and editing while
+ * the surrounding ProseMirror document continues to store ASCIIMath source.
+ */
+export function createMathWidget(source, { onCommit } = {}) {
   const text = String(source || "");
   return () => {
     const wrap = document.createElement("span");
-    wrap.className = "kindred-math-katex";
+    wrap.className = "kindred-math-widget";
     wrap.contentEditable = "false";
-    wrap.setAttribute("aria-hidden", "true");
-    renderKatexInto(wrap, text);
+    const field = document.createElement("math-field");
+    field.className = "kindred-math-field";
+    field.value = asciiMathToLatex(text);
+    field.setAttribute("aria-label", `Formula: ${text}`);
+
+    let committed = text;
+    const commit = () => {
+      const next = field.getValue("ascii-math");
+      if (next === committed) return;
+      committed = next;
+      onCommit?.(next);
+    };
+
+    field.addEventListener("change", commit);
+    field.addEventListener("blur", commit);
+    wrap.append(field);
     return wrap;
   };
 }

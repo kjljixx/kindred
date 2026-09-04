@@ -37,6 +37,7 @@
     "katex": "^0.18.4",
     "marked": "^15.0.7",
     "mathjs": "^15.2.0",
+    "mathlive": "^0.110.0",
     "mathml2omml": "^0.5.0",
     "pandoc-wasm": "^1.1.0"
   },
