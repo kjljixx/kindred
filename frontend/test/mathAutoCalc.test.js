@@ -6,7 +6,6 @@ import {
   isMathLiveEqualsInput,
 } from "../src/mathCompute.js";
 import {
-  evaluateHangingEquals,
   mathNodeTransaction,
   userInsertedEquals,
 } from "../src/mathTextExtension.js";
@@ -30,27 +29,6 @@ function transactionDeleting(text, fromOffset, toOffset) {
   return state.tr.delete(fromOffset, toOffset);
 }
 
-describe("evaluateHangingEquals", () => {
-  it("evaluates arithmetic ending with =", () => {
-    expect(evaluateHangingEquals("2+2=")).toBe("4");
-    expect(evaluateHangingEquals("(1+2)*3=")).toBe("9");
-  });
-
-  it("limits calculated results to six decimal places", () => {
-    expect(evaluateHangingEquals("1/3=")).toBe("0.333333");
-    expect(evaluateHangingEquals("1/8=")).toBe("0.125");
-  });
-
-  it("returns null without a trailing equals", () => {
-    expect(evaluateHangingEquals("2+2")).toBeNull();
-    expect(evaluateHangingEquals("x=5")).toBeNull();
-  });
-
-  it("returns null for non-numeric results", () => {
-    expect(evaluateHangingEquals("f(x)=")).toBeNull();
-  });
-});
-
 describe("userInsertedEquals", () => {
   it("returns true when the user inserts =", () => {
     const tr = transactionInserting("2+2", "=");
@@ -62,10 +40,6 @@ describe("userInsertedEquals", () => {
     expect(userInsertedEquals([tr])).toBe(false);
   });
 
-  it("returns false for auto-calc transactions", () => {
-    const tr = transactionInserting("2+2=", "4").setMeta("mathAutoCalc", true);
-    expect(userInsertedEquals([tr])).toBe(false);
-  });
 });
 
 describe("calculateTrailingEquals", () => {

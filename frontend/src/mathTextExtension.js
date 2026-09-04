@@ -1,5 +1,4 @@
 import { Extension } from "@tiptap/core";
-import { evaluate } from "mathjs";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 import { overlayKey } from "./editorKeys.js";
@@ -7,8 +6,6 @@ import { calculateTrailingEquals } from "./mathCompute.js";
 import { classifyMath } from "./mathTextDetector.js";
 
 const mathTextKey = new PluginKey("kindredMathText");
-const mathAutoCalcKey = new PluginKey("kindredMathAutoCalc");
-const MAX_CALC_DECIMAL_PLACES = 6;
 const MATH_BLOCK_TYPES = new Set(["paragraph"]);
 
 function getOverlayState(state) {
@@ -69,14 +66,6 @@ function pmPosForOffset(segments, offset) {
   return null;
 }
 
-function linearOffsetForPmPos(segments, pmPos) {
-  for (const segment of segments) {
-    const end = segment.pmStart + segment.end - segment.start;
-    if (pmPos >= segment.pmStart && pmPos <= end) return segment.start + pmPos - segment.pmStart;
-  }
-  return null;
-}
-
 export function mathNodeTransaction(
   state,
   editingMathNodePos = null,
@@ -111,13 +100,11 @@ export function mathNodeTransaction(
 
   if (!replacements.length) return null;
   let tr = state.tr;
-  let calculated = false;
   for (const replacement of replacements.reverse()) {
     const marks = tr.doc.resolve(replacement.from).marks();
     const calculatedAsciiMath = calculateAfterEquals
       ? calculateTrailingEquals(replacement.asciiMath)
       : null;
-    calculated ||= calculatedAsciiMath != null;
     const mathNode = tr.doc.type.schema.nodes.mathLive.create(
       { asciiMath: calculatedAsciiMath || replacement.asciiMath },
       null,
@@ -125,9 +112,7 @@ export function mathNodeTransaction(
     );
     tr = tr.replaceWith(replacement.from, replacement.to, mathNode);
   }
-  return tr
-    .setMeta("mathNodeConversion", true)
-    .setMeta("mathCalculation", calculated);
+  return tr.setMeta("mathNodeConversion", true);
 }
 
 export function normalizeMathNodes(editor) {
@@ -137,7 +122,7 @@ export function normalizeMathNodes(editor) {
 
 export function userInsertedEquals(transactions) {
   for (const tr of transactions) {
-    if (!tr.docChanged || tr.getMeta("mathAutoCalc")) continue;
+    if (!tr.docChanged) continue;
     for (const step of tr.steps) {
       if (!(step instanceof ReplaceStep)) continue;
       if (step.slice.content.textBetween(0, step.slice.content.size, "").includes("=")) return true;
@@ -145,54 +130,6 @@ export function userInsertedEquals(transactions) {
   }
   return false;
 }
-
-export function evaluateHangingEquals(slice) {
-  if (!slice.endsWith("=")) return null;
-  const expr = slice.slice(0, -1).trim();
-  if (!expr) return null;
-  try {
-    const value = evaluate(expr);
-    if (typeof value !== "number" || !Number.isFinite(value)) return null;
-    return String(Number(value.toFixed(MAX_CALC_DECIMAL_PLACES)));
-  } catch {
-    return null;
-  }
-}
-
-function findAutoCalcTransaction(state) {
-  if (isDiffOverlayActive(state) || !state.selection.empty) return null;
-  let transaction = null;
-  state.doc.descendants((node, pos) => {
-    if (transaction || !MATH_BLOCK_TYPES.has(node.type.name)) return;
-    const { linearText, segments } = collectLinearText(node, pos);
-    const cursorOffset = linearOffsetForPmPos(segments, state.selection.from);
-    if (cursorOffset == null) return;
-    for (const range of classifyMath(linearText).ranges) {
-      if (range.end !== cursorOffset) continue;
-      const result = evaluateHangingEquals(linearText.slice(range.start, range.end));
-      const insertPos = pmPosForOffset(segments, range.end);
-      if (result == null || insertPos == null) continue;
-      transaction = state.tr.insertText(result, insertPos).setMeta("mathAutoCalc", true);
-      return false;
-    }
-  });
-  return transaction;
-}
-
-export const MathAutoCalc = Extension.create({
-  name: "mathAutoCalc",
-  addProseMirrorPlugins() {
-    return [new Plugin({
-      key: mathAutoCalcKey,
-      appendTransaction(transactions, _oldState, newState) {
-        if (!transactions.some((tr) => tr.docChanged && !tr.getMeta("mathAutoCalc"))) return null;
-        if (transactions.some((tr) => tr.getMeta("mathNodeConversion"))) return null;
-        if (!userInsertedEquals(transactions)) return null;
-        return findAutoCalcTransaction(newState);
-      },
-    })];
-  },
-});
 
 export const MathText = Extension.create({
   name: "mathText",
