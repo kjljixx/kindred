@@ -411,6 +411,7 @@ export function classifyMathHtml(inputHtml) {
     let node;
 
     while ((node = walker.nextNode())) {
+      if (node.parentElement?.closest(".render-latex")) continue;
       const value = node.nodeValue ?? "";
       const start = linearText.length;
 

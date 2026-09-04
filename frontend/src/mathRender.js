@@ -1,5 +1,4 @@
 import katex from "katex";
-import "mathlive";
 import "katex/dist/katex.min.css";
 import katexCssBundled from "katex/dist/katex.min.css?raw";
 import AsciiMathParser from "asciimath2tex";
@@ -87,32 +86,3 @@ ${body}
 </html>`;
 }
 
-/**
- * ProseMirror widget factory. MathLive owns formula hit-testing and editing while
- * the surrounding ProseMirror document continues to store ASCIIMath source.
- */
-export function createMathWidget(source, { onCommit } = {}) {
-  const text = String(source || "");
-  return () => {
-    const wrap = document.createElement("span");
-    wrap.className = "kindred-math-widget";
-    wrap.contentEditable = "false";
-    const field = document.createElement("math-field");
-    field.className = "kindred-math-field";
-    field.value = asciiMathToLatex(text);
-    field.setAttribute("aria-label", `Formula: ${text}`);
-
-    let committed = text;
-    const commit = () => {
-      const next = field.getValue("ascii-math");
-      if (next === committed) return;
-      committed = next;
-      onCommit?.(next);
-    };
-
-    field.addEventListener("change", commit);
-    field.addEventListener("blur", commit);
-    wrap.append(field);
-    return wrap;
-  };
-}

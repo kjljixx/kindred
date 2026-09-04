@@ -109,6 +109,36 @@ const Image = TiptapNode.create({
   },
 });
 
+/** Atomic inline formula. Canonical content is ASCIIMath, not MathLive markup. */
+export const MathLiveNode = TiptapNode.create({
+  name: "mathLive",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: true,
+  addOptions() {
+    return { createNodeView: null };
+  },
+  addAttributes() {
+    return {
+      asciiMath: {
+        default: "",
+        parseHTML: (element) => element.getAttribute("data-kindred-math") || "",
+        renderHTML: (attrs) => ({ "data-kindred-math": attrs.asciiMath }),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "span[data-kindred-math]" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["span", { class: "render-latex", ...HTMLAttributes }, HTMLAttributes["data-kindred-math"]];
+  },
+  addNodeView() {
+    return this.options.createNodeView || undefined;
+  },
+});
+
 /** TipTap v2 has no official FontSize package; mirror Color on textStyle. */
 const FontSize = Extension.create({
   name: "fontSize",
@@ -402,7 +432,7 @@ export function canonicalizeTextHtml(html) {
 }
 
 /** Content extensions shared by editor and headless HTML↔JSON (no UI plugins). */
-export function kindredContentExtensions() {
+export function kindredContentExtensions({ mathLiveNodeView = null } = {}) {
   return [
     StarterKit.configure({
       heading: false,
@@ -435,6 +465,7 @@ export function kindredContentExtensions() {
     KindredOrderedList,
     Highlight,
     Image,
+    MathLiveNode.configure({ createNodeView: mathLiveNodeView }),
     KindredTable.configure({
       resizable: true,
       lastColumnResizable: false
@@ -487,6 +518,10 @@ export function docToPlainText(node) {
 
   const kids = pmNodeChildren(node);
   const type = node.type?.name || node.type;
+
+  if (type === "mathLive") {
+    return String(node.attrs?.asciiMath || "");
+  }
 
   if (type === "paragraph") {
     return kids.map(docToPlainText).join("");

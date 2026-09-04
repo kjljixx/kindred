@@ -801,25 +801,7 @@ button.pane-title {
   caret-color: transparent;
 }
 
-.editor .ProseMirror .kindred-math-fake-caret {
-  display: inline-block;
-  width: 1px;
-  height: 1.1em;
-  vertical-align: -0.17em;
-  transform: scaleY(1.25);
-  transform-origin: center;
-  background: currentColor;
-  pointer-events: none;
-  animation: kindred-caret-blink 1s step-end infinite;
-}
-
-@keyframes kindred-caret-blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-.editor .ProseMirror .kindred-math-widget {
+.editor .ProseMirror .kindred-math-node {
   display: inline-block;
   vertical-align: baseline;
   cursor: text;

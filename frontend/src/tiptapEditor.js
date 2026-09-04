@@ -26,7 +26,8 @@ import {
   summarizeEditor,
   summarizeTransaction,
 } from "./debug.js";
-import { MathAutoCalc, MathText } from "./mathTextExtension.js";
+import { MathAutoCalc, MathText, normalizeMathNodes } from "./mathTextExtension.js";
+import { createMathLiveNodeView, MathLiveNavigation } from "./mathLiveNodeView.js";
 import { overlayKey } from "./editorKeys.js";
 import { loadColoris } from "./optionalAssets.js";
 
@@ -3444,13 +3445,14 @@ export function createKindredEditor({
     element,
     autofocus: true,
     extensions: [
-      ...kindredContentExtensions(),
+      ...kindredContentExtensions({ mathLiveNodeView: createMathLiveNodeView }),
       InputDebug,
       TabIndent,
       ConflictParagraph,
       KeptSelection,
       SelectionUnits,
       MathText,
+      MathLiveNavigation,
       MathAutoCalc,
       Placeholder.configure({ placeholder }),
       KindredOverlay.configure({ diffsFn, onConflictAction, onAlignConflictAction, onTableConflictAction, onListConflictAction }),
@@ -3491,6 +3493,8 @@ export function createKindredEditor({
       onUpdate?.(ed);
     },
   });
+
+  normalizeMathNodes(editor);
 
   return editor;
 }
