@@ -807,6 +807,20 @@ button.pane-title {
   cursor: text;
 }
 
+.editor .ProseMirror {
+  --kindred-selection-background: hsl(from var(--primary-500) h s l / 0.35);
+}
+
+.editor .ProseMirror::selection,
+.editor .ProseMirror *::selection {
+  background: var(--kindred-selection-background);
+}
+
+.editor .ProseMirror .kindred-math-node.kindred-math-selected {
+  background: var(--kindred-selection-background);
+  color: hsl(0 0% 100%);
+}
+
 .editor .ProseMirror .kindred-math-field {
   margin: 0;
   min-width: 0;
@@ -820,7 +834,8 @@ button.pane-title {
   line-height: inherit;
   vertical-align: baseline;
   --caret-color: currentColor;
-  --selection-background-color: hsl(207 90% 62% / 0.25);
+  --selection-background-color: var(--kindred-selection-background);
+  --selection-color: hsl(0 0% 100%);
 }
 
 .editor .ProseMirror .kindred-math-field::part(container) {

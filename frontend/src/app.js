@@ -788,7 +788,8 @@ import {
   function selectionStats() {
     if (!tipTap || tipTap.state.selection.empty) return null;
     const { from, to } = tipTap.state.selection;
-    const raw = tipTap.state.doc.textBetween(from, to, "\n\n").replace(/\u00a0/g, " ");
+    const selected = tipTap.state.doc.slice(from, to).content;
+    const raw = docToPlainText({ type: "paragraph", content: selected }).replace(/\u00a0/g, " ");
     return countStatsText(raw);
   }
 
