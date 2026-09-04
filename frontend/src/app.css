@@ -809,11 +809,12 @@ button.pane-title {
 
 .editor .ProseMirror {
   --kindred-selection-background: #16335d;
+  --kindred-selection-background-transparent: hsl(from var(--primary-500) h s l / 0.35);
 }
 
 .editor .ProseMirror::selection,
 .editor .ProseMirror *::selection {
-  background: var(--kindred-selection-background);
+  background: var(--kindred-selection-background-transparent);
 }
 
 .editor .ProseMirror .kindred-math-node.kindred-math-selected {

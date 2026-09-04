@@ -2869,7 +2869,7 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
     const hex = colorToHex(attrs.color);
     if (hex) colorInput.value = hex;
     if (colorSwatch) colorSwatch.style.background = hex || "currentColor";
-    colorInput.closest(".toolbar-color")?.classList.toggle("is-active", Boolean(hex));
+    colorInput.closest(".toolbar-color")?.classList.remove("is-active");
   }
   const highlightAttrs = lockedMarks
     ? lockedMark("highlight")?.attrs || {}
