@@ -710,6 +710,17 @@ button.pane-title {
   flex-shrink: 0;
 }
 
+.editor-toolbar .toolbar-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.editor-toolbar .toolbar-panel[hidden] {
+  display: none;
+}
+
 .editor-toolbar button {
   display: inline-flex;
   align-items: center;

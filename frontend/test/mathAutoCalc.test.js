@@ -1,6 +1,8 @@
 import { Schema } from "@tiptap/pm/model";
 import { EditorState } from "@tiptap/pm/state";
 import { describe, expect, it } from "vitest";
+import { convertAsciiMathToLatex, convertLatexToAsciiMath } from "mathlive";
+import AsciiMathParser from "asciimath2tex";
 import {
   calculateTrailingEquals,
   isMathLiveEqualsInput,
@@ -46,6 +48,7 @@ describe("calculateTrailingEquals", () => {
   it("uses Compute Engine to append a numeric result", () => {
     expect(calculateTrailingEquals("2+2=")).toBe("2+2=4");
     expect(calculateTrailingEquals("1/3=")).toBe("1/3=0.333333");
+    expect(calculateTrailingEquals("|-4|=")).toBe("|-4|=4");
   });
 
   it("leaves symbolic expressions and equations alone", () => {
@@ -58,6 +61,17 @@ describe("isMathLiveEqualsInput", () => {
   it("only calculates after an equals sign is inserted", () => {
     expect(isMathLiveEqualsInput({ inputType: "insertText", data: "=" })).toBe(true);
     expect(isMathLiveEqualsInput({ inputType: "deleteContentBackward", data: "" })).toBe(false);
+  });
+});
+
+describe("MathLive abs-value latex roundtrip", () => {
+  it("keeps |…| as pipes so ascii-math does not leak \\lvert", () => {
+    const ascii = "|-4|=4";
+    const fromAsciimath2tex = new AsciiMathParser().parse(ascii);
+    const fromMathLive = convertAsciiMathToLatex(ascii);
+
+    expect(convertLatexToAsciiMath(fromAsciimath2tex)).toContain("lvert");
+    expect(convertLatexToAsciiMath(fromMathLive)).toBe(ascii);
   });
 });
 

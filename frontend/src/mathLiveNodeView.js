@@ -1,10 +1,43 @@
 import "mathlive";
+import { convertAsciiMathToLatex } from "mathlive";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import { TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { calculateTrailingEquals, isMathLiveEqualsInput } from "./mathCompute.js";
-import { asciiMathToLatex } from "./mathRender.js";
+
+/** MathLive-native ASCII→LaTeX so getValue("ascii-math") roundtrips (asciimath2tex uses \\lvert). */
+function asciiMathForMathLive(source) {
+  return convertAsciiMathToLatex(String(source || "").trim());
+}
+
+let activeMathField = null;
+const mathFocusListeners = new Set();
+
+export function getActiveMathField() {
+  return activeMathField;
+}
+
+/** Subscribe to math-field focus changes. Listener gets the field or null. */
+export function subscribeMathFocus(listener) {
+  mathFocusListeners.add(listener);
+  return () => mathFocusListeners.delete(listener);
+}
+
+function setActiveMathField(field) {
+  if (activeMathField === field) return;
+  activeMathField = field;
+  for (const listener of mathFocusListeners) listener(field);
+}
+
+function shouldKeepMathFocus(field) {
+  if (document.activeElement === field) return true;
+  const active = document.activeElement;
+  if (active?.closest?.("[data-math-tools]")) return true;
+  if (active?.closest?.(".clr-picker")) return true;
+  if (document.querySelector(".clr-picker.clr-open")) return true;
+  return false;
+}
 
 function focusMathField(view, pos, commands) {
   const nodeDom = view.nodeDOM(pos);
@@ -23,7 +56,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
 
   const field = document.createElement("math-field");
   field.className = "kindred-math-field";
-  field.value = asciiMathToLatex(node.attrs.asciiMath);
+  field.value = asciiMathForMathLive(node.attrs.asciiMath);
   field.setAttribute("aria-label", `Formula: ${node.attrs.asciiMath}`);
   dom.append(field);
 
@@ -48,7 +81,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
       : null;
     if (calculatedAsciiMath && calculatedAsciiMath !== nextAsciiMath) {
       nextAsciiMath = calculatedAsciiMath;
-      field.value = asciiMathToLatex(nextAsciiMath);
+      field.value = asciiMathForMathLive(nextAsciiMath);
     }
     if (nextAsciiMath === lastAsciiMath) return;
     const pos = getPos();
@@ -101,9 +134,24 @@ export function createMathLiveNodeView({ node, view, getPos }) {
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)));
   };
 
+  const onFocus = () => {
+    clearDocumentSelection();
+    setActiveMathField(field);
+  };
+
+  const onBlur = () => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (shouldKeepMathFocus(field)) return;
+        if (getActiveMathField() === field) setActiveMathField(null);
+      });
+    });
+  };
+
   field.addEventListener("input", persist);
   field.addEventListener("move-out", moveOut);
-  field.addEventListener("focus", clearDocumentSelection);
+  field.addEventListener("focus", onFocus);
+  field.addEventListener("blur", onBlur);
   field.addEventListener("keydown", moveWithinFormulaOrExit, true);
 
   const stopEvent = (event) => {
@@ -141,15 +189,17 @@ export function createMathLiveNodeView({ node, view, getPos }) {
       currentNode = nextNode;
       if (nextNode.attrs.asciiMath !== lastAsciiMath && document.activeElement !== field) {
         lastAsciiMath = nextNode.attrs.asciiMath;
-        field.value = asciiMathToLatex(lastAsciiMath);
+        field.value = asciiMathForMathLive(lastAsciiMath);
       }
       return true;
     },
     destroy() {
       field.removeEventListener("input", persist);
       field.removeEventListener("move-out", moveOut);
-      field.removeEventListener("focus", clearDocumentSelection);
+      field.removeEventListener("focus", onFocus);
+      field.removeEventListener("blur", onBlur);
       field.removeEventListener("keydown", moveWithinFormulaOrExit, true);
+      if (getActiveMathField() === field) setActiveMathField(null);
     },
   };
 }

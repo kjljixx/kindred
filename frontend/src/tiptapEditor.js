@@ -27,7 +27,7 @@ import {
   summarizeTransaction,
 } from "./debug.js";
 import { MathText, normalizeMathNodes } from "./mathTextExtension.js";
-import { createMathLiveNodeView, MathLiveNavigation } from "./mathLiveNodeView.js";
+import { createMathLiveNodeView, MathLiveNavigation, getActiveMathField, subscribeMathFocus } from "./mathLiveNodeView.js";
 import { overlayKey } from "./editorKeys.js";
 import { loadColoris } from "./optionalAssets.js";
 
@@ -1479,18 +1479,18 @@ function appendListItemConflictDecorations(
     const widgetFn =
       conflict.kind === "item"
         ? createListItemStructuralConflictWidget(
+          conflict,
+          listPos,
+          onListConflictAction,
+          conflictMode
+        )
+        : conflict.kind === "indent"
+          ? createListIndentConflictWidget(
             conflict,
             listPos,
             onListConflictAction,
             conflictMode
           )
-        : conflict.kind === "indent"
-          ? createListIndentConflictWidget(
-              conflict,
-              listPos,
-              onListConflictAction,
-              conflictMode
-            )
           : null;
     if (!widgetFn) continue;
     decorations.push(
@@ -1622,9 +1622,8 @@ function appendTableRowConflictDecorations(
     );
     decorations.push(
       Decoration.node(rowPos, rowPos + rowNode.nodeSize, {
-        class: `kindred-table-row-conflict-node kindred-table-side-${
-          conflict.oursHtml ? "ours" : "theirs"
-        }`,
+        class: `kindred-table-row-conflict-node kindred-table-side-${conflict.oursHtml ? "ours" : "theirs"
+          }`,
       })
     );
   }
@@ -1671,9 +1670,8 @@ function appendTableColumnConflictDecorations(
       const cellPos = tableCellPos(rowNode, rowPos, conflict.columnIndex);
       decorations.push(
         Decoration.node(cellPos, cellPos + cellNode.nodeSize, {
-          class: `kindred-table-column-conflict-node kindred-table-side-${
-            conflict.oursExists ? "ours" : "theirs"
-          }`,
+          class: `kindred-table-column-conflict-node kindred-table-side-${conflict.oursExists ? "ours" : "theirs"
+            }`,
         })
       );
     }
@@ -1717,7 +1715,7 @@ function appendTableConflictDecorations(
       );
       return false;
     }
-    
+
     // Check if conflict attributes exist (even if one side is an empty string for deletion)
     const hasConflict =
       node.attrs.tableOurs !== null ||
@@ -1821,8 +1819,8 @@ function appendListConflictDecorations(
 
     const activePreviewSide =
       listPreview &&
-      listPreview.listPos === pos &&
-      (listPreview.side === "theirs" || listPreview.side === "ours")
+        listPreview.listPos === pos &&
+        (listPreview.side === "theirs" || listPreview.side === "ours")
         ? listPreview.side
         : "ours";
     const previewHtml =
@@ -2608,7 +2606,7 @@ function buildOverlayDecorations(doc, meta, diffsFn) {
     appendTableDiffDecorations(doc, decorations, tableDiffs);
     appendListDiffDecorations(doc, decorations, listDiffs, diffsFn);
   }
-  
+
   return DecorationSet.create(doc, decorations);
 }
 
@@ -2913,10 +2911,26 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
   if (tableTools) {
     tableTools.hidden = !inTable;
   }
+
+  const mathActive = Boolean(getActiveMathField());
+  const formatTools = toolbarEl.querySelector("[data-format-tools]");
+  const mathTools = toolbarEl.querySelector("[data-math-tools]");
+  if (formatTools) formatTools.hidden = mathActive;
+  if (mathTools) mathTools.hidden = !mathActive;
+  toolbarEl.dataset.mathMode = mathActive ? "1" : "0";
+  toolbarEl.setAttribute("aria-label", mathActive ? "Math editing" : "Formatting");
+
+  if (mathActive) {
+    const field = getActiveMathField();
+    toolbarEl.querySelector("[data-math-bold]")?.classList.toggle(
+      "is-active",
+      field?.queryStyle?.({ variantStyle: "bold" }) === "all",
+    );
+  }
 }
 
 export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
-  if (!toolbarEl) return { destroy() {}, getState() { return {}; }, applyState() {} };
+  if (!toolbarEl) return { destroy() { }, getState() { return {}; }, applyState() { } };
   const colorInput = toolbarEl.querySelector("[data-color-input]");
   const highlightInput = toolbarEl.querySelector("[data-highlight-input]");
   const highlightBtn = toolbarEl.querySelector("[data-highlight-btn]");
@@ -2936,6 +2950,7 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
   let formatLock = false;
   let lockedMarks = null;
   let lastHighlightColor = "rgba(117, 114, 12, 1.0)";
+  let mathSelectionUnsub = null;
 
   const getToolbarState = () => ({
     formatLock,
@@ -3019,7 +3034,7 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
     event.preventDefault();
     setFormatLock(!formatLock);
   };
-  
+
   const setAlignMenuOpen = (open) => {
     if (!alignMenu || !alignTrigger) return;
     alignMenu.hidden = !open;
@@ -3084,6 +3099,23 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
 
   // Update onClick to close the menu on alignment command:
   const onClick = (e) => {
+    const mathInsertBtn = e.target.closest("[data-math-insert]");
+    if (mathInsertBtn && toolbarEl.contains(mathInsertBtn)) {
+      e.preventDefault();
+      const field = getActiveMathField();
+      if (!field) return;
+      const latex = mathInsertBtn.getAttribute("data-math-insert");
+      if (latex != null) field.executeCommand(["insert", latex]);
+      return;
+    }
+    if (e.target.closest("[data-math-bold]") && toolbarEl.contains(e.target.closest("[data-math-bold]"))) {
+      e.preventDefault();
+      const field = getActiveMathField();
+      if (!field) return;
+      field.applyStyle({ variantStyle: "bold" }, { operation: "toggle" });
+      syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
+      return;
+    }
     const btn = e.target.closest("[data-cmd]");
     if (!btn || !toolbarEl.contains(btn)) return;
     e.preventDefault();
@@ -3117,12 +3149,12 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
       chain.deleteRow().run();
       return;
     }
-    else if (cmd === "addColumnAfter") {
-      chain.addColumnAfter().run();
-      return;
-    }
     else if (cmd === "deleteColumn") {
       chain.deleteColumn().run();
+      return;
+    }
+    else if (cmd === "addColumnAfter") {
+      chain.addColumnAfter().run();
       return;
     }
     else if (cmd === "deleteTable") {
@@ -3140,11 +3172,17 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
     }
     syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
   };
+
+  const onMathToolsPointerDown = (e) => {
+    if (e.target.closest("[data-math-insert], [data-math-bold]")) {
+      e.preventDefault();
+    }
+  };
   const onHighlightClick = (e) => {
     e.preventDefault();
     const chain = editor.chain().focus();
     if (stashedSelection) chain.setTextSelection(stashedSelection);
-    
+
     // Clear kept selection within the SAME chain before setting stored marks
     chain.clearKeptSelection();
 
@@ -3330,6 +3368,7 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
   document.addEventListener("click", onDocClick);
   document.addEventListener("keydown", onDocKeydown);
   toolbarEl.addEventListener("click", onClick);
+  toolbarEl.addEventListener("mousedown", onMathToolsPointerDown);
   formatLockButton?.addEventListener("mousedown", onFormatLockPointerDown);
   formatLockButton?.addEventListener("click", onFormatLockClick);
   imageInput?.addEventListener("change", onImage);
@@ -3371,51 +3410,66 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
     syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
   };
   editor.on("selectionUpdate", onSel);
+  const unsubscribeMathFocus = subscribeMathFocus((field) => {
+    mathSelectionUnsub?.();
+    mathSelectionUnsub = null;
+    if (field) {
+      const onMathSel = () => {
+        syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
+      };
+      field.addEventListener("selection-change", onMathSel);
+      mathSelectionUnsub = () => field.removeEventListener("selection-change", onMathSel);
+    }
+    syncToolbar(editor, toolbarEl, formatLock ? lockedMarks : null);
+  });
   syncToolbar(editor, toolbarEl);
   return {
     getState: getToolbarState,
     applyState: applyToolbarState,
     destroy() {
-    alignTrigger?.removeEventListener("click", onAlignTriggerClick);
-    document.removeEventListener("click", onDocClick);
-    document.removeEventListener("keydown", onDocKeydown);
-    toolbarEl.removeEventListener("click", onClick);
-    formatLockButton?.removeEventListener("mousedown", onFormatLockPointerDown);
-    formatLockButton?.removeEventListener("click", onFormatLockClick);
-    imageInput?.removeEventListener("change", onImage);
-    colorInput?.removeEventListener("mousedown", stashSelection);
-    colorInput?.removeEventListener("focus", stashSelection);
-    colorInput?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
-    colorInput?.removeEventListener("input", onColor);
-    colorInput?.removeEventListener("change", onColor);
-    highlightBtn?.removeEventListener("mousedown", stashSelection);
-    highlightBtn?.removeEventListener("click", onHighlightClick);
-    highlightBtn?.removeEventListener("contextmenu", onHighlightContextMenu);
-    removeHighlightLongPress();
-    highlightInput?.removeEventListener("mousedown", stashSelection);
-    highlightInput?.removeEventListener("focus", stashSelection);
-    highlightInput?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
-    highlightInput?.removeEventListener("input", onHighlightColor);
-    highlightInput?.removeEventListener("change", onHighlightColor);
-    fontSizeInput?.removeEventListener("mousedown", stashSelection);
-    fontSizeInput?.removeEventListener("focus", stashSelection);
-    fontSizeInput?.removeEventListener("change", onFontSizeChange);
-    fontSizeInput?.removeEventListener("keydown", onFontSizeKeydown);
-    fontSizeInput?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
-    fontFamilySelect?.removeEventListener("mousedown", stashSelection);
-    fontFamilySelect?.removeEventListener("focus", stashSelection);
-    fontFamilySelect?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
-    fontFamilySelect?.removeEventListener("change", onFontFamily);
-    fontFamilyTrigger?.removeEventListener("mousedown", stashSelection);
-    fontFamilyTrigger?.removeEventListener("focus", stashSelection);
-    fontFamilyTrigger?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
-    fontFamilyPanel?.removeEventListener("mousedown", stashSelection);
-    fontFamilyPicker?.destroy?.();
-    editor.view.dom.removeEventListener("pointerdown", onEditorPointerDown);
-    editor.off("focus", onEditorFocus);
-    document.removeEventListener("pointerdown", onDocPointerDown);
-    editor.off("selectionUpdate", onSel);
-    editor.unregisterPlugin(formatLockPluginKey);
+      alignTrigger?.removeEventListener("click", onAlignTriggerClick);
+      document.removeEventListener("click", onDocClick);
+      document.removeEventListener("keydown", onDocKeydown);
+      toolbarEl.removeEventListener("click", onClick);
+      toolbarEl.removeEventListener("mousedown", onMathToolsPointerDown);
+      formatLockButton?.removeEventListener("mousedown", onFormatLockPointerDown);
+      formatLockButton?.removeEventListener("click", onFormatLockClick);
+      imageInput?.removeEventListener("change", onImage);
+      colorInput?.removeEventListener("mousedown", stashSelection);
+      colorInput?.removeEventListener("focus", stashSelection);
+      colorInput?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
+      colorInput?.removeEventListener("input", onColor);
+      colorInput?.removeEventListener("change", onColor);
+      highlightBtn?.removeEventListener("mousedown", stashSelection);
+      highlightBtn?.removeEventListener("click", onHighlightClick);
+      highlightBtn?.removeEventListener("contextmenu", onHighlightContextMenu);
+      removeHighlightLongPress();
+      highlightInput?.removeEventListener("mousedown", stashSelection);
+      highlightInput?.removeEventListener("focus", stashSelection);
+      highlightInput?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
+      highlightInput?.removeEventListener("input", onHighlightColor);
+      highlightInput?.removeEventListener("change", onHighlightColor);
+      fontSizeInput?.removeEventListener("mousedown", stashSelection);
+      fontSizeInput?.removeEventListener("focus", stashSelection);
+      fontSizeInput?.removeEventListener("change", onFontSizeChange);
+      fontSizeInput?.removeEventListener("keydown", onFontSizeKeydown);
+      fontSizeInput?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
+      fontFamilySelect?.removeEventListener("mousedown", stashSelection);
+      fontFamilySelect?.removeEventListener("focus", stashSelection);
+      fontFamilySelect?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
+      fontFamilySelect?.removeEventListener("change", onFontFamily);
+      fontFamilyTrigger?.removeEventListener("mousedown", stashSelection);
+      fontFamilyTrigger?.removeEventListener("focus", stashSelection);
+      fontFamilyTrigger?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
+      fontFamilyPanel?.removeEventListener("mousedown", stashSelection);
+      fontFamilyPicker?.destroy?.();
+      editor.view.dom.removeEventListener("pointerdown", onEditorPointerDown);
+      editor.off("focus", onEditorFocus);
+      document.removeEventListener("pointerdown", onDocPointerDown);
+      editor.off("selectionUpdate", onSel);
+      mathSelectionUnsub?.();
+      unsubscribeMathFocus();
+      editor.unregisterPlugin(formatLockPluginKey);
     },
   };
 }
