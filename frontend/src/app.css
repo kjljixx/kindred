@@ -808,7 +808,7 @@ button.pane-title {
 }
 
 .editor .ProseMirror {
-  --kindred-selection-background: hsl(from var(--primary-500) h s l / 0.35);
+  --kindred-selection-background: #16335d;
 }
 
 .editor .ProseMirror::selection,

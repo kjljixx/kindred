@@ -30,6 +30,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
   let currentNode = node;
   let lastAsciiMath = node.attrs.asciiMath;
   let documentSelectionDrag = false;
+  let handledMoveOut = false;
 
   const exitToDocument = (direction) => {
     const pos = getPos();
@@ -70,23 +71,26 @@ export function createMathLiveNodeView({ node, view, getPos }) {
   };
 
   const moveOut = (event) => {
+    handledMoveOut = true;
     event.preventDefault();
     exitToDocument(event.detail?.direction);
   };
 
-  const exitBesideFormulaEdge = (event) => {
+  const moveWithinFormulaOrExit = (event) => {
     if (!field.selectionIsCollapsed) return;
     const forward = event.key === "ArrowRight";
     const backward = event.key === "ArrowLeft";
     if (!forward && !backward) return;
-    const edgeAsciiMath = forward
-      ? field.getValue(field.position, field.lastOffset, "ascii-math")
-      : field.getValue(0, field.position, "ascii-math");
-    if (Array.from(String(edgeAsciiMath).trim()).length !== 1) return;
-    if (field.getElementInfo(field.position)?.depth !== 0) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    exitToDocument(forward ? "forward" : "backward");
+    const command = forward ? "moveToNextChar" : "moveToPreviousChar";
+    handledMoveOut = false;
+    field.executeCommand(command);
+    if (handledMoveOut) return;
+
+    const positionAfterOneMove = field.position;
+    field.executeCommand(command);
+    if (!handledMoveOut) field.position = positionAfterOneMove;
   };
 
   const clearDocumentSelection = () => {
@@ -100,7 +104,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
   field.addEventListener("input", persist);
   field.addEventListener("move-out", moveOut);
   field.addEventListener("focus", clearDocumentSelection);
-  field.addEventListener("keydown", exitBesideFormulaEdge, true);
+  field.addEventListener("keydown", moveWithinFormulaOrExit, true);
 
   const stopEvent = (event) => {
     if (!event.target.closest?.(".kindred-math-node")) return false;
@@ -145,7 +149,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
       field.removeEventListener("input", persist);
       field.removeEventListener("move-out", moveOut);
       field.removeEventListener("focus", clearDocumentSelection);
-      field.removeEventListener("keydown", exitBesideFormulaEdge, true);
+      field.removeEventListener("keydown", moveWithinFormulaOrExit, true);
     },
   };
 }
