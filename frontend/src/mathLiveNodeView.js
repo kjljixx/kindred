@@ -190,6 +190,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
       if (nextNode.attrs.asciiMath !== lastAsciiMath && document.activeElement !== field) {
         lastAsciiMath = nextNode.attrs.asciiMath;
         field.value = asciiMathForMathLive(lastAsciiMath);
+        field.setAttribute("aria-label", `Formula: ${lastAsciiMath}`);
       }
       return true;
     },

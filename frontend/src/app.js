@@ -22,6 +22,8 @@ import {
   stripKindredProtocol,
   plainOffsetsToPmRange,
   plainOffsetForPmPos,
+  expandMathNodesToText,
+  normalizeMathNodes,
 } from "./tiptapEditor.js";
 import { bindLongPress } from "./longPress.js";
 import { loadColoris, loadHtmlDiff, preloadOptionalAssets } from "./optionalAssets.js";
@@ -289,6 +291,8 @@ import {
         });
         if (store) void store.hydrateImageElements(activeDraftId, editor, viewingOid);
       } else if (dirtyViewMode === "Diff") {
+        // Diff paints text offsets; expand mathLive atoms so the editor is real text.
+        expandMathNodesToText(tipTap);
         // Dirty: vs HEAD. History: vs previous commit (baseline set by loadSnapshotState).
         const basePlain = viewing ? baseline : headPlain;
         const baseHtml = viewing ? baselineHtml : headHtml;
@@ -1798,6 +1802,7 @@ import {
   async function setDirtyEditView(mode) {
     if (mode !== "Text" && mode !== "Diff") return;
     if (mode === "Diff") await loadHtmlDiff();
+    const leavingDiff = dirtyViewMode === "Diff" && mode === "Text";
     // Leaving Review must win over the pending-merge lock: review hunks look like
     // unresolved conflicts but are not a live merge conflict.
     if (dirtyReviewing) {
@@ -1806,6 +1811,11 @@ import {
       syncMergeStatus();
       renderGitPane();
       syncOverlayFromState();
+      if (leavingDiff) {
+        normalizeMathNodes(tipTap);
+        pullFromEditor();
+        syncDirtyBodyFromCurrent();
+      }
       focusEditorSoon();
       persistUiStateSoon();
       return;
@@ -1825,6 +1835,11 @@ import {
     dirtyViewMode = mode;
     renderGitPane();
     syncOverlayFromState();
+    if (leavingDiff) {
+      normalizeMathNodes(tipTap);
+      pullFromEditor();
+      syncDirtyBodyFromCurrent();
+    }
     focusEditorSoon();
     persistUiStateSoon();
   }

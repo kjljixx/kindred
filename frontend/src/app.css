@@ -801,17 +801,6 @@ button.pane-title {
   outline-offset: 2px;
 }
 
-.editor .ProseMirror .kindred-math-source {
-  display: inline-block;
-  width: 0;
-  overflow: visible;
-  vertical-align: baseline;
-  font-size: 0;
-  line-height: 0;
-  color: transparent;
-  caret-color: transparent;
-}
-
 .editor .ProseMirror .kindred-math-node {
   display: inline-block;
   vertical-align: baseline;

@@ -19,8 +19,7 @@ function getOverlayState(state) {
 
 function isDiffOverlayActive(state) {
   const overlay = getOverlayState(state);
-  if (!overlay?.showDiffs) return false;
-  return (overlay.baseline || "") !== (overlay.currentPlain || "") || (overlay.formatHunks?.length || 0) > 0;
+  return !!(overlay?.showDiffs && !overlay.conflicts);
 }
 
 function collectLinearText(node, blockPos) {
@@ -118,6 +117,31 @@ export function mathNodeTransaction(
 export function normalizeMathNodes(editor) {
   const tr = mathNodeTransaction(editor.state);
   if (tr) editor.view.dispatch(tr);
+}
+
+/** Replace mathLive atoms with their asciiMath text (Diff / plain view). */
+export function expandMathNodesToText(editor) {
+  if (!editor?.state) return false;
+  const { state } = editor;
+  const replacements = [];
+  state.doc.descendants((node, pos) => {
+    if (node.type.name !== "mathLive") return;
+    replacements.push({ pos, size: node.nodeSize, asciiMath: node.attrs.asciiMath || "", marks: node.marks });
+  });
+  if (!replacements.length) return false;
+  let tr = state.tr;
+  for (const replacement of replacements.reverse()) {
+    const textNode = replacement.asciiMath
+      ? state.schema.text(replacement.asciiMath, replacement.marks)
+      : null;
+    tr = textNode
+      ? tr.replaceWith(replacement.pos, replacement.pos + replacement.size, textNode)
+      : tr.delete(replacement.pos, replacement.pos + replacement.size);
+  }
+  editor.view.dispatch(
+    tr.setMeta("addToHistory", false).setMeta("mathNodeConversion", true),
+  );
+  return true;
 }
 
 export function userInsertedEquals(transactions) {

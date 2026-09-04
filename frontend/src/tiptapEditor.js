@@ -26,7 +26,7 @@ import {
   summarizeEditor,
   summarizeTransaction,
 } from "./debug.js";
-import { MathText, normalizeMathNodes } from "./mathTextExtension.js";
+import { MathText, normalizeMathNodes, expandMathNodesToText } from "./mathTextExtension.js";
 import { createMathLiveNodeView, MathLiveNavigation, getActiveMathField, subscribeMathFocus } from "./mathLiveNodeView.js";
 import { overlayKey } from "./editorKeys.js";
 import { loadColoris } from "./optionalAssets.js";
@@ -3556,6 +3556,8 @@ export function getPlain(editor) {
   if (!editor?.state?.doc) return "";
   return docToPlainText(editor.state.doc);
 }
+
+export { normalizeMathNodes, expandMathNodesToText };
 
 export function getHtml(editor) {
   if (!editor) return "";

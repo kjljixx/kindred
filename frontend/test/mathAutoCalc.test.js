@@ -1,5 +1,5 @@
 import { Schema } from "@tiptap/pm/model";
-import { EditorState } from "@tiptap/pm/state";
+import { EditorState, Plugin } from "@tiptap/pm/state";
 import { describe, expect, it } from "vitest";
 import { convertAsciiMathToLatex, convertLatexToAsciiMath } from "mathlive";
 import AsciiMathParser from "asciimath2tex";
@@ -7,9 +7,11 @@ import {
   calculateTrailingEquals,
   isMathLiveEqualsInput,
 } from "../src/mathCompute.js";
+import { overlayKey } from "../src/editorKeys.js";
 import {
   mathNodeTransaction,
   userInsertedEquals,
+  expandMathNodesToText,
 } from "../src/mathTextExtension.js";
 
 const schema = new Schema({
@@ -90,6 +92,21 @@ describe("mathNodeTransaction", () => {
     },
   });
 
+  function stateWithOverlay(doc, overlay) {
+    return EditorState.create({
+      doc,
+      plugins: [
+        new Plugin({
+          key: overlayKey,
+          state: {
+            init: () => overlay,
+            apply: (_tr, value) => value,
+          },
+        }),
+      ],
+    });
+  }
+
   it("rebuilds a formula when plain text continues an adjacent math node", () => {
     const formula = mathSchema.nodes.mathLive.create({ asciiMath: "a^2" });
     const paragraph = mathSchema.nodes.paragraph.create(null, [
@@ -133,5 +150,77 @@ describe("mathNodeTransaction", () => {
       type: { name: "mathLive" },
       attrs: { asciiMath: "2+2=4" },
     });
+  });
+
+  it("skips conversion while Diff overlay is active", () => {
+    const paragraph = mathSchema.nodes.paragraph.create(null, [
+      mathSchema.text("sin(x) "),
+    ]);
+    const state = stateWithOverlay(mathSchema.nodes.doc.create(null, [paragraph]), {
+      showDiffs: true,
+      conflicts: null,
+    });
+
+    expect(mathNodeTransaction(state)).toBeNull();
+  });
+
+  it("still converts while conflict Review overlay is active", () => {
+    const paragraph = mathSchema.nodes.paragraph.create(null, [
+      mathSchema.text("sin(x) "),
+    ]);
+    const state = stateWithOverlay(mathSchema.nodes.doc.create(null, [paragraph]), {
+      showDiffs: true,
+      conflicts: [{ type: "conflict" }],
+    });
+
+    const transaction = mathNodeTransaction(state);
+    expect(transaction).not.toBeNull();
+    expect(transaction.doc.firstChild.firstChild).toMatchObject({
+      type: { name: "mathLive" },
+      attrs: { asciiMath: "sin(x)" },
+    });
+  });
+});
+
+describe("expandMathNodesToText", () => {
+  const mathSchema = new Schema({
+    nodes: {
+      doc: { content: "paragraph+" },
+      paragraph: { content: "inline*", group: "block" },
+      text: { group: "inline" },
+      mathLive: {
+        group: "inline",
+        inline: true,
+        atom: true,
+        attrs: { asciiMath: { default: "" } },
+      },
+    },
+  });
+
+  it("replaces mathLive atoms with asciiMath text", () => {
+    const formula = mathSchema.nodes.mathLive.create({ asciiMath: "a^2+b^2=c^2" });
+    const paragraph = mathSchema.nodes.paragraph.create(null, [
+      formula,
+      mathSchema.text("eeeeeeeeee"),
+    ]);
+    const state = EditorState.create({
+      doc: mathSchema.nodes.doc.create(null, [paragraph]),
+    });
+    const dispatches = [];
+    const editor = {
+      state,
+      view: {
+        dispatch(tr) {
+          dispatches.push(tr);
+        },
+      },
+    };
+
+    expect(expandMathNodesToText(editor)).toBe(true);
+    expect(dispatches).toHaveLength(1);
+    const next = state.apply(dispatches[0]);
+    expect(next.doc.firstChild.textContent).toBe("a^2+b^2=c^2eeeeeeeeee");
+    expect(next.doc.firstChild.childCount).toBe(1);
+    expect(next.doc.firstChild.firstChild.isText).toBe(true);
   });
 });
