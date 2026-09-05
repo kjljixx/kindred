@@ -170,6 +170,11 @@ function alignEditedParagraphs(baseBlocks, sideBlocks, baseIndexes, inserts) {
   return matches.reverse();
 }
 
+function hasTextContent(node) {
+  if (typeof node?.text === "string" && node.text.length > 0) return true;
+  return (node?.content || []).some(hasTextContent);
+}
+
 function reconcileEditedStructuralBlocks(baseBlocks, sideBlocks, mapping) {
   const mappedBaseIndexes = mapping.baseToSide
     .map((sideIndex, baseIndex) => sideIndex == null ? null : baseIndex)
@@ -202,11 +207,20 @@ function reconcileEditedStructuralBlocks(baseBlocks, sideBlocks, mapping) {
     if (mapping.baseToSide[baseIndex] != null) continue;
     const family = blockFamily(baseBlocks[baseIndex]);
     if (family === "p") continue;
-    const insertIndex = mapping.inserts.findIndex((insert) => {
+    const isCandidate = (insert) => {
       const nearby =
         insert.afterBase === baseIndex || insert.afterBase === baseIndex - 1;
       return nearby && blockFamily(sideBlocks[insert.sideIndex]) === family;
-    });
+    };
+    const baseHasText = hasTextContent(baseBlocks[baseIndex]);
+    let insertIndex = mapping.inserts.findIndex(
+      (insert) =>
+        isCandidate(insert) &&
+        hasTextContent(sideBlocks[insert.sideIndex]) === baseHasText
+    );
+    if (insertIndex < 0) {
+      insertIndex = mapping.inserts.findIndex(isCandidate);
+    }
     if (insertIndex < 0) continue;
     mapping.baseToSide[baseIndex] = mapping.inserts[insertIndex].sideIndex;
     mapping.inserts.splice(insertIndex, 1);

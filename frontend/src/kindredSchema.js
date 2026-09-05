@@ -372,27 +372,23 @@ export function prettyPrintHtml(html) {
     .trim();
 }
 
-function trimTrailingInsignificant(el) {
-  while (el.lastChild) {
-    const last = el.lastChild;
-    if (last.nodeType === Node.TEXT_NODE) {
-      const trimmed = (last.nodeValue || "").replace(/[\s\u00a0]+$/g, "");
-      if (!trimmed) {
-        el.removeChild(last);
-        continue;
-      }
-      if (trimmed !== last.nodeValue) last.nodeValue = trimmed;
-      break;
-    }
-    if (last.nodeType === Node.ELEMENT_NODE && last.tagName === "BR") {
-      el.removeChild(last);
-      continue;
-    }
-    if (last.nodeType === Node.ELEMENT_NODE) {
-      trimTrailingInsignificant(last);
-      break;
-    }
-    break;
+function preserveTrailingSpaces(el) {
+  const last = el.lastChild;
+  if (!last) return;
+  if (last.nodeType === Node.TEXT_NODE) {
+    last.nodeValue = (last.nodeValue || "").replace(
+      /[ \u00a0]+$/g,
+      (spaces) => "\u00a0".repeat(spaces.length),
+    );
+    return;
+  }
+  if (last.nodeType === Node.ELEMENT_NODE && last.tagName === "BR") {
+    el.removeChild(last);
+    preserveTrailingSpaces(el);
+    return;
+  }
+  if (last.nodeType === Node.ELEMENT_NODE) {
+    preserveTrailingSpaces(last);
   }
 }
 
@@ -421,7 +417,7 @@ export function canonicalizeTextHtml(html) {
   for (const el of root.querySelectorAll(
     "p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre, div, td, th"
   )) {
-    trimTrailingInsignificant(el);
+    preserveTrailingSpaces(el);
   }
   for (const el of root.querySelectorAll("[style]")) {
     const next = canonicalizeStyleAttr(el.getAttribute("style"));
@@ -561,7 +557,7 @@ export function htmlToPlainText(html) {
 }
 
 function isEmptyParagraphNode(node) {
-  return node?.type === "paragraph" && !docToPlainText(node).trim();
+  return node?.type === "paragraph" && !docToPlainText(node);
 }
 
 /** Family key for block LCS (lists/tables plug in here later). */
@@ -581,7 +577,7 @@ export function blockFamily(node) {
 export function blockSignature(node) {
   if (!node) return "";
   const fam = blockFamily(node);
-  if (fam === "p") return `p:${docToPlainText(node).trim()}`;
+  if (fam === "p") return `p:${docToPlainText(node)}`;
   return `${fam}:${JSON.stringify(node)}`;
 }
 
