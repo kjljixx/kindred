@@ -9,6 +9,7 @@ import {
 } from "../src/mathCompute.js";
 import { overlayKey } from "../src/editorKeys.js";
 import {
+  caretEndsSingleLetterRange,
   mathNodeTransaction,
   userInsertedEquals,
   expandMathNodesToText,
@@ -32,6 +33,18 @@ function transactionDeleting(text, fromOffset, toOffset) {
   const state = EditorState.create({ doc });
   return state.tr.delete(fromOffset, toOffset);
 }
+
+describe("caretEndsSingleLetterRange", () => {
+  it("defers only one-letter math when the caret is at its end", () => {
+    expect(caretEndsSingleLetterRange({ empty: true, from: 5 }, "x", 5)).toBe(true);
+    expect(caretEndsSingleLetterRange({ empty: true, from: 5 }, "xy", 5)).toBe(false);
+    expect(caretEndsSingleLetterRange({ empty: true, from: 6 }, "x", 5)).toBe(false);
+  });
+
+  it("supports one-letter variables outside ASCII", () => {
+    expect(caretEndsSingleLetterRange({ empty: true, from: 5 }, "λ", 5)).toBe(true);
+  });
+});
 
 describe("userInsertedEquals", () => {
   it("returns true when the user inserts =", () => {

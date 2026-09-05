@@ -65,6 +65,10 @@ function pmPosForOffset(segments, offset) {
   return null;
 }
 
+export function caretEndsSingleLetterRange(selection, text, to) {
+  return selection.empty && selection.from === to && /^\p{L}$/u.test(text);
+}
+
 export function mathNodeTransaction(
   state,
   editingMathNodePos = null,
@@ -80,6 +84,8 @@ export function mathNodeTransaction(
       const from = pmPosForOffset(segments, range.start);
       const to = pmPosForOffset(segments, range.end);
       if (from == null || to == null || from >= to) continue;
+      const asciiMath = linearText.slice(range.start, range.end);
+      if (caretEndsSingleLetterRange(state.selection, asciiMath, to)) continue;
       const includedMathNodes = segments.filter((segment) => (
         segment.mathNode &&
         segment.start >= range.start &&
@@ -93,7 +99,7 @@ export function mathNodeTransaction(
         (segment) => segment.pmStart === editingMathNodePos,
       );
       if (isUnchangedMathNode || editsActiveMathNode) continue;
-      replacements.push({ from, to, asciiMath: linearText.slice(range.start, range.end) });
+      replacements.push({ from, to, asciiMath });
     }
   });
 
