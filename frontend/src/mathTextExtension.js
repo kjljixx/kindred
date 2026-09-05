@@ -93,10 +93,6 @@ function blockTouchesRanges(pos, node, ranges) {
   return ranges.some((range) => pos <= range.to && end >= range.from);
 }
 
-export function caretEndsSingleLetterRange(selection, text, to) {
-  return selection.empty && selection.from === to && /^\p{L}$/u.test(text);
-}
-
 export function mathNodeTransaction(
   state,
   editingMathNodePos = null,
@@ -116,7 +112,6 @@ export function mathNodeTransaction(
       const to = pmPosForOffset(segments, range.end);
       if (from == null || to == null || from >= to) continue;
       const asciiMath = linearText.slice(range.start, range.end);
-      if (caretEndsSingleLetterRange(state.selection, asciiMath, to)) continue;
       const includedMathNodes = segments.filter((segment) => (
         segment.mathNode &&
         segment.start >= range.start &&
@@ -192,6 +187,21 @@ export function userInsertedEquals(transactions) {
   return false;
 }
 
+export function userInsertedMathDelimiter(transactions) {
+  for (const tr of transactions) {
+    if (!tr.docChanged) continue;
+    for (const step of tr.steps) {
+      if (!(step instanceof ReplaceStep)) continue;
+      const insertedText = step.slice.content.textBetween(
+        0,
+        step.slice.content.size,
+        "",
+      );
+      if (/[\s()^_=+\-*/<>]/u.test(insertedText)) return true;
+    }
+  }
+  return false;
+}
 export const MathText = Extension.create({
   name: "mathText",
   addProseMirrorPlugins() {
@@ -199,6 +209,7 @@ export const MathText = Extension.create({
       key: mathTextKey,
       appendTransaction(transactions, _oldState, newState) {
         if (!transactions.some((tr) => tr.docChanged && !tr.getMeta("mathNodeConversion"))) return null;
+        if (!userInsertedMathDelimiter(transactions)) return null;
         const editingTransaction = [...transactions].reverse().find(
           (tr) => tr.getMeta("mathNodeEditing") != null,
         );

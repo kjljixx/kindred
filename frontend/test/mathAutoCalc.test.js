@@ -9,9 +9,9 @@ import {
 } from "../src/mathCompute.js";
 import { overlayKey } from "../src/editorKeys.js";
 import {
-  caretEndsSingleLetterRange,
   mathNodeTransaction,
   userInsertedEquals,
+  userInsertedMathDelimiter,
   expandMathNodesToText,
 } from "../src/mathTextExtension.js";
 
@@ -34,18 +34,6 @@ function transactionDeleting(text, fromOffset, toOffset) {
   return state.tr.delete(fromOffset, toOffset);
 }
 
-describe("caretEndsSingleLetterRange", () => {
-  it("defers only one-letter math when the caret is at its end", () => {
-    expect(caretEndsSingleLetterRange({ empty: true, from: 5 }, "x", 5)).toBe(true);
-    expect(caretEndsSingleLetterRange({ empty: true, from: 5 }, "xy", 5)).toBe(false);
-    expect(caretEndsSingleLetterRange({ empty: true, from: 6 }, "x", 5)).toBe(false);
-  });
-
-  it("supports one-letter variables outside ASCII", () => {
-    expect(caretEndsSingleLetterRange({ empty: true, from: 5 }, "λ", 5)).toBe(true);
-  });
-});
-
 describe("userInsertedEquals", () => {
   it("returns true when the user inserts =", () => {
     const tr = transactionInserting("2+2", "=");
@@ -59,6 +47,17 @@ describe("userInsertedEquals", () => {
 
 });
 
+describe("userInsertedMathDelimiter", () => {
+  it("recognizes user-inserted whitespace and math operators", () => {
+    expect(userInsertedMathDelimiter([transactionInserting("x", " ")])).toBe(true);
+    expect(userInsertedMathDelimiter([transactionInserting("x", "+")])).toBe(true);
+  });
+
+  it("does not treat letters or deletions as explicit completion", () => {
+    expect(userInsertedMathDelimiter([transactionInserting("a", "x")])).toBe(false);
+    expect(userInsertedMathDelimiter([transactionDeleting("x ", 1, 2)])).toBe(false);
+  });
+});
 describe("calculateTrailingEquals", () => {
   it("uses Compute Engine to append a numeric result", () => {
     expect(calculateTrailingEquals("2+2=")).toBe("2+2=4");
