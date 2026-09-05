@@ -801,6 +801,15 @@ function buildPlainPmMap(doc) {
     plain += normalized.length;
   }
 
+  function appendAtom(text, startPm, nodeSize) {
+    const normalized = String(text || "").replace(/\u00a0/g, " ");
+    plainToPm[plain] = startPm;
+    for (let i = 1; i <= normalized.length; i++) {
+      plainToPm[plain + i] = startPm + nodeSize;
+    }
+    plain += normalized.length;
+  }
+
   function joinChildren(node, pos, sep, filterEmpty = false) {
     const isDoc = node.type?.name === "doc" || node.name === "doc";
     const entries = [];
@@ -826,7 +835,9 @@ function buildPlainPmMap(doc) {
     }
 
     const type = node.type.name;
-    if (type === "paragraph" || type === "listItem") {
+    if (type === "mathLive") {
+      appendAtom(node.attrs?.asciiMath, pos, node.nodeSize);
+    } else if (type === "paragraph" || type === "listItem") {
       joinChildren(node, pos, "");
     } else if (type === "bulletList" || type === "orderedList" || type === "table") {
       joinChildren(node, pos, "\n");

@@ -14,6 +14,7 @@ import {
   userInsertedMathDelimiter,
   expandMathNodesToText,
 } from "../src/mathTextExtension.js";
+import { plainOffsetsToPmRange } from "../src/tiptapEditor.js";
 
 const schema = new Schema({
   nodes: {
@@ -234,5 +235,35 @@ describe("expandMathNodesToText", () => {
     expect(next.doc.firstChild.textContent).toBe("a^2+b^2=c^2eeeeeeeeee");
     expect(next.doc.firstChild.childCount).toBe(1);
     expect(next.doc.firstChild.firstChild.isText).toBe(true);
+  });
+});
+
+describe("plainOffsetsToPmRange", () => {
+  const mathSchema = new Schema({
+    nodes: {
+      doc: { content: "paragraph+" },
+      paragraph: { content: "inline*", group: "block" },
+      text: { group: "inline" },
+      mathLive: {
+        group: "inline",
+        inline: true,
+        atom: true,
+        attrs: { asciiMath: { default: "" } },
+      },
+    },
+  });
+
+  it("keeps text offsets aligned after an inline math atom", () => {
+    const paragraph = mathSchema.nodes.paragraph.create(null, [
+      mathSchema.text("Getting a "),
+      mathSchema.nodes.mathLive.create({ asciiMath: "D" }),
+      mathSchema.text(" acted as a wake-up call."),
+    ]);
+    const doc = mathSchema.nodes.doc.create(null, [paragraph]);
+    const plainText = "Getting a D acted as a wake-up call.";
+    const start = plainText.indexOf("acted");
+    const range = plainOffsetsToPmRange(doc, start, start + "acted".length);
+
+    expect(doc.textBetween(range.from, range.to)).toBe("acted");
   });
 });
