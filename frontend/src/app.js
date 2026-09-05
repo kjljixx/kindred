@@ -39,7 +39,13 @@ import {
   hasDiffMarkers,
   serializeDiffEditorHtml,
 } from "./diffExport.js";
-import { debugEvent, debugVerbose, startTrace, summarizeEditor } from "./debug.js";
+import {
+  debugEnabled,
+  debugEvent,
+  debugVerbose,
+  startTrace,
+  summarizeEditor,
+} from "./debug.js";
 import {
   resolveAllTableConflicts,
   resolveTableConflictHtml,
@@ -496,11 +502,15 @@ import {
         });
         return;
       }
-      debugEvent("app", "editorUpdate", { editor: summarizeEditor(tipTap) });
+      if (debugEnabled("app")) {
+        debugEvent("app", "editorUpdate", { editor: summarizeEditor(tipTap) });
+      }
       pullFromEditor();
       if (store) void store.hydrateImageElements(activeDraftId, editor, viewingOid);
       syncDirtyBodyFromCurrent();
-      if (pendingMerge || hasConflict || htmlHasAlignConflict(currentHtml) || htmlHasTableConflict(currentHtml) || htmlHasListConflict(currentHtml)) syncMergeStatus();
+      if (pendingMerge || hasConflict || htmlHasAlignConflict(currentHtml) || htmlHasTableConflict(currentHtml) || htmlHasListConflict(currentHtml)) {
+        syncMergeStatus();
+      }
       refreshStatusLeft();
       workingDirty = true;
       updateCommitBtn();
@@ -916,7 +926,10 @@ import {
   }
 
   function refreshStatusLeft() {
-    const { words, chars, sentences, paragraphs } = countStats(isViewingHistory() ? currentHtml : dirtyHtml);
+    const stats = isViewingHistory()
+      ? countStats(currentHtml)
+      : countStatsText(dirtyText);
+    const { words, chars, sentences, paragraphs } = stats;
     const selected = selectionStats();
     const counts = [
       formatStat(selected?.words, words, "word"),
@@ -997,7 +1010,7 @@ import {
     const draft = findDraft(activeDraftId);
     if (draft?.customTitle) return draftTitle(draft);
     return (
-      store.titleFromText(dirtyHtml || dirtyText || "") ||
+      store.titleFromText(dirtyText || dirtyHtml || "") ||
       (draft ? draftTitle(draft) : "")
     );
   }

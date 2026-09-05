@@ -65,6 +65,34 @@ function pmPosForOffset(segments, offset) {
   return null;
 }
 
+export function changedRangesInFinalDoc(transactions) {
+  const ranges = [];
+  transactions.forEach((transaction, transactionIndex) => {
+    transaction.mapping.maps.forEach((stepMap, stepIndex) => {
+      stepMap.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
+        let from = newStart;
+        let to = newEnd;
+        for (let i = stepIndex + 1; i < transaction.mapping.maps.length; i += 1) {
+          from = transaction.mapping.maps[i].map(from, -1);
+          to = transaction.mapping.maps[i].map(to, 1);
+        }
+        for (let i = transactionIndex + 1; i < transactions.length; i += 1) {
+          from = transactions[i].mapping.map(from, -1);
+          to = transactions[i].mapping.map(to, 1);
+        }
+        ranges.push({ from: Math.min(from, to), to: Math.max(from, to) });
+      });
+    });
+  });
+  return ranges;
+}
+
+function blockTouchesRanges(pos, node, ranges) {
+  if (!ranges) return true;
+  const end = pos + node.nodeSize;
+  return ranges.some((range) => pos <= range.to && end >= range.from);
+}
+
 export function caretEndsSingleLetterRange(selection, text, to) {
   return selection.empty && selection.from === to && /^\p{L}$/u.test(text);
 }
@@ -73,12 +101,15 @@ export function mathNodeTransaction(
   state,
   editingMathNodePos = null,
   calculateAfterEquals = false,
+  changedRanges = null,
 ) {
   if (isDiffOverlayActive(state)) return null;
   const replacements = [];
 
   state.doc.descendants((node, pos) => {
-    if (!MATH_BLOCK_TYPES.has(node.type.name)) return;
+    if (!MATH_BLOCK_TYPES.has(node.type.name) || !blockTouchesRanges(pos, node, changedRanges)) {
+      return;
+    }
     const { linearText, segments } = collectLinearText(node, pos);
     for (const range of classifyMath(linearText).ranges) {
       const from = pmPosForOffset(segments, range.start);
@@ -175,6 +206,7 @@ export const MathText = Extension.create({
           newState,
           editingTransaction?.getMeta("mathNodeEditing"),
           userInsertedEquals(transactions),
+          changedRangesInFinalDoc(transactions),
         );
       },
     })];

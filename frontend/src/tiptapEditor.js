@@ -20,6 +20,7 @@ import { SelectionUnits } from "./selectionUnits.js";
 import { diffTable, parseTableConflicts } from "./tableDaff.js";
 import { parseListConflicts } from "./listAlign.js";
 import {
+  debugEnabled,
   debugEvent,
   debugVerbose,
   startTrace,
@@ -3536,13 +3537,16 @@ export function createKindredEditor({
     },
     onTransaction: ({ editor: ed, transaction }) => {
       if (!transaction.docChanged && !transaction.selectionSet) return;
+      if (!debugEnabled("editor")) return;
       debugEvent("editor", "transaction", {
         transaction: summarizeTransaction(transaction),
         editor: summarizeEditor(ed),
       });
     },
     onUpdate: ({ editor: ed }) => {
-      debugEvent("editor", "update", { editor: summarizeEditor(ed) });
+      if (debugEnabled("editor")) {
+        debugEvent("editor", "update", { editor: summarizeEditor(ed) });
+      }
       onUpdate?.(ed);
     },
   });

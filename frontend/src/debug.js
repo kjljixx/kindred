@@ -15,6 +15,10 @@ function scopeEnabled(scope) {
   return !scopes || scopes[scope] !== false;
 }
 
+export function debugEnabled(scope) {
+  return scopeEnabled(scope);
+}
+
 function previewText(value, limit = 160) {
   const text = String(value ?? "").replace(/\s+/g, " ").trim();
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
