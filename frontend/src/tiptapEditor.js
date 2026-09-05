@@ -788,7 +788,9 @@ function buildPlainPmMap(doc) {
 
   function appendSep(sep, pmPos) {
     for (let i = 0; i < sep.length; i++) {
-      plainToPm[plain + i] = pmPos;
+      if (plainToPm[plain + i] == null) {
+        plainToPm[plain + i] = pmPos;
+      }
     }
     plain += sep.length;
   }
