@@ -934,8 +934,8 @@ import {
     const counts = [
       formatStat(selected?.words, words, "word"),
       formatStat(selected?.chars, chars, "char"),
-      formatStat(selected?.sentences, sentences, "sentence"),
-      formatStat(selected?.paragraphs, paragraphs, "paragraph"),
+      formatStat(selected?.sentences, sentences, "sent"),
+      formatStat(selected?.paragraphs, paragraphs, "para"),
     ].join(" · ");
 
     const statusParts = [];
@@ -970,7 +970,7 @@ import {
     if (activeDraftId) {
       let statusParts = [];
       if (currentBranchName) statusParts.push(currentBranchName);
-      metaEl.textContent = `${statusParts.join(" · ")}\u2003|\u2003${currentModel} · ${formatCost(draftCost)} total`;
+      metaEl.textContent = `${statusParts.join(" · ")}\u2003|\u2003${currentModel} · ${formatCost(draftCost)}`;
     }
     else {
       metaEl.textContent = "";
