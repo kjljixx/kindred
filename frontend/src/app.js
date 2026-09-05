@@ -611,19 +611,19 @@ import {
   }
 
   function editorIsEmpty() {
-    return !(currentText || "").trim();
+    return !(currentText || "");
   }
 
   /** True when there is exportable WT/base body (conflict views omit sides from plain text). */
   function hasExportableBody() {
-    if ((dirtyText || "").trim()) return true;
+    if (dirtyText || "") return true;
     if ((dirtyHtml || "").trim() && dirtyHtml !== "<p></p>") return true;
     if (unresolvedMergeConflictCount(currentHtml) > 0) {
       const side = dirtyReviewing
         ? htmlTakingTheirs(currentHtml)
         : htmlTakingOurs(currentHtml);
       const plain = store ? store.htmlToPlain(side) : "";
-      return !!(plain || "").trim();
+      return Boolean(plain || "");
     }
     return !editorIsEmpty();
   }
@@ -1279,7 +1279,7 @@ import {
     pendingMerge = null;
     dirtyViewMode = "Text";
     dirtyReviewing = false;
-    workingDirty = !!(text || "").trim();
+    workingDirty = Boolean(text || "");
     paneMode = "chat";
     clearChatState();
     await refreshDraftList();
@@ -3376,7 +3376,7 @@ import {
         wantsStyledDiffExport(CONFIG, dirtyViewMode, formatId) &&
         hasDiffMarkers(embeddedHtml);
       const exportPlain = store.htmlToPlain(embeddedHtml);
-      if (!(exportPlain || "").trim() && embeddedHtml === "<p></p>") {
+      if (!(exportPlain || "") && embeddedHtml === "<p></p>") {
         setStatus("nothing to export", "warn");
         return;
       }
