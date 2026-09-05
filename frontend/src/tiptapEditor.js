@@ -3328,6 +3328,10 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
       applyFontSize({ returnFocus: true });
     }
   };
+  const onFontSizeFocus = () => {
+    stashSelection();
+    fontSizeInput?.select();
+  };
   const onFontSizeChange = () => applyFontSize({ returnFocus: false });
   const onFontFamily = () => {
     const value = fontFamilySelect?.value || DEFAULT_FONT_FAMILY;
@@ -3387,7 +3391,7 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
   highlightInput?.addEventListener("input", onHighlightColor);
   highlightInput?.addEventListener("change", onHighlightColor);
   fontSizeInput?.addEventListener("mousedown", stashSelection);
-  fontSizeInput?.addEventListener("focus", stashSelection);
+  fontSizeInput?.addEventListener("focus", onFontSizeFocus);
   fontSizeInput?.addEventListener("change", onFontSizeChange);
   fontSizeInput?.addEventListener("keydown", onFontSizeKeydown);
   fontSizeInput?.addEventListener("blur", scheduleClearIfNoKeepTarget);
@@ -3451,7 +3455,7 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
       highlightInput?.removeEventListener("input", onHighlightColor);
       highlightInput?.removeEventListener("change", onHighlightColor);
       fontSizeInput?.removeEventListener("mousedown", stashSelection);
-      fontSizeInput?.removeEventListener("focus", stashSelection);
+      fontSizeInput?.removeEventListener("focus", onFontSizeFocus);
       fontSizeInput?.removeEventListener("change", onFontSizeChange);
       fontSizeInput?.removeEventListener("keydown", onFontSizeKeydown);
       fontSizeInput?.removeEventListener("blur", scheduleClearIfNoKeepTarget);
