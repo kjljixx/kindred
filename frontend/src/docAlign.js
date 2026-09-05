@@ -68,16 +68,30 @@ function mapSideToBase(baseKeys, sideKeys) {
   return { baseToSide, inserts };
 }
 
+function hasTextContent(node) {
+  if (typeof node?.text === "string" && node.text.length > 0) return true;
+  return (node?.content || []).some(hasTextContent);
+}
+
 function reconcileEditedStructuralBlocks(baseBlocks, sideBlocks, mapping) {
   for (let baseIndex = 0; baseIndex < baseBlocks.length; baseIndex++) {
     if (mapping.baseToSide[baseIndex] != null) continue;
     const family = blockFamily(baseBlocks[baseIndex]);
     if (family !== "p" && family !== "table" && family !== "list") continue;
-    const insertIndex = mapping.inserts.findIndex((insert) => {
+    const isCandidate = (insert) => {
       const nearby =
         insert.afterBase === baseIndex || insert.afterBase === baseIndex - 1;
       return nearby && blockFamily(sideBlocks[insert.sideIndex]) === family;
-    });
+    };
+    const baseHasText = hasTextContent(baseBlocks[baseIndex]);
+    let insertIndex = mapping.inserts.findIndex(
+      (insert) =>
+        isCandidate(insert) &&
+        hasTextContent(sideBlocks[insert.sideIndex]) === baseHasText
+    );
+    if (insertIndex < 0) {
+      insertIndex = mapping.inserts.findIndex(isCandidate);
+    }
     if (insertIndex < 0) continue;
     mapping.baseToSide[baseIndex] = mapping.inserts[insertIndex].sideIndex;
     mapping.inserts.splice(insertIndex, 1);

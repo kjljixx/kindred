@@ -6,8 +6,8 @@ import {
   parseListConflicts,
   resolveListConflictHtml,
   resolveAllListConflicts,
-} from "./listAlign.js";
-import { htmlToDoc, blockToHtml, mergeAdjacentTopLevelLists, normalizeDoc } from "./kindredSchema.js";
+} from "../src/listAlign.js";
+import { htmlToDoc, blockToHtml, mergeAdjacentTopLevelLists, normalizeDoc } from "../src/kindredSchema.js";
 
 function listNodeFromHtml(html) {
   const doc = htmlToDoc(html);
