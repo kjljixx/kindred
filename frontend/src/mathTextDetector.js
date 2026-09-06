@@ -20,17 +20,20 @@ const differentialVariables = new Set([
 const textPunctuation = new Set([".", ";", ":", "!", "?"]);
 
 function isUrlLike(value) {
-  const candidate =
-    /^[a-z][a-z0-9+.-]*:\/\//iu.test(value)
-      ? value
-      : `https://${value}`;
+  const hasExplicitProtocol = /^https?:\/\//iu.test(value);
+  const isBareDomain =
+    /^(?:[\p{L}\p{N}-]+\.)+[\p{L}][\p{L}\p{N}-]*(?:[/:?#][^\s]*)?$/u
+      .test(value);
+
+  if (!hasExplicitProtocol && !isBareDomain) {
+    return false;
+  }
+
+  const candidate = hasExplicitProtocol ? value : `https://${value}`;
 
   try {
     const url = new URL(candidate);
-    return (
-      (url.protocol === "http:" || url.protocol === "https:") &&
-      url.hostname.includes(".")
-    );
+    return url.hostname.length > 0;
   } catch {
     return false;
   }
