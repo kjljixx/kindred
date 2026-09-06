@@ -2934,7 +2934,15 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
 
   const rememberCurrentFormatting = () => {
     const { state } = editor;
-    lockedMarks = (state.storedMarks || state.selection.$from.marks()).map((mark) => mark.toJSON());
+    let marks = state.storedMarks;
+    if (!marks && !state.selection.empty) {
+      state.doc.nodesBetween(state.selection.from, state.selection.to, (node) => {
+        if (!marks && node.isText) marks = node.marks;
+        return !marks;
+      });
+    }
+    marks ||= state.selection.$from.marks();
+    lockedMarks = marks.map((mark) => mark.toJSON());
     syncFormatLockRuntime();
   };
   const lockedMarkInstances = () =>
