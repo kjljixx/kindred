@@ -69,7 +69,7 @@ function mapSideToBase(baseKeys, sideKeys) {
   return { baseToSide, inserts };
 }
 
-const PARAGRAPH_MATCH_THRESHOLD = 0.55;
+const PARAGRAPH_MATCH_THRESHOLD = 0.4;
 
 function normalizedWords(node) {
   return docToPlainText(node)
