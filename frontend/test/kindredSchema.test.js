@@ -5,6 +5,7 @@ import {
   canonicalizeTextHtml,
   docToPlainText,
   htmlToDoc,
+  projectDocument,
 } from "../src/kindredSchema.js";
 import { alignTwoWay } from "../src/docAlign.js";
 
@@ -33,5 +34,21 @@ describe("significant whitespace", () => {
       blockSignature(current.content[0]),
     );
     expect(alignTwoWay(base, current)[0].type).toBe("replace");
+  });
+
+  it("keeps formatting offsets aligned after empty paragraphs", () => {
+    const projection = projectDocument(
+      htmlToDoc(
+        "<p>Before</p><p></p><p><strong>After</strong></p>",
+      ),
+    );
+
+    expect(projection.text).toBe("Before\n\nAfter");
+    expect(projection.marks).toContainEqual({
+      from: 8,
+      to: 13,
+      type: "bold",
+      attrs: {},
+    });
   });
 });

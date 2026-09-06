@@ -506,7 +506,7 @@ function pmNodeChildren(node) {
 }
 
 /** Canonical plain text for PM JSON nodes and live ProseMirror docs. */
-export function docToPlainText(node) {
+function nodePlainText(node) {
   if (!node) return "";
   if (node.type === "text" || node.isText) {
     return String(node.text || "").replace(/\u00a0/g, " ");
@@ -520,25 +520,152 @@ export function docToPlainText(node) {
   }
 
   if (type === "paragraph") {
-    return kids.map(docToPlainText).join("");
+    return kids.map(nodePlainText).join("");
   }
   if (type === "listItem") {
-    return kids.map(docToPlainText).join("");
+    return kids.map(nodePlainText).join("");
   }
   if (type === "bulletList" || type === "orderedList") {
-    return kids.map(docToPlainText).join("\n");
+    return kids.map(nodePlainText).join("\n");
   }
   if (type === "table") {
-    return kids.map(docToPlainText).join("\n");
+    return kids.map(nodePlainText).join("\n");
   }
   if (type === "tableRow") {
-    return kids.map(docToPlainText).join("\t");
+    return kids.map(nodePlainText).join("\t");
   }
   if (type === "tableCell" || type === "tableHeader") {
-    return kids.map(docToPlainText).join(" ");
+    return kids.map(nodePlainText).join(" ");
   }
 
-  return kids.map(docToPlainText).filter(Boolean).join("\n\n");
+  return kids.map(nodePlainText).filter(Boolean).join("\n\n");
+}
+
+function nodeTypeName(node) {
+  return node?.type?.name || node?.type || "";
+}
+
+function nodeMarks(node) {
+  return Array.isArray(node?.marks) ? node.marks : [];
+}
+
+function markName(mark) {
+  return mark?.type?.name || mark?.type || "";
+}
+
+function markAttrs(mark) {
+  return mark?.attrs || {};
+}
+
+/**
+ * Canonical offset projection shared by diffs, formatting, and editor chrome.
+ * Empty top-level blocks do not consume text offsets.
+ */
+export function projectDocument(doc) {
+  let text = "";
+  const marks = [];
+  const blocks = [];
+  const blockAligns = [];
+  const plainToPm = [];
+  if (!doc) {
+    return { text, marks, blocks, blockAligns, plainToPm, plainLen: 0 };
+  }
+
+  function appendSeparator(separator, pmPos) {
+    for (let i = 0; i < separator.length; i++) {
+      if (plainToPm[text.length + i] == null && pmPos != null) {
+        plainToPm[text.length + i] = pmPos;
+      }
+    }
+    text += separator;
+  }
+
+  function appendContent(value, node, pmPos, nodeSize = null) {
+    const normalized = String(value || "").replace(/\u00a0/g, " ");
+    const from = text.length;
+    text += normalized;
+    const to = text.length;
+    if (pmPos != null) {
+      for (let i = 0; i <= normalized.length; i++) {
+        plainToPm[from + i] =
+          nodeSize == null || i === 0 ? pmPos + i : pmPos + nodeSize;
+      }
+    }
+    for (const mark of nodeMarks(node)) {
+      if (to > from) {
+        marks.push({
+          from,
+          to,
+          type: markName(mark),
+          attrs: { ...markAttrs(mark) },
+        });
+      }
+    }
+  }
+
+  function childEntries(node, pmPos) {
+    if (typeof node?.forEach === "function") {
+      const entries = [];
+      const isDoc = nodeTypeName(node) === "doc";
+      node.forEach((child, offset) => {
+        entries.push({
+          child,
+          pmPos: isDoc ? offset : pmPos + 1 + offset,
+        });
+      });
+      return entries;
+    }
+    return pmNodeChildren(node).map((child) => ({ child, pmPos: null }));
+  }
+
+  function walkChildren(node, pmPos, separator, filterEmpty = false) {
+    const entries = childEntries(node, pmPos);
+    const included = filterEmpty
+      ? entries.filter(({ child }) => nodePlainText(child))
+      : entries;
+    included.forEach(({ child, pmPos: childPm }, index) => {
+      if (index) appendSeparator(separator, childPm);
+      walk(child, childPm);
+    });
+  }
+
+  function walk(node, pmPos) {
+    const type = nodeTypeName(node);
+    if (type === "text" || node?.isText) {
+      appendContent(node.text, node, pmPos);
+      return;
+    }
+    if (type === "mathLive") {
+      appendContent(node.attrs?.asciiMath, node, pmPos, node.nodeSize);
+      return;
+    }
+    if (type === "paragraph" || type === "listItem") {
+      walkChildren(node, pmPos, "");
+    } else if (type === "bulletList" || type === "orderedList" || type === "table") {
+      walkChildren(node, pmPos, "\n");
+    } else if (type === "tableRow") {
+      walkChildren(node, pmPos, "\t");
+    } else if (type === "tableCell" || type === "tableHeader") {
+      walkChildren(node, pmPos, " ");
+    } else {
+      const entries = childEntries(node, pmPos).filter(({ child }) => nodePlainText(child));
+      entries.forEach(({ child, pmPos: childPm }, index) => {
+        if (index) appendSeparator("\n\n", childPm);
+        const from = text.length;
+        walk(child, childPm);
+        blocks.push({ from, to: text.length, node: child });
+        blockAligns.push(child?.attrs?.textAlign || "left");
+      });
+    }
+  }
+
+  walk(doc, 0);
+  plainToPm[text.length] ??= doc?.content?.size ?? 0;
+  return { text, marks, blocks, blockAligns, plainToPm, plainLen: text.length };
+}
+
+export function docToPlainText(node) {
+  return projectDocument(node).text;
 }
 
 function stripConflictMarkersFromHtml(html) {

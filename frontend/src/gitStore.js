@@ -1,7 +1,12 @@
 import LightningFS from "@isomorphic-git/lightning-fs";
 import git from "isomorphic-git";
 import { mergeHtmlViaAst } from "./docMerge.js";
-import { canonicalizeTextHtml, htmlToPlainText } from "./kindredSchema.js";
+import {
+  canonicalizeTextHtml,
+  htmlToDoc,
+  htmlToPlainText,
+  projectDocument,
+} from "./kindredSchema.js";
 import { CONFIG } from "./config.js";
 
 const VOLUME = "kindred";
@@ -1692,10 +1697,50 @@ const VOLUME = "kindred";
    * TipTap-ish HTML → plain + mark ranges (orthogonal + exclusive valued).
    */
   function htmlToPlainAndMarks(html) {
-    const raw = String(html ?? "")
-      .replace(/\r\n?/g, "\n")
-      .replace(/>\s*\n\s*</g, "><");
+    const raw = String(html ?? "");
     if (!raw) return { plain: "", marks: [], blockAligns: [] };
+    try {
+      const projection = projectDocument(htmlToDoc(raw));
+      const projectedMarks = [];
+      for (const mark of projection.marks) {
+        const type = mark.type;
+        if (ORTHOGONAL_MARK_TYPES.includes(type)) {
+          projectedMarks.push({ from: mark.from, to: mark.to, type });
+          continue;
+        }
+        if (type === "textStyle") {
+          for (const key of ["color", "fontSize", "fontFamily"]) {
+            const value = normalizeExclusiveValue(key, mark.attrs?.[key]);
+            if (value) {
+              projectedMarks.push({ from: mark.from, to: mark.to, type: key, value });
+            }
+          }
+          continue;
+        }
+        if (type === "link") {
+          const value = normalizeExclusiveValue("link", mark.attrs?.href);
+          if (value) projectedMarks.push({ from: mark.from, to: mark.to, type, value });
+          continue;
+        }
+        if (type === "highlight") {
+          const value = normalizeExclusiveValue(
+            "highlight",
+            mark.attrs?.color || DEFAULT_HIGHLIGHT_COLOR
+          );
+          if (value) projectedMarks.push({ from: mark.from, to: mark.to, type, value });
+        }
+      }
+      return {
+        plain: projection.text,
+        marks: projectedMarks,
+        blockAligns: projection.blockAligns,
+      };
+    } catch (error) {
+      console.error("[kindred:format-projection:fallback]", {
+        error: String(error?.message || error),
+        htmlLength: raw.length,
+      });
+    }
 
     let plain = "";
     const openMarks = Object.create(null);

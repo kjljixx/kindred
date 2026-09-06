@@ -5,6 +5,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import {
   canonicalizeTextHtml,
   docToPlainText,
+  projectDocument,
   kindredContentExtensions,
   prettyPrintHtml,
   blockToHtml
@@ -783,82 +784,12 @@ function conflictNodePos(doc, index) {
  * Returns { plainToPm, plainLen } where plainToPm[i] is PM pos for plain offset i.
  */
 function buildPlainPmMap(doc) {
-  const plainToPm = [];
-  let plain = 0;
-
-  function appendSep(sep, pmPos) {
-    for (let i = 0; i < sep.length; i++) {
-      if (plainToPm[plain + i] == null) {
-        plainToPm[plain + i] = pmPos;
-      }
-    }
-    plain += sep.length;
-  }
-
-  function appendText(text, startPm) {
-    const normalized = String(text || "").replace(/\u00a0/g, " ");
-    for (let i = 0; i <= normalized.length; i++) {
-      plainToPm[plain + i] = startPm + i;
-    }
-    plain += normalized.length;
-  }
-
-  function appendAtom(text, startPm, nodeSize) {
-    const normalized = String(text || "").replace(/\u00a0/g, " ");
-    plainToPm[plain] = startPm;
-    for (let i = 1; i <= normalized.length; i++) {
-      plainToPm[plain + i] = startPm + nodeSize;
-    }
-    plain += normalized.length;
-  }
-
-  function joinChildren(node, pos, sep, filterEmpty = false) {
-    const isDoc = node.type?.name === "doc" || node.name === "doc";
-    const entries = [];
-    node.forEach((child, offset) => {
-      const childPos = isDoc ? offset : pos + 1 + offset;
-      entries.push({ child, pos: childPos });
-    });
-    const segments = filterEmpty
-      ? entries.filter(({ child }) => docToPlainText(child))
-      : entries;
-    let first = true;
-    for (const { child, pos: childPos } of segments) {
-      if (!first) appendSep(sep, childPos);
-      first = false;
-      walkNode(child, childPos);
-    }
-  }
-
-  function walkNode(node, pos) {
-    if (node.isText) {
-      appendText(node.text, pos);
-      return;
-    }
-
-    const type = node.type.name;
-    if (type === "mathLive") {
-      appendAtom(node.attrs?.asciiMath, pos, node.nodeSize);
-    } else if (type === "paragraph" || type === "listItem") {
-      joinChildren(node, pos, "");
-    } else if (type === "bulletList" || type === "orderedList" || type === "table") {
-      joinChildren(node, pos, "\n");
-    } else if (type === "tableRow") {
-      joinChildren(node, pos, "\t");
-    } else if (type === "tableCell" || type === "tableHeader") {
-      joinChildren(node, pos, " ");
-    } else {
-      joinChildren(node, pos, "\n\n", true);
-    }
-  }
-
-  walkNode(doc, 0);
-
-  if (!plainToPm.length) {
-    plainToPm[0] = 1;
-  }
-  const plainLen = Math.max(0, plainToPm.length - 1);
-  return { plainToPm, plainLen };
+  const projection = projectDocument(doc);
+  if (!projection.plainToPm.length) projection.plainToPm[0] = 1;
+  return {
+    plainToPm: projection.plainToPm,
+    plainLen: projection.plainLen,
+  };
 }
 
 function pmPosForPlain(map, offset) {
