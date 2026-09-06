@@ -976,11 +976,11 @@ import {
         if (isActiveMerge({ pendingMerge })) {
           const conflicts = unresolvedMergeConflictCount(currentHtml);
           statusParts.push(
-            `${currentBranchName}; ${pluralize(conflicts, "conflict")}`
+            `${currentBranchName} · ${pluralize(conflicts, "conflict")}`
           );
         } else {
           const { additions, deletions } = workingTreeChangeCounts();
-          statusParts.push(`${currentBranchName}; +${additions} -${deletions}`);
+          statusParts.push(`${currentBranchName} · +${additions} -${deletions}`);
         }
       }
       metaEl.textContent = `${statusParts.join(" · ")}\u2003|\u2003${currentModel} · ${formatCost(draftCost)}`;
