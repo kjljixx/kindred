@@ -162,6 +162,7 @@ import {
   const HTMLDIFF_ACTION = { equal: 0, delete: 1, insert: 2, none: 3, replace: 4 };
   let diffsCacheKey = null;
   let diffsCacheParts = null;
+  let statusDiffLoading = false;
 
   /** History overlay baseline (previous commit plain); not analysis. */
   let baseline = "";
@@ -513,11 +514,13 @@ import {
       }
       refreshStatusLeft();
       workingDirty = true;
+      updateMeta();
       updateCommitBtn();
       syncOverlayFromState();
       syncHeaderTitle();
       void ensureDraftForText(currentText).then(() => {
         syncRightPane();
+        updateMeta();
         updateCommitBtn();
       });
       persistActiveDraftSoon();
@@ -968,8 +971,18 @@ import {
 
   function updateMeta() {
     if (activeDraftId) {
-      let statusParts = [];
-      if (currentBranchName) statusParts.push(currentBranchName);
+      const statusParts = [];
+      if (currentBranchName) {
+        if (isActiveMerge({ pendingMerge })) {
+          const conflicts = unresolvedMergeConflictCount(currentHtml);
+          statusParts.push(
+            `${currentBranchName}; ${pluralize(conflicts, "conflict")}`
+          );
+        } else {
+          const { additions, deletions } = workingTreeChangeCounts();
+          statusParts.push(`${currentBranchName}; +${additions} -${deletions}`);
+        }
+      }
       metaEl.textContent = `${statusParts.join(" · ")}\u2003|\u2003${currentModel} · ${formatCost(draftCost)}`;
     }
     else {
@@ -1325,6 +1338,7 @@ import {
     }
     await refreshHeadPlain();
     refreshStatusLeft();
+    updateMeta();
   }
 
   function syncChatHeader() {
@@ -1772,6 +1786,7 @@ import {
       if (pendingMerge) {
         setStatus("merge ready; commit to finish merge");
       }
+      updateMeta();
       return;
     }
     if (unresolved) {
@@ -1784,6 +1799,7 @@ import {
     ) {
       setStatus("");
     }
+    updateMeta();
   }
 
   /** True for a live branch merge (pendingMerge), not dirty review. */
@@ -2460,6 +2476,33 @@ import {
     diffsCacheKey = key;
     diffsCacheParts = parts;
     return parts;
+  }
+
+  function workingTreeChangeCounts() {
+    if (isViewingHistory()) return { additions: 0, deletions: 0 };
+    if (typeof HtmlDiff === "undefined") {
+      if (!statusDiffLoading) {
+        statusDiffLoading = true;
+        void loadHtmlDiff()
+          .then(() => updateMeta())
+          .catch((error) => {
+            statusDiffLoading = false;
+            debugEvent("status", "diff-load-error", {
+              message: String(error?.message || error),
+            });
+          });
+      }
+      return { additions: 0, deletions: 0 };
+    }
+    return wordDiffParts(headPlain, dirtyText).reduce(
+      (counts, [op, text]) => {
+        const words = countStatsText(text).words;
+        if (op === DIFF_INSERT) counts.additions += words;
+        if (op === DIFF_DELETE) counts.deletions += words;
+        return counts;
+      },
+      { additions: 0, deletions: 0 }
+    );
   }
 
   function caretSelectionOffsets() {
