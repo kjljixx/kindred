@@ -2809,7 +2809,7 @@ function syncToolbar(editor, toolbarEl, lockedMarks = null) {
   const colorInput = toolbarEl.querySelector("[data-color-input]");
   const colorSwatch = toolbarEl.querySelector(".tb-color-swatch");
   if (colorInput) {
-    const hex = colorToHex(attrs.color);
+    const hex = colorToHex(attrs.color) || colorToHex(colorInput.dataset.defaultColor);
     if (hex) colorInput.value = hex;
     if (colorSwatch) colorSwatch.style.background = hex || "currentColor";
     colorInput.closest(".toolbar-color")?.classList.remove("is-active");

@@ -56,7 +56,7 @@ export function loadColoris() {
         alpha: false,
         format: "hex",
         swatches: [
-          "#d4d4d4",
+          "#e4e4e7",
           "#ff9687",
           "#e9cd64",
           "#87e29e",
