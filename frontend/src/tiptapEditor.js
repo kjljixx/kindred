@@ -2966,8 +2966,14 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
   syncFormatLockRuntime();
   const setFormatLock = (enabled) => {
     formatLock = enabled;
-    if (enabled) rememberCurrentFormatting();
-    else lockedMarks = null;
+    if (enabled) {
+      rememberCurrentFormatting();
+    } else {
+      lockedMarks = null;
+      editor.view.dispatch(
+        editor.state.tr.setStoredMarks(null).setMeta("addToHistory", false),
+      );
+    }
     syncFormatLockRuntime();
     formatLockButton?.classList.toggle("is-active", enabled);
     formatLockButton?.setAttribute("aria-pressed", String(enabled));
