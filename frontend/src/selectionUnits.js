@@ -1,15 +1,19 @@
 /**
  * Selection unit helpers + TipTap keybinds:
- * - Mod-L expands character → word → sentence → paragraph
+ * - Mod-L loops character → word → sentence → paragraph around the original caret
  * - Alt-[ / Alt-] moves the caret/selection to the adjacent unit
  * - Alt-Up / Alt-Down swaps the selected unit with its neighbor (moves content)
+ * - Escape collapses a selection to its origin
  */
 import { Extension } from "@tiptap/core";
 import { Slice } from "@tiptap/pm/model";
-import { TextSelection } from "@tiptap/pm/state";
+import { Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 
 /** @typedef {"character" | "word" | "sentence" | "paragraph"} SelectionUnit */
 /** @typedef {{ from: number, to: number }} PosRange */
+/** @typedef {{ origin: number, expected: PosRange } | null} SelectionCycle */
+
+const selectionCycleKey = new PluginKey("selectionUnitCycle");
 
 /**
  * Plain text of a textblock plus offset → PM position map.
@@ -256,14 +260,24 @@ function containingUnitRange(doc, from, to, unit) {
  * @param {import("@tiptap/pm/model").Node} doc
  * @param {number} from
  * @param {number} to
+ * @param {number} [origin]
  * @returns {PosRange | null}
  */
-export function expandSelectionRange(doc, from, to) {
+export function expandSelectionRange(doc, from, to, origin = from) {
   const unit = detectSelectionUnit(doc, from, to);
-  if (unit === "paragraph") return null;
 
   const nextUnit =
-    unit === "character" ? "word" : unit === "word" ? "sentence" : "paragraph";
+    unit === "character"
+      ? "word"
+      : unit === "word"
+        ? "sentence"
+        : unit === "sentence"
+          ? "paragraph"
+          : "word";
+  if (unit === "paragraph") {
+    return containingUnitRange(doc, origin, origin, nextUnit);
+  }
+
   const next = containingUnitRange(doc, from, to, nextUnit);
   if (!next) return null;
   if (next.from === from && next.to === to) {
@@ -446,23 +460,72 @@ export function transposeSelectionRange(doc, from, to, direction) {
 export const SelectionUnits = Extension.create({
   name: "selectionUnits",
 
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: selectionCycleKey,
+        state: {
+          init: () => null,
+          apply(tr, cycle) {
+            const update = tr.getMeta(selectionCycleKey);
+            if (update?.type === "track") {
+              return { origin: update.origin, expected: update.expected };
+            }
+            if (update?.type === "clear" || tr.docChanged || tr.selectionSet) {
+              return null;
+            }
+            return cycle;
+          },
+        },
+      }),
+    ];
+  },
+
   addCommands() {
     return {
       expandSelectionUnit:
         () =>
-          ({ state, commands }) => {
+          ({ state, dispatch }) => {
             const { from, to } = state.selection;
-            const next = expandSelectionRange(state.doc, from, to);
+            const cycle = selectionCycleKey.getState(state);
+            const continuesCycle =
+              cycle?.expected.from === from && cycle?.expected.to === to;
+            const origin = continuesCycle ? cycle.origin : state.selection.anchor;
+            const next = expandSelectionRange(state.doc, from, to, origin);
             if (!next) return false;
-            return commands.setTextSelection(next);
+            if (dispatch) {
+              const tr = state.tr.setSelection(
+                TextSelection.create(state.doc, next.from, next.to)
+              );
+              tr.setMeta(selectionCycleKey, { type: "track", origin, expected: next });
+              dispatch(tr);
+            }
+            return true;
           },
       moveSelectionUnit:
         (direction) =>
-          ({ state, commands }) => {
+          ({ state, dispatch }) => {
             const { from, to } = state.selection;
             const next = moveSelectionRange(state.doc, from, to, direction);
             if (!next) return false;
-            return commands.setTextSelection(next);
+            if (dispatch) {
+              const cycle = selectionCycleKey.getState(state);
+              const origin = cycle?.expected.from === from && cycle?.expected.to === to
+                ? cycle.origin
+                : state.selection.anchor;
+              const relativeOrigin = Math.max(0, origin - from);
+              const movedOrigin = next.from + Math.min(relativeOrigin, next.to - next.from);
+              const tr = state.tr.setSelection(
+                TextSelection.create(state.doc, next.from, next.to)
+              );
+              tr.setMeta(selectionCycleKey, {
+                type: "track",
+                origin: movedOrigin,
+                expected: next,
+              });
+              dispatch(tr);
+            }
+            return true;
           },
       transposeSelectionUnit:
         (direction) =>
@@ -475,6 +538,20 @@ export const SelectionUnits = Extension.create({
               tr.setSelection(
                 TextSelection.create(tr.doc, plan.selection.from, plan.selection.to)
               );
+              const cycle = selectionCycleKey.getState(state);
+              const origin =
+                cycle?.expected.from === from && cycle?.expected.to === to
+                  ? cycle.origin
+                  : state.selection.anchor;
+              const relativeOrigin = Math.max(0, origin - from);
+              const movedOrigin =
+                plan.selection.from +
+                Math.min(relativeOrigin, plan.selection.to - plan.selection.from);
+              tr.setMeta(selectionCycleKey, {
+                type: "track",
+                origin: movedOrigin,
+                expected: plan.selection,
+              });
               dispatch(tr);
             }
             return true;
@@ -489,6 +566,28 @@ export const SelectionUnits = Extension.create({
       "Alt-]": () => this.editor.commands.moveSelectionUnit(1),
       "Alt-ArrowUp": () => this.editor.commands.transposeSelectionUnit(-1),
       "Alt-ArrowDown": () => this.editor.commands.transposeSelectionUnit(1),
+      Escape: () => {
+        const { state, view } = this.editor;
+        if (state.selection.empty) return false;
+
+        const cycle = selectionCycleKey.getState(state);
+        const { from, to } = state.selection;
+        const origin =
+          cycle?.expected.from === from && cycle?.expected.to === to
+            ? cycle.origin
+            : state.selection.anchor;
+        const selection =
+          state.selection instanceof TextSelection
+            ? TextSelection.create(state.doc, origin)
+            : Selection.findFrom(state.doc.resolve(origin), 1, true) ||
+              Selection.findFrom(state.doc.resolve(origin), -1, true);
+        if (!selection) return false;
+
+        const tr = state.tr.setSelection(selection);
+        tr.setMeta(selectionCycleKey, { type: "clear" });
+        view.dispatch(tr);
+        return true;
+      },
     };
   },
 });
