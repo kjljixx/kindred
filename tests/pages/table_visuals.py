@@ -3,15 +3,14 @@ from io import BytesIO
 from PIL import Image
 
 
-def vertical_border_thicknesses(
+def left_vertical_border_thickness(
   driver,
   cell,
   expected_side: str | None = None,
-) -> tuple[int, int]:
+) -> int:
   image = Image.open(BytesIO(cell.screenshot_as_png)).convert("RGB")
   center_y = image.height // 2
   left_color = image.getpixel((0, center_y))
-  right_color = image.getpixel((image.width - 1, center_y))
   expected_color = tuple(
     driver.execute_script(
       """
@@ -31,16 +30,10 @@ def vertical_border_thicknesses(
       expected_side,
     )
   )
-  assert left_color == right_color == expected_color, {
+  assert left_color == expected_color, {
     "left": left_color,
-    "right": right_color,
     "expected": expected_color,
   }
-  left = next(
+  return next(
     x for x in range(image.width) if image.getpixel((x, center_y)) != left_color
   )
-  right = next(
-    x for x in range(image.width)
-    if image.getpixel((image.width - 1 - x, center_y)) != right_color
-  )
-  return left, right

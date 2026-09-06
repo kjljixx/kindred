@@ -55,7 +55,7 @@ def test_d2_insert_at_end_paints_green(kindred: KindredPage) -> None:
 
 
 def test_d3_insert_word_in_middle(kindred: KindredPage) -> None:
-  _commit_then_edit(kindred, "red blue", "red green blue")
+  _commit_then_edit(kindred, "red red blue blue", "red red green blue blue")
   kindred.enter_dirty_diff()
   ins = "".join(kindred.diff_ins_texts())
   assert "green" in ins
@@ -71,7 +71,11 @@ def test_d4_delete_word_shows_red(kindred: KindredPage) -> None:
 
 
 def test_d5_replace_word(kindred: KindredPage) -> None:
-  _commit_then_edit(kindred, "cat", "dog")
+  _commit_then_edit(
+    kindred,
+    "start start start cat end end end",
+    "start start start dog end end end",
+  )
   kindred.enter_dirty_diff()
   ins = "".join(kindred.diff_ins_texts())
   deleted = "".join(kindred.diff_del_texts())
@@ -105,15 +109,17 @@ def test_d7_delete_paragraph_shows_delete_chrome(kindred: KindredPage) -> None:
 
 
 def test_d8_edits_in_two_paragraphs_scope_paint(kindred: KindredPage) -> None:
-  kindred.paste_text("Alpha one\n\nBravo two")
+  kindred.paste_text("Apple Apple one one\n\nBravo Bravo two two")
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
   kindred.commit()
-  kindred.replace_editor_text("Alpha extra\n\nBravo more")
+  kindred.replace_editor_text(
+    "Apple Apple extra one one\n\nBravo Bravo more two two"
+  )
   kindred.enter_dirty_diff()
   ins = "".join(kindred.diff_ins_texts())
   assert "extra" in ins and "more" in ins
-  assert "Alpha" not in ins
+  assert "Apple" not in ins
   assert "Bravo" not in ins
 
 
@@ -191,24 +197,24 @@ def test_d_duplicate_list_item_backspace_shows_one_deleted_row(kindred: KindredP
 def test_d_list_indent_shows_old_and_new_item_lines(kindred: KindredPage) -> None:
   _commit_then_edit_html(
     kindred,
-    "<ul><li><p>A</p></li><li><p>B</p></li><li><p>C</p></li></ul>",
-    "<ul><li><p>A</p><ul><li><p>B</p></li></ul></li><li><p>C</p></li></ul>",
+    "<ul><li><p>Apple</p></li><li><p>Birch</p></li><li><p>Cedar</p></li></ul>",
+    "<ul><li><p>Apple</p><ul><li><p>Birch</p></li></ul></li><li><p>Cedar</p></li></ul>",
   )
   kindred.enter_dirty_diff()
   inserted = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-ins")
   deleted = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-del")
   assert len(inserted) == 1
-  assert inserted[0].text.strip() == "B"
+  assert inserted[0].text.strip() == "Birch"
   assert len(deleted) == 1
-  assert deleted[0].text.strip() == "B"
+  assert deleted[0].text.strip() == "Birch"
   assert deleted[0].value_of_css_property("margin-left") == "0px"
 
 
 def test_d_list_move_and_text_edit_keeps_both_signals(kindred: KindredPage) -> None:
   _commit_then_edit_html(
     kindred,
-    "<ul><li><p>A</p></li><li><p>old B</p></li></ul>",
-    "<ul><li><p>A</p><ul><li><p>new B</p></li></ul></li></ul>",
+    "<ul><li><p>Apple</p></li><li><p>old Birch</p></li></ul>",
+    "<ul><li><p>Apple</p><ul><li><p>new Birch</p></li></ul></li></ul>",
   )
   kindred.enter_dirty_diff()
   inserted = kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-list-item-ins")
@@ -246,12 +252,12 @@ def test_d_nested_duplicate_list_add_marks_only_new_deepest_item(kindred: Kindre
 
 
 def test_d8a_history_diff_scopes_an_edited_paragraph(kindred: KindredPage) -> None:
-  kindred.paste_text("Alpha one\n\nBravo two")
+  kindred.paste_text("Apple one\n\nBravo two")
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
   kindred.commit()
 
-  kindred.replace_editor_text("Alpha changed\n\nBravo two")
+  kindred.replace_editor_text("Apple changed\n\nBravo two")
   kindred.commit()
   kindred.view_commit_at(0)
   kindred.enter_dirty_diff()
@@ -441,7 +447,7 @@ def test_d_multi_table(kindred: KindredPage) -> None:
 def test_d_replacing_text_with_table_renders_deleted_text_before_table(
   kindred: KindredPage,
 ) -> None:
-  kindred.paste_text("e")
+  kindred.paste_text("Existing")
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
   kindred.commit()
@@ -477,7 +483,7 @@ def test_d_replacing_text_with_table_renders_deleted_text_before_table(
     };
     """
   ) == {
-    "text": "e",
+    "text": "Existing",
     "insideTable": False,
     "beforeTable": True,
     "overlapsTable": False,
@@ -487,8 +493,8 @@ def test_d_replacing_text_with_table_renders_deleted_text_before_table(
 def test_d_table_cell_edit_marks_only_changed_cell(kindred: KindredPage) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>Alpha</p></td><td><p>Beta</p></td></tr>
-    <tr><td><p>Gamma</p></td><td><p>Delta</p></td></tr>
+    <tr><td><p>Apple</p></td><td><p>Lake</p></td></tr>
+    <tr><td><p>Grove</p></td><td><p>River</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -501,7 +507,7 @@ def test_d_table_cell_edit_marks_only_changed_cell(kindred: KindredPage) -> None
   )
   target.click()
   kindred.driver.switch_to.active_element.send_keys(Keys.END, "!")
-  kindred.wait.until(lambda d: "Beta!" in kindred.editor_body_text())
+  kindred.wait.until(lambda d: "Lake!" in kindred.editor_body_text())
   kindred.enter_dirty_diff()
 
   inserted = kindred.driver.find_elements(
@@ -512,8 +518,8 @@ def test_d_table_cell_edit_marks_only_changed_cell(kindred: KindredPage) -> None
     By.CSS_SELECTOR,
     "#editor .diff-table-cell-del",
   )
-  assert [cell.text.strip() for cell in inserted] == ["Beta!"]
-  assert [cell.text.strip() for cell in deleted] == ["Beta"]
+  assert [cell.text.strip() for cell in inserted] == ["Lake!"]
+  assert [cell.text.strip() for cell in deleted] == ["Lake"]
   assert not kindred.driver.find_elements(By.CSS_SELECTOR, "#editor .diff-table-ins")
 
 
@@ -638,8 +644,8 @@ def test_d_table_middle_column_delete_stays_between_neighbors(
 ) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
-    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
+    <tr><td><p>Apple</p></td><td><p>Birch</p></td><td><p>Cedar</p></td></tr>
+    <tr><td><p>Dune</p></td><td><p>Elm</p></td><td><p>Forest</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -659,7 +665,7 @@ def test_d_table_middle_column_delete_stays_between_neighbors(
         By.CSS_SELECTOR,
         "#editor .ProseMirror table td",
       )
-    ] == ["A", "C", "D", "F"]
+    ] == ["Apple", "Cedar", "Dune", "Forest"]
   )
   kindred.enter_dirty_diff()
 
@@ -674,14 +680,14 @@ def test_d_table_middle_column_delete_stays_between_neighbors(
   )
   assert rows == [
     [
-      {"text": "A", "deleted": False},
-      {"text": "B", "deleted": True},
-      {"text": "C", "deleted": False},
+      {"text": "Apple", "deleted": False},
+      {"text": "Birch", "deleted": True},
+      {"text": "Cedar", "deleted": False},
     ],
     [
-      {"text": "D", "deleted": False},
-      {"text": "E", "deleted": True},
-      {"text": "F", "deleted": False},
+      {"text": "Dune", "deleted": False},
+      {"text": "Elm", "deleted": True},
+      {"text": "Forest", "deleted": False},
     ],
   ]
 
@@ -691,9 +697,9 @@ def test_d_deleted_middle_column_keeps_delete_color_on_every_edge(
 ) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
-    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
-    <tr><td><p>G</p></td><td><p>H</p></td><td><p>I</p></td></tr>
+    <tr><td><p>Apple</p></td><td><p>Birch</p></td><td><p>Cedar</p></td></tr>
+    <tr><td><p>Dune</p></td><td><p>Elm</p></td><td><p>Forest</p></td></tr>
+    <tr><td><p>Grove</p></td><td><p>Hill</p></td><td><p>Island</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -743,8 +749,8 @@ def test_d_table_middle_column_insert_stays_between_neighbors(
 ) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>C</p></td></tr>
-    <tr><td><p>D</p></td><td><p>F</p></td></tr>
+    <tr><td><p>Apple</p></td><td><p>Cedar</p></td></tr>
+    <tr><td><p>Dune</p></td><td><p>Forest</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -762,9 +768,9 @@ def test_d_table_middle_column_insert_stays_between_neighbors(
     "#editor .ProseMirror td:nth-child(2) p",
   )
   inserted[0].click()
-  kindred.driver.switch_to.active_element.send_keys("B")
+  kindred.driver.switch_to.active_element.send_keys("Birch")
   inserted[1].click()
-  kindred.driver.switch_to.active_element.send_keys("E")
+  kindred.driver.switch_to.active_element.send_keys("Elm")
   kindred.wait.until(
     lambda d: [
       cell.text.strip()
@@ -772,7 +778,7 @@ def test_d_table_middle_column_insert_stays_between_neighbors(
         By.CSS_SELECTOR,
         "#editor .ProseMirror table td",
       )
-    ] == ["A", "B", "C", "D", "E", "F"]
+    ] == ["Apple", "Birch", "Cedar", "Dune", "Elm", "Forest"]
   )
   kindred.enter_dirty_diff()
 
@@ -787,14 +793,14 @@ def test_d_table_middle_column_insert_stays_between_neighbors(
   )
   assert rows == [
     [
-      {"text": "A", "inserted": False},
-      {"text": "B", "inserted": True},
-      {"text": "C", "inserted": False},
+      {"text": "Apple", "inserted": False},
+      {"text": "Birch", "inserted": True},
+      {"text": "Cedar", "inserted": False},
     ],
     [
-      {"text": "D", "inserted": False},
-      {"text": "E", "inserted": True},
-      {"text": "F", "inserted": False},
+      {"text": "Dune", "inserted": False},
+      {"text": "Elm", "inserted": True},
+      {"text": "Forest", "inserted": False},
     ],
   ]
   inserted_column_edges = kindred.driver.execute_script(
@@ -880,9 +886,9 @@ def test_d_table_inserted_row_keeps_alignment_when_column_is_deleted(
 ) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
-    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
-    <tr><td><p>G</p></td><td><p>H</p></td><td><p>I</p></td></tr>
+    <tr><td><p>Apple</p></td><td><p>Birch</p></td><td><p>Cedar</p></td></tr>
+    <tr><td><p>Dune</p></td><td><p>Elm</p></td><td><p>Forest</p></td></tr>
+    <tr><td><p>Grove</p></td><td><p>Hill</p></td><td><p>Island</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()

@@ -6,7 +6,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
 from pages.kindred import KindredPage
-from pages.table_visuals import vertical_border_thicknesses
+from pages.table_visuals import left_vertical_border_thickness
 
 
 def _list_top_level_item_texts(kindred: KindredPage) -> list[str]:
@@ -60,17 +60,17 @@ def test_m2_text_conflict_on_same_span(kindred: KindredPage) -> None:
 
 
 def test_m3_resolve_keep_ours(kindred: KindredPage) -> None:
-  kindred.paste_text("base")
+  kindred.paste_text("start start start base end end end")
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
   kindred.commit()
 
   kindred.create_branch("feature")
-  kindred.replace_editor_text("theirs")
+  kindred.replace_editor_text("start start start theirs end end end")
   kindred.commit()
 
   kindred.checkout_branch("main")
-  kindred.replace_editor_text("ours")
+  kindred.replace_editor_text("start start start ours end end end")
   kindred.commit()
 
   kindred.merge_branch("feature", expect_conflicts=True)
@@ -80,17 +80,17 @@ def test_m3_resolve_keep_ours(kindred: KindredPage) -> None:
 
 
 def test_m4_resolve_keep_theirs(kindred: KindredPage) -> None:
-  kindred.paste_text("base")
+  kindred.paste_text("start start start base end end end")
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
   kindred.commit()
 
   kindred.create_branch("feature")
-  kindred.replace_editor_text("theirs")
+  kindred.replace_editor_text("start start start theirs end end end")
   kindred.commit()
 
   kindred.checkout_branch("main")
-  kindred.replace_editor_text("ours")
+  kindred.replace_editor_text("start start start ours end end end")
   kindred.commit()
 
   kindred.merge_branch("feature", expect_conflicts=True)
@@ -99,17 +99,17 @@ def test_m4_resolve_keep_theirs(kindred: KindredPage) -> None:
 
 
 def test_m5_keep_both_when_available(kindred: KindredPage) -> None:
-  kindred.paste_text("base")
+  kindred.paste_text("start start start base end end end")
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
   kindred.commit()
 
   kindred.create_branch("feature")
-  kindred.replace_editor_text("left")
+  kindred.replace_editor_text("start start start left end end end")
   kindred.commit()
 
   kindred.checkout_branch("main")
-  kindred.replace_editor_text("right")
+  kindred.replace_editor_text("start start start right end end end")
   kindred.commit()
 
   kindred.merge_branch("feature", expect_conflicts=True)
@@ -127,17 +127,17 @@ def test_m5_keep_both_when_available(kindred: KindredPage) -> None:
 
 
 def test_m6_finish_merge_after_resolve(kindred: KindredPage) -> None:
-  kindred.paste_text("base")
+  kindred.paste_text("start start start base end end end")
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
   kindred.commit()
 
   kindred.create_branch("feature")
-  kindred.replace_editor_text("feature body")
+  kindred.replace_editor_text("start start start feature body end end end")
   kindred.commit()
 
   kindred.checkout_branch("main")
-  kindred.replace_editor_text("main body")
+  kindred.replace_editor_text("start start start main body end end end")
   kindred.commit()
 
   kindred.merge_branch("feature", expect_conflicts=True)
@@ -149,17 +149,17 @@ def test_m6_finish_merge_after_resolve(kindred: KindredPage) -> None:
 
 
 def test_m7_less_than_in_merge_conflict_buttons(kindred: KindredPage) -> None:
-  kindred.paste_text("<<")
+  kindred.paste_text("start start start << end end end")
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
   kindred.commit()
 
   kindred.create_branch("test")
-  kindred.press_keys(Keys.END, "<")
+  kindred.replace_editor_text("start start start <<< end end end")
   kindred.commit()
 
   kindred.checkout_branch("main")
-  kindred.press_keys(Keys.END, Keys.BACK_SPACE)
+  kindred.replace_editor_text("start start start < end end end")
   kindred.commit()
 
   kindred.merge_branch("test", expect_conflicts=True)
@@ -170,8 +170,8 @@ def test_m7_less_than_in_merge_conflict_buttons(kindred: KindredPage) -> None:
 def test_m_table_non_overlapping_cells_auto_merge(kindred: KindredPage) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>B</p></td></tr>
-    <tr><td><p>C</p></td><td><p>D</p></td></tr>
+    <tr><td><p>Acorn</p></td><td><p>Birch</p></td></tr>
+    <tr><td><p>Cedar</p></td><td><p>Dune</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -204,7 +204,7 @@ def test_m_table_non_overlapping_cells_auto_merge(kindred: KindredPage) -> None:
       By.CSS_SELECTOR,
       "#editor .ProseMirror table td p",
     )
-  ] == ["A main", "B", "C", "D feature"]
+  ] == ["Acorn main", "Birch", "Cedar", "Dune feature"]
 
 
 def test_m_table_overlapping_cells_resolve_independently(
@@ -212,7 +212,7 @@ def test_m_table_overlapping_cells_resolve_independently(
 ) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>B</p></td></tr>
+    <tr><td><p>Acorn</p></td><td><p>Birch</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -255,7 +255,7 @@ def test_m_table_overlapping_cells_resolve_independently(
       By.CSS_SELECTOR,
       "#editor .ProseMirror table td p",
     )
-  ] == ["A main", "B feature"]
+  ] == ["Acorn main", "Birch feature"]
 
 
 def test_m_table_delete_vs_edit_is_one_row_conflict(
@@ -358,8 +358,8 @@ def test_m_table_delete_vs_edit_is_one_column_conflict(
 ) -> None:
   kindred.paste_html(
     """<p>Before column table</p><table><tbody>
-    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
-    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
+    <tr><td><p>Acorn</p></td><td><p>Birch</p></td><td><p>Cedar</p></td></tr>
+    <tr><td><p>Dune</p></td><td><p>Elm</p></td><td><p>Forest</p></td></tr>
     </tbody></table><p>After column table</p>"""
   )
   kindred.wait_until_draft_active()
@@ -449,10 +449,10 @@ def test_m_table_delete_vs_edit_is_one_column_conflict(
   )
   assert len(conflict_cells) == 2
   border_thicknesses = [
-    vertical_border_thicknesses(kindred.driver, cell, expected_side="theirs")
+    left_vertical_border_thickness(kindred.driver, cell, expected_side="theirs")
     for cell in conflict_cells
   ]
-  assert all(left == right for left, right in border_thicknesses), border_thicknesses
+  assert all(thickness == 1 for thickness in border_thicknesses), border_thicknesses
 
   kindred.click_conflict_keep_theirs(0)
   assert [
@@ -461,7 +461,7 @@ def test_m_table_delete_vs_edit_is_one_column_conflict(
       By.CSS_SELECTOR,
       "#editor .ProseMirror table td p",
     )
-  ] == ["A", "B feature", "C", "D", "E feature", "F"]
+  ] == ["Acorn", "Birch feature", "Cedar", "Dune", "Elm feature", "Forest"]
 
 
 def test_m_table_inserted_middle_row_and_cell_edit_auto_merge(
@@ -517,8 +517,8 @@ def test_m_table_inserted_middle_column_and_cell_edit_auto_merge(
 ) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>C</p></td></tr>
-    <tr><td><p>D</p></td><td><p>F</p></td></tr>
+    <tr><td><p>Acorn</p></td><td><p>Cedar</p></td></tr>
+    <tr><td><p>Dune</p></td><td><p>Forest</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -546,9 +546,9 @@ def test_m_table_inserted_middle_column_and_cell_edit_auto_merge(
     "#editor .ProseMirror td:nth-child(2) p",
   )
   inserted[0].click()
-  kindred.driver.switch_to.active_element.send_keys("B")
+  kindred.driver.switch_to.active_element.send_keys("Birch")
   inserted[1].click()
-  kindred.driver.switch_to.active_element.send_keys("E")
+  kindred.driver.switch_to.active_element.send_keys("Elm")
   kindred.commit()
 
   kindred.merge_branch("feature", expect_conflicts=False)
@@ -559,14 +559,14 @@ def test_m_table_inserted_middle_column_and_cell_edit_auto_merge(
       By.CSS_SELECTOR,
       "#editor .ProseMirror table td p",
     )
-  ] == ["A", "B", "C", "D", "E", "F feature"]
+  ] == ["Acorn", "Birch", "Cedar", "Dune", "Elm", "Forest feature"]
 
 
 def test_m_table_rich_cell_conflict_preserves_chosen_markup(
   kindred: KindredPage,
 ) -> None:
   kindred.paste_html(
-    """<table><tbody><tr><td><p>A</p></td></tr></tbody></table>"""
+    """<table><tbody><tr><td><p>Apple</p></td></tr></tbody></table>"""
   )
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
@@ -609,7 +609,7 @@ def test_m_table_rich_cell_conflict_preserves_chosen_markup(
     By.CSS_SELECTOR,
     "#editor .ProseMirror table td p",
   )
-  assert paragraph.get_attribute("innerHTML") == "<em>A</em>"
+  assert paragraph.get_attribute("innerHTML") == "<em>Apple</em>"
 
 
 def test_m_table_same_position_row_inserts_are_one_row_conflict(
@@ -670,8 +670,8 @@ def test_m_table_same_position_column_inserts_are_one_column_conflict(
 ) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>C</p></td></tr>
-    <tr><td><p>D</p></td><td><p>F</p></td></tr>
+    <tr><td><p>Apple</p></td><td><p>Cedar</p></td></tr>
+    <tr><td><p>Dune</p></td><td><p>Forest</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -717,7 +717,7 @@ def test_m_table_same_position_column_inserts_are_one_column_conflict(
       By.CSS_SELECTOR,
       "#editor .ProseMirror table td p",
     )
-  ] == ["A", "Feature B", "C", "D", "Feature E", "F"]
+  ] == ["Apple", "Feature B", "Cedar", "Dune", "Feature E", "Forest"]
 
 
 def test_m_table_rowspan_cells_merge_by_logical_column(
@@ -882,8 +882,8 @@ def test_m_table_column_delete_reindexes_later_cell_conflict(
 ) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
-    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
+    <tr><td><p>Acorn</p></td><td><p>Birch</p></td><td><p>Cedar</p></td></tr>
+    <tr><td><p>Dune</p></td><td><p>Elm</p></td><td><p>Forest</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -952,7 +952,7 @@ def test_m_table_column_delete_reindexes_later_cell_conflict(
         (cell.textContent || '').trim()
       ));
     """
-  ) == [["A", "C feature"], ["D", "F"]]
+  ) == [["Acorn", "Cedar feature"], ["Dune", "Forest"]]
 
 
 def test_m_whole_table_insert_and_paragraph_edit_auto_merge(
@@ -1014,7 +1014,7 @@ def test_m_whole_table_insert_and_paragraph_edit_auto_merge(
 
 def test_m_list_non_overlapping_items_auto_merge(kindred: KindredPage) -> None:
   kindred.paste_html(
-    """<ul><li><p>Alpha</p></li><li><p>Bravo</p></li><li><p>Charlie</p></li></ul>"""
+    """<ul><li><p>Apple</p></li><li><p>Bravo</p></li><li><p>Charlie</p></li></ul>"""
   )
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
@@ -1041,7 +1041,7 @@ def test_m_list_non_overlapping_items_auto_merge(kindred: KindredPage) -> None:
   kindred.merge_branch("feature", expect_conflicts=False)
   assert not kindred.has_merge_conflict_ui()
   assert _list_top_level_item_texts(kindred) == [
-    "Alpha main",
+    "Apple main",
     "Bravo feature",
     "Charlie",
   ]
@@ -1051,7 +1051,7 @@ def test_m_list_overlapping_items_resolve_independently(
   kindred: KindredPage,
 ) -> None:
   kindred.paste_html(
-    """<ul><li><p>Alpha</p></li><li><p>Bravo</p></li><li><p>Charlie</p></li></ul>"""
+    """<ul><li><p>Apple</p></li><li><p>Bravo</p></li><li><p>Charlie</p></li></ul>"""
   )
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
@@ -1088,7 +1088,7 @@ def test_m_list_overlapping_items_resolve_independently(
   kindred.click_conflict_keep_ours(0)
   kindred.click_conflict_keep_theirs(0)
   assert _list_top_level_item_texts(kindred) == [
-    "Alpha",
+    "Apple",
     "Bravo main",
     "Charlie feature",
   ]

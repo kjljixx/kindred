@@ -8,7 +8,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
 from pages.kindred import KindredPage
-from pages.table_visuals import vertical_border_thicknesses
+from pages.table_visuals import left_vertical_border_thickness
 
 
 def _commit_then_edit_html(kindred: KindredPage, head: str, dirty: str) -> None:
@@ -68,7 +68,11 @@ def test_r3_delete_only_shows_conflict(kindred: KindredPage) -> None:
 
 
 def test_r4_replace_shows_both_sides(kindred: KindredPage) -> None:
-  _commit_then_dirty(kindred, "cat", "dog")
+  _commit_then_dirty(
+    kindred,
+    "start start start cat end end end",
+    "start start start dog end end end",
+  )
   kindred.enter_dirty_review()
   ours, theirs = kindred.conflict_button_texts()
   assert "cat" in ours
@@ -76,28 +80,40 @@ def test_r4_replace_shows_both_sides(kindred: KindredPage) -> None:
 
 
 def test_r5_keep_dirty(kindred: KindredPage) -> None:
-  _commit_then_dirty(kindred, "cat", "dog")
+  _commit_then_dirty(
+    kindred,
+    "start start start cat end end end",
+    "start start start dog end end end",
+  )
   kindred.enter_dirty_review()
   kindred.click_conflict_keep_theirs(0)
   kindred.enter_dirty_text()
-  assert kindred.editor_body_text() == "dog"
+  assert kindred.editor_body_text() == "start start start dog end end end"
 
 
 def test_r6_keep_current_head(kindred: KindredPage) -> None:
-  _commit_then_dirty(kindred, "cat", "dog")
+  _commit_then_dirty(
+    kindred,
+    "start start start cat end end end",
+    "start start start dog end end end",
+  )
   kindred.enter_dirty_review()
   kindred.click_conflict_keep_ours(0)
   kindred.enter_dirty_text()
-  assert kindred.editor_body_text() == "cat"
+  assert kindred.editor_body_text() == "start start start cat end end end"
 
 
 def test_r7_leave_review_to_text_keeps_dirty(kindred: KindredPage) -> None:
-  _commit_then_dirty(kindred, "base line", "dirty line")
+  _commit_then_dirty(
+    kindred,
+    "start start start base line end end end",
+    "start start start dirty line end end end",
+  )
   kindred.enter_dirty_review()
   assert kindred.has_merge_conflict_ui()
   kindred.enter_dirty_text()
   assert not kindred.has_merge_conflict_ui()
-  assert kindred.editor_body_text() == "dirty line"
+  assert kindred.editor_body_text() == "start start start dirty line end end end"
 
 
 def test_r8_leave_review_to_diff_matches_dirty(kindred: KindredPage) -> None:
@@ -153,7 +169,11 @@ def test_r11_align_conflict_in_review(kindred: KindredPage) -> None:
 
 
 def test_r12_less_than_on_conflict_buttons(kindred: KindredPage) -> None:
-  _commit_then_dirty(kindred, "<<", "<<<")
+  _commit_then_dirty(
+    kindred,
+    "start start start << end end end",
+    "start start start <<< end end end",
+  )
   kindred.enter_dirty_review()
   ours, theirs = kindred.conflict_button_texts()
   assert "&lt;" not in ours and "&lt;" not in theirs
@@ -161,10 +181,14 @@ def test_r12_less_than_on_conflict_buttons(kindred: KindredPage) -> None:
 
 
 def test_r13_review_then_commit_keeps_dirty(kindred: KindredPage) -> None:
-  _commit_then_dirty(kindred, "old", "new")
+  _commit_then_dirty(
+    kindred,
+    "start start start old end end end",
+    "start start start new end end end",
+  )
   kindred.enter_dirty_review()
   kindred.commit()
-  assert kindred.editor_body_text() == "new"
+  assert kindred.editor_body_text() == "start start start new end end end"
   assert not kindred.dirty_mode_enabled("review")
   assert kindred.dirty_mode_enabled("diff")
 
@@ -239,8 +263,8 @@ def test_r_table_cell_conflicts_resolve_independently(
 ) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>B</p></td></tr>
-    <tr><td><p>C</p></td><td><p>D</p></td></tr>
+    <tr><td><p>Apple</p></td><td><p>Birch</p></td></tr>
+    <tr><td><p>Cedar</p></td><td><p>Dune</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -262,7 +286,7 @@ def test_r_table_cell_conflicts_resolve_independently(
         By.CSS_SELECTOR,
         "#editor .ProseMirror table td p",
       )
-    ] == ["A", "B!", "C!", "D"]
+    ] == ["Apple", "Birch!", "Cedar!", "Dune"]
   )
 
   kindred.enter_dirty_review()
@@ -282,7 +306,7 @@ def test_r_table_cell_conflicts_resolve_independently(
       By.CSS_SELECTOR,
       "#editor .ProseMirror table td p",
     )
-  ] == ["A", "B", "C!", "D"]
+  ] == ["Apple", "Birch", "Cedar!", "Dune"]
 
 
 def test_r_table_middle_row_delete_resolves_in_place(
@@ -345,7 +369,7 @@ def test_r_row_conflict_buttons_render_left_without_overlapping_blocks(
   kindred.paste_html(
     """<p>Before table</p><table><tbody>
     <tr><td><p>Top</p></td></tr>
-    <tr><td><p>X</p></td></tr>
+    <tr><td><p>Xray</p></td></tr>
     <tr><td><p>Bottom</p></td></tr>
     </tbody></table><p>After table</p>"""
   )
@@ -407,8 +431,8 @@ def test_r_table_middle_column_delete_resolves_in_place(
 ) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
-    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
+    <tr><td><p>Apple</p></td><td><p>Birch</p></td><td><p>Cedar</p></td></tr>
+    <tr><td><p>Dune</p></td><td><p>Elm</p></td><td><p>Forest</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -442,17 +466,17 @@ def test_r_table_middle_column_delete_resolves_in_place(
   )
   assert len(conflict_cells) == 2
   border_thicknesses = [
-    vertical_border_thicknesses(kindred.driver, cell, expected_side="ours")
+    left_vertical_border_thickness(kindred.driver, cell, expected_side="ours")
     for cell in conflict_cells
   ]
-  assert all(left == right for left, right in border_thicknesses), border_thicknesses
+  assert all(thickness == 1 for thickness in border_thicknesses), border_thicknesses
   assert [
     cell.text.strip()
     for cell in kindred.driver.find_elements(
       By.CSS_SELECTOR,
       "#editor .ProseMirror table td p",
     )
-  ] == ["A", "B", "C", "D", "E", "F"]
+  ] == ["Apple", "Birch", "Cedar", "Dune", "Elm", "Forest"]
 
   kindred.click_conflict_keep_theirs(0)
   kindred.enter_dirty_text()
@@ -462,7 +486,7 @@ def test_r_table_middle_column_delete_resolves_in_place(
       By.CSS_SELECTOR,
       "#editor .ProseMirror table td p",
     )
-  ] == ["A", "C", "D", "F"]
+  ] == ["Apple", "Cedar", "Dune", "Forest"]
 
 
 def test_r_table_inserted_row_and_later_cell_resolve_independently(
@@ -567,8 +591,8 @@ def test_r_table_inserted_column_uses_semantic_action_labels(
 ) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>C</p></td></tr>
-    <tr><td><p>D</p></td><td><p>F</p></td></tr>
+    <tr><td><p>Apple</p></td><td><p>Cedar</p></td></tr>
+    <tr><td><p>Dune</p></td><td><p>Forest</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -625,9 +649,9 @@ def test_r_table_row_color_precedes_column_color_and_borders_stay_uniform(
 ) -> None:
   kindred.paste_html(
     """<table><tbody>
-    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
-    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
-    <tr><td><p>G</p></td><td><p>H</p></td><td><p>I</p></td></tr>
+    <tr><td><p>Apple</p></td><td><p>Birch</p></td><td><p>Cedar</p></td></tr>
+    <tr><td><p>Dune</p></td><td><p>Elm</p></td><td><p>Forest</p></td></tr>
+    <tr><td><p>Grove</p></td><td><p>Hill</p></td><td><p>Island</p></td></tr>
     </tbody></table>"""
   )
   kindred.wait_until_draft_active()
@@ -690,8 +714,8 @@ def test_r_column_conflict_buttons_render_above_without_overlapping_blocks(
 ) -> None:
   kindred.paste_html(
     """<ul><li><p>Before list</p></li></ul><table><tbody>
-    <tr><td><p>A</p></td><td><p>B</p></td><td><p>C</p></td></tr>
-    <tr><td><p>D</p></td><td><p>E</p></td><td><p>F</p></td></tr>
+    <tr><td><p>Apple</p></td><td><p>Birch</p></td><td><p>Cedar</p></td></tr>
+    <tr><td><p>Dune</p></td><td><p>Elm</p></td><td><p>Forest</p></td></tr>
     </tbody></table><p>After table</p>"""
   )
   kindred.wait_until_draft_active()
@@ -851,7 +875,7 @@ def test_r_whole_table_insert_can_keep_dirty_table(
 
 def test_r_list_two_item_edits_two_widgets(kindred: KindredPage) -> None:
   kindred.paste_html(
-    """<ul><li><p>Alpha</p></li><li><p>Bravo</p></li><li><p>Charlie</p></li></ul>"""
+    """<ul><li><p>Apple</p></li><li><p>Bravo</p></li><li><p>Charlie</p></li></ul>"""
   )
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
@@ -866,7 +890,7 @@ def test_r_list_two_item_edits_two_widgets(kindred: KindredPage) -> None:
     item.click()
     kindred.driver.switch_to.active_element.send_keys(Keys.END, "!")
   kindred.wait.until(
-    lambda d: _list_top_level_item_texts(kindred) == ["Alpha", "Bravo!", "Charlie!"]
+    lambda d: _list_top_level_item_texts(kindred) == ["Apple", "Bravo!", "Charlie!"]
   )
 
   kindred.enter_dirty_review()
@@ -928,8 +952,8 @@ def test_r_list_middle_item_delete_keep_remove(kindred: KindredPage) -> None:
 def test_r_list_indent_shows_indent_outdent(kindred: KindredPage) -> None:
   _commit_then_edit_html(
     kindred,
-    "<ul><li><p>A</p></li><li><p>B</p></li><li><p>C</p></li></ul>",
-    "<ul><li><p>A</p><ul><li><p>B</p></li></ul></li><li><p>C</p></li></ul>",
+    "<ul><li><p>Apple</p></li><li><p>Birch</p></li><li><p>Cedar</p></li></ul>",
+    "<ul><li><p>Apple</p><ul><li><p>Birch</p></li></ul></li><li><p>Cedar</p></li></ul>",
   )
   kindred.enter_dirty_review()
   assert len(
@@ -949,7 +973,7 @@ def test_r_list_indent_shows_indent_outdent(kindred: KindredPage) -> None:
 
 def test_r_list_resolve_two_edits_independently(kindred: KindredPage) -> None:
   kindred.paste_html(
-    """<ul><li><p>Alpha</p></li><li><p>Bravo</p></li><li><p>Charlie</p></li></ul>"""
+    """<ul><li><p>Apple</p></li><li><p>Bravo</p></li><li><p>Charlie</p></li></ul>"""
   )
   kindred.wait_until_draft_active()
   kindred.switch_to_git()
@@ -964,7 +988,7 @@ def test_r_list_resolve_two_edits_independently(kindred: KindredPage) -> None:
     item.click()
     kindred.driver.switch_to.active_element.send_keys(Keys.END, "!")
   kindred.wait.until(
-    lambda d: _list_top_level_item_texts(kindred) == ["Alpha", "Bravo!", "Charlie!"]
+    lambda d: _list_top_level_item_texts(kindred) == ["Apple", "Bravo!", "Charlie!"]
   )
 
   kindred.enter_dirty_review()
@@ -978,4 +1002,4 @@ def test_r_list_resolve_two_edits_independently(kindred: KindredPage) -> None:
   kindred.click_conflict_keep_ours(0)
   kindred.click_conflict_keep_theirs(0)
   kindred.enter_dirty_text()
-  assert _list_top_level_item_texts(kindred) == ["Alpha", "Bravo", "Charlie!"]
+  assert _list_top_level_item_texts(kindred) == ["Apple", "Bravo", "Charlie!"]

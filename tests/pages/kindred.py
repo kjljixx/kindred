@@ -144,6 +144,23 @@ class KindredPage:
   def wait_until_word_char_counts(self, words: int, chars: int) -> None:
     self.wait.until(lambda d: self.word_char_counts() == (words, chars))
 
+  def click_fresh(self, locator: tuple[str, str], index: int = 0) -> None:
+    """Locate and click within one retryable poll to tolerate UI rerenders."""
+    def click_if_ready(driver: WebDriver) -> bool:
+      try:
+        elements = driver.find_elements(*locator)
+        if len(elements) <= index:
+          return False
+        element = elements[index]
+        if not element.is_displayed() or not element.is_enabled():
+          return False
+        element.click()
+        return True
+      except StaleElementReferenceException:
+        return False
+
+    self.wait.until(click_if_ready)
+
   def select_editor_text(self, start: int, end: int) -> None:
     """Select a plain-text range in the editor."""
     self.driver.execute_script(
@@ -224,14 +241,11 @@ class KindredPage:
 
   def view_commit_at(self, index: int) -> None:
     """Click a commit row. List is newest-first (0 = newest)."""
-    self.wait.until(lambda d: len(d.find_elements(*self.GIT_COMMIT_ROWS)) > index)
-    rows = self.driver.find_elements(*self.GIT_COMMIT_ROWS)
-    rows[index].click()
+    self.click_fresh(self.GIT_COMMIT_ROWS, index)
     self.wait_until_status_contains("viewing old commit")
 
   def exit_to_dirty_text(self) -> None:
-    row = self.wait.until(EC.element_to_be_clickable(self.DIRTY_ROW))
-    row.click()
+    self.click_fresh(self.DIRTY_ROW)
     self.wait.until(lambda d: "viewing old commit" not in self.status_text())
 
   def enter_dirty_review(self, *, expect_conflicts: bool = True) -> None:

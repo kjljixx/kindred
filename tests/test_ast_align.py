@@ -7,7 +7,7 @@ from pages.kindred import KindredPage
 
 def test_ast_html_round_trip_via_editor(kindred: KindredPage) -> None:
   """HTML → TipTap keeps paragraph text."""
-  kindred.paste_text("Alpha")
+  kindred.paste_text("Apple")
   kindred.wait_until_draft_active()
   info = kindred.driver.execute_script(
     """
@@ -19,9 +19,9 @@ def test_ast_html_round_trip_via_editor(kindred: KindredPage) -> None:
     };
     """
   )
-  assert info["text"] == "Alpha"
+  assert info["text"] == "Apple"
   assert info["pCount"] >= 1
-  assert "Alpha" in info["html"]
+  assert "Apple" in info["html"]
 
 
 def test_ast_review_replace_one_conflict(kindred: KindredPage) -> None:

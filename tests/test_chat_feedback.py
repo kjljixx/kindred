@@ -40,7 +40,11 @@ def test_stream_prompt_includes_conflicts_and_action_protocol(monkeypatch):
 
   def fake_reflect_stream(**kwargs):
     captured.update(kwargs)
-    yield "text", "[[mention:0:8]]"
+    yield (
+      "text",
+      '<mention start="0" end="8"><original>A senten</original>'
+      "<prefix></prefix><suffix>ce.</suffix></mention>",
+    )
 
   monkeypatch.setattr(chat, "reflect_chat_stream", fake_reflect_stream)
   assert list(chat.chat_draft_stream(
@@ -48,9 +52,15 @@ def test_stream_prompt_includes_conflicts_and_action_protocol(monkeypatch):
     message="Improve it",
     messages=[],
     conflict_context="Conflict 1: Current: A; Incoming: B",
-  )) == [("text", "[[mention:0:8]]")]
+  )) == [(
+    "text",
+    '<mention start="0" end="8"><original>A senten</original>'
+    "<prefix></prefix><suffix>ce.</suffix></mention>",
+  )]
   prompt = captured["prompt"]
-  assert "JSON text anchor" in prompt[0]["content"]
+  assert "XML text anchor" in prompt[0]["content"]
+  assert '<mention start="' in prompt[0]["content"]
+  assert '<suggestion start="' in prompt[0]["content"]
   assert "Unresolved merge-conflict context" in prompt[-1]["content"]
 
 

@@ -5,8 +5,8 @@ from selenium.webdriver.common.keys import Keys
 from pages.kindred import KindredPage
 
 # Distinct committed vs dirty strings so history cannot accidentally match.
-COMMITTED = "Committed alpha text here"
-DIRTY = "Dirty omega text here now"
+COMMITTED = "Committed apple text here"
+DIRTY = "Dirty lunar text here now"
 LIVE = "Dirty title line with four more words"
 PINNED = "Pinned Name"
 REVIEW_BASE = "Review base paragraph one"
@@ -87,22 +87,22 @@ def test_document_counts_ignore_empty_blocks_and_normalize_nonbreaking_spaces(
   kindred: KindredPage,
 ) -> None:
   kindred.wait_until_word_char_counts(0, 0)
-  kindred.paste_text("Alpha\u00a0bravo.")
+  kindred.paste_text("Apple\u00a0bravo.")
   kindred.wait_until_draft_active()
   kindred.press_keys(Keys.END, Keys.ENTER)
   kindred.type_text("Charlie!")
-  kindred.wait_until_word_char_counts(3, len("Alpha bravo.Charlie!"))
-  assert "2 sentences" in kindred.status_text()
-  assert "2 paragraphs" in kindred.status_text()
+  kindred.wait_until_word_char_counts(3, len("Apple bravo.Charlie!"))
+  assert "2 sents" in kindred.status_text()
+  assert "2 paras" in kindred.status_text()
 
 
 def test_selection_counts_show_selected_over_total(kindred: KindredPage) -> None:
-  text = "Alpha bravo. Charlie!"
+  text = "Hello world. Again!"
   kindred.paste_text(text)
   kindred.wait_until_draft_active()
-  kindred.select_editor_text(0, len("Alpha bravo."))
+  kindred.select_editor_text(0, len("Hello world."))
   kindred.wait_until_status_contains(
-    "2/3 words · 12/21 chars · 1/2 sentences · 1/1 paragraph"
+    "2/3 words · 12/19 chars · 1/2 sents · 1/1 para"
   )
 
 
@@ -110,12 +110,12 @@ def expected_table_counts() -> tuple[int, int, int, int]:
   """Expected words, chars, sentences, paragraphs for a 2x2 table.
   
   Table structure:
-    <tr><td><p>Alpha</p></td><td><p>Bravo</p></td></tr>
-    <tr><td><p>Charlie delta</p></td><td><p>Echo</p></td></tr>
+    <tr><td><p>Apple</p></td><td><p>Bravo</p></td></tr>
+    <tr><td><p>Charlie river</p></td><td><p>Echo</p></td></tr>
   
-  nodePlainText(table) joins cells with \n\n -> "Alpha\n\nBravo\n\nCharlie delta\n\nEcho"
-  statsCharacterBlocksOf strips \t and \n -> "AlphaBravoCharlie deltaEcho" = 27 chars
-  Words: Alpha, Bravo, Charlie, delta, Echo = 5
+  nodePlainText(table) joins cells with \n\n -> "Apple\n\nBravo\n\nCharlie river\n\nEcho"
+  statsCharacterBlocksOf strips \t and \n -> "AppleBravoCharlie riverEcho" = 27 chars
+  Words: Apple, Bravo, Charlie, river, Echo = 5
   Sentences: split on \n\n -> 4 (each cell treated as sentence)
   Paragraphs: split on \n\n -> 4
   """
@@ -126,16 +126,16 @@ def test_table_character_counts(kindred: KindredPage) -> None:
   """Test that table cell text is counted without structural newlines/tabs."""
   table_html = (
     "<table><tbody>"
-    "<tr><td><p>Alpha</p></td><td><p>Bravo</p></td></tr>"
-    "<tr><td><p>Charlie delta</p></td><td><p>Echo</p></td></tr>"
+    "<tr><td><p>Apple</p></td><td><p>Bravo</p></td></tr>"
+    "<tr><td><p>Charlie river</p></td><td><p>Echo</p></td></tr>"
     "</tbody></table>"
   )
   kindred.paste_html(table_html)
   kindred.wait_until_draft_active()
   words, chars, sentences, paragraphs = expected_table_counts()
   kindred.wait_until_word_char_counts(words, chars)
-  assert f"{sentences} sentences" in kindred.status_text()
-  assert f"{paragraphs} paragraphs" in kindred.status_text()
+  assert f"{sentences} sents" in kindred.status_text()
+  assert f"{paragraphs} paras" in kindred.status_text()
 
 
 def test_table_with_text_combined_counts(kindred: KindredPage) -> None:
@@ -157,22 +157,22 @@ def test_table_with_text_combined_counts(kindred: KindredPage) -> None:
   # Table: "Cell one\n\nCell two" = 4 words, 16 chars (no newlines), 2 sentences, 2 paragraphs
   # Combined: 6 words, 32 chars, 3 sentences, 3 paragraphs
   kindred.wait_until_word_char_counts(6, 32)
-  assert "3 sentences" in kindred.status_text()
-  assert "3 paragraphs" in kindred.status_text()
+  assert "3 sents" in kindred.status_text()
+  assert "3 paras" in kindred.status_text()
 
 
 def test_table_selection_counts(kindred: KindredPage) -> None:
   """Test selection counts work inside a table."""
   table_html = (
     "<table><tbody>"
-    "<tr><td><p>Alpha bravo</p></td><td><p>Charlie delta</p></td></tr>"
+    "<tr><td><p>Hello world</p></td><td><p>Kindred rocks</p></td></tr>"
     "</tbody></table>"
   )
   kindred.paste_html(table_html)
   kindred.wait_until_draft_active()
-  # Select "Alpha bravo" (first cell, 11 chars, 2 words, 1 sentence, 1 paragraph)
-  # Total: "Alpha bravo\n\nCharlie delta" -> 4 words, 24 chars, 2 sentences, 2 paragraphs
-  kindred.select_editor_text(0, len("Alpha bravo"))
+  # Select "Hello world" (first cell, 11 chars, 2 words, 1 sentence, 1 paragraph)
+  # Total: "Hello world" (11 chars) + "Kindred rocks" (13 chars).
+  kindred.select_editor_text(0, len("Hello world"))
   kindred.wait_until_status_contains(
-    "2/4 words · 11/24 chars · 1/2 sentences · 1/2 paragraph"
+    "2/4 words · 11/24 chars · 1/2 sents · 1/2 paras"
   )

@@ -21,13 +21,13 @@ def test_t1_type_plain_text(kindred: KindredPage) -> None:
 
 
 def test_t2_multi_paragraph(kindred: KindredPage) -> None:
-  kindred.type_text("Alpha")
+  kindred.type_text("Apple")
   kindred.press_keys(Keys.ENTER)
   kindred.type_text("Bravo")
   kindred.wait_until_draft_active()
   assert kindred.paragraph_count() >= 2
   text = kindred.editor_text()
-  assert "Alpha" in text and "Bravo" in text
+  assert "Apple" in text and "Bravo" in text
 
 
 def test_t3_backspace_deletes_characters(kindred: KindredPage) -> None:

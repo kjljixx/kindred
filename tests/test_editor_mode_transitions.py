@@ -23,10 +23,14 @@ def test_x1_text_diff_text_preserves_body(kindred: KindredPage) -> None:
 
 
 def test_x2_text_review_text_keeps_dirty(kindred: KindredPage) -> None:
-  _dirty_from_head(kindred, "Head", "Dirty body")
+  _dirty_from_head(
+    kindred,
+    "start start start Head end end end",
+    "start start start Dirty body end end end",
+  )
   kindred.enter_dirty_review()
   kindred.enter_dirty_text()
-  assert kindred.editor_body_text() == "Dirty body"
+  assert kindred.editor_body_text() == "start start start Dirty body end end end"
   assert not kindred.has_merge_conflict_ui()
 
 
@@ -42,7 +46,11 @@ def test_x3_diff_review_diff_consistent(kindred: KindredPage) -> None:
 
 
 def test_x4_review_diff_review(kindred: KindredPage) -> None:
-  _dirty_from_head(kindred, "one", "two")
+  _dirty_from_head(
+    kindred,
+    "start start start one end end end",
+    "start start start two end end end",
+  )
   kindred.enter_dirty_review()
   kindred.enter_dirty_diff()
   kindred.enter_dirty_review()
