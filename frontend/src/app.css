@@ -183,7 +183,7 @@ body {
 
 #draft-pane {
   min-width: 360px;
-  flex: 0 0 60%;
+  flex: 0 0 var(--draft-pane-width, 60%);
 }
 
 #feedback-pane {

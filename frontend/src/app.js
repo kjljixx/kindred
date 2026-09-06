@@ -4311,7 +4311,7 @@ import {
     const max = rect.width - 300 - 5;
     const clamped = Math.min(max, Math.max(min, x));
     const leftPct = (clamped / rect.width) * 100;
-    draftPane.style.flex = `0 0 ${leftPct}%`;
+    draftPane.style.setProperty("--draft-pane-width", `${leftPct}%`);
   }
 
   function endResize() {
