@@ -6,6 +6,7 @@ import {
   blockFamily,
   blockSignature,
   blockToHtml,
+  docToPlainText,
   significantBlocks,
 } from "./kindredSchema.js";
 import { debugEvent, debugVerbose, summarizeAlignOp, summarizeBlock } from "./debug.js";
@@ -68,16 +69,158 @@ function mapSideToBase(baseKeys, sideKeys) {
   return { baseToSide, inserts };
 }
 
+const PARAGRAPH_MATCH_THRESHOLD = 0.55;
+
+function normalizedWords(node) {
+  return docToPlainText(node)
+    .toLocaleLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function wordPairs(words) {
+  const pairs = [];
+  for (let index = 1; index < words.length; index++) {
+    pairs.push(`${words[index - 1]}\0${words[index]}`);
+  }
+  return pairs;
+}
+
+function diceSimilarity(before, after) {
+  if (!before.length || !after.length) return 0;
+  const remaining = new Map();
+  for (const value of before) {
+    remaining.set(value, (remaining.get(value) || 0) + 1);
+  }
+  let shared = 0;
+  for (const value of after) {
+    const count = remaining.get(value) || 0;
+    if (!count) continue;
+    shared += 1;
+    remaining.set(value, count - 1);
+  }
+  return (2 * shared) / (before.length + after.length);
+}
+
+function paragraphSimilarity(before, after) {
+  const beforeWords = normalizedWords(before);
+  const afterWords = normalizedWords(after);
+  if (!beforeWords.length || !afterWords.length) return 0;
+  if (beforeWords.join("\0") === afterWords.join("\0")) return 1;
+  const beforePairs = wordPairs(beforeWords);
+  const afterPairs = wordPairs(afterWords);
+  return beforePairs.length && afterPairs.length
+    ? diceSimilarity(beforePairs, afterPairs)
+    : diceSimilarity(beforeWords, afterWords);
+}
+
+function alignEditedParagraphs(baseBlocks, sideBlocks, baseIndexes, inserts) {
+  const sideInserts = inserts.filter(
+    (insert) => blockFamily(sideBlocks[insert.sideIndex]) === "p"
+  );
+  const rows = Array.from({ length: baseIndexes.length + 1 }, () =>
+    new Array(sideInserts.length + 1).fill(0)
+  );
+
+  function matchWeight(baseOffset, sideOffset) {
+    const similarity = paragraphSimilarity(
+      baseBlocks[baseIndexes[baseOffset]],
+      sideBlocks[sideInserts[sideOffset].sideIndex]
+    );
+    return similarity >= PARAGRAPH_MATCH_THRESHOLD
+      ? similarity - PARAGRAPH_MATCH_THRESHOLD
+      : Number.NEGATIVE_INFINITY;
+  }
+
+  for (let i = 1; i <= baseIndexes.length; i++) {
+    for (let j = 1; j <= sideInserts.length; j++) {
+      rows[i][j] = Math.max(
+        rows[i - 1][j],
+        rows[i][j - 1],
+        rows[i - 1][j - 1] + matchWeight(i - 1, j - 1)
+      );
+    }
+  }
+
+  const matches = [];
+  let i = baseIndexes.length;
+  let j = sideInserts.length;
+  while (i > 0 && j > 0) {
+    const weight = matchWeight(i - 1, j - 1);
+    if (
+      Number.isFinite(weight) &&
+      weight > 0 &&
+      Math.abs(rows[i][j] - (rows[i - 1][j - 1] + weight)) < 1e-9
+    ) {
+      matches.push({
+        baseIndex: baseIndexes[i - 1],
+        insert: sideInserts[j - 1],
+      });
+      i -= 1;
+      j -= 1;
+    } else if (rows[i][j] === rows[i - 1][j]) {
+      i -= 1;
+    } else {
+      j -= 1;
+    }
+  }
+  return matches.reverse();
+}
+
+function hasTextContent(node) {
+  if (typeof node?.text === "string" && node.text.length > 0) return true;
+  return (node?.content || []).some(hasTextContent);
+}
+
 function reconcileEditedStructuralBlocks(baseBlocks, sideBlocks, mapping) {
+  const mappedBaseIndexes = mapping.baseToSide
+    .map((sideIndex, baseIndex) => sideIndex == null ? null : baseIndex)
+    .filter((baseIndex) => baseIndex != null);
+  const boundaries = [-1, ...mappedBaseIndexes, baseBlocks.length];
+
+  for (let boundaryIndex = 1; boundaryIndex < boundaries.length; boundaryIndex++) {
+    const previous = boundaries[boundaryIndex - 1];
+    const next = boundaries[boundaryIndex];
+    const baseIndexes = [];
+    for (let baseIndex = previous + 1; baseIndex < next; baseIndex++) {
+      if (blockFamily(baseBlocks[baseIndex]) === "p") baseIndexes.push(baseIndex);
+    }
+    const inserts = mapping.inserts.filter(
+      (insert) => insert.afterBase >= previous && insert.afterBase < next
+    );
+    for (const match of alignEditedParagraphs(
+      baseBlocks,
+      sideBlocks,
+      baseIndexes,
+      inserts
+    )) {
+      mapping.baseToSide[match.baseIndex] = match.insert.sideIndex;
+      const insertIndex = mapping.inserts.indexOf(match.insert);
+      if (insertIndex >= 0) mapping.inserts.splice(insertIndex, 1);
+    }
+  }
+
   for (let baseIndex = 0; baseIndex < baseBlocks.length; baseIndex++) {
     if (mapping.baseToSide[baseIndex] != null) continue;
     const family = blockFamily(baseBlocks[baseIndex]);
-    if (family !== "p" && family !== "table" && family !== "list") continue;
-    const insertIndex = mapping.inserts.findIndex((insert) => {
+    if (family === "p") continue;
+    const isCandidate = (insert) => {
       const nearby =
         insert.afterBase === baseIndex || insert.afterBase === baseIndex - 1;
       return nearby && blockFamily(sideBlocks[insert.sideIndex]) === family;
-    });
+    };
+    const baseHasText = hasTextContent(baseBlocks[baseIndex]);
+    let insertIndex = mapping.inserts.findIndex(
+      (insert) =>
+        isCandidate(insert) &&
+        hasTextContent(sideBlocks[insert.sideIndex]) === baseHasText
+    );
+    if (insertIndex < 0) {
+      insertIndex = mapping.inserts.findIndex(isCandidate);
+    }
     if (insertIndex < 0) continue;
     mapping.baseToSide[baseIndex] = mapping.inserts[insertIndex].sideIndex;
     mapping.inserts.splice(insertIndex, 1);
@@ -119,60 +262,7 @@ export function alignDocs(baseDoc, oursDoc, theirsDoc, options = {}) {
   });
   debugVerbose("align", "documents", { baseDoc, oursDoc, theirsDoc });
 
-  // Same length + same families by index → index align (edits stay replace, not
-  // delete+insert). Length/family changes use base-anchored signature LCS.
-  const canIndexAlign =
-    baseBlocks.length === oursBlocks.length &&
-    oursBlocks.length === theirsBlocks.length &&
-    baseBlocks.every(
-      (b, i) =>
-        blockFamily(b) === blockFamily(oursBlocks[i]) &&
-        blockFamily(b) === blockFamily(theirsBlocks[i])
-    );
-
-  debugEvent("align", "strategy", { type: canIndexAlign ? "index" : "lcs" });
-
-  if (canIndexAlign) {
-    const ops = [];
-    for (let i = 0; i < baseBlocks.length; i++) {
-      const base = baseBlocks[i];
-      const ours = oursBlocks[i];
-      const theirs = theirsBlocks[i];
-      const path = `block/${i}`;
-      if (
-        sameNode(ours, theirs) ||
-        (nodesEqualHtml(ours, theirs) &&
-          blockFamily(ours) === blockFamily(theirs))
-      ) {
-        ops.push({
-          type: "equal",
-          path,
-          level: "block",
-          node: ours,
-          base,
-          ours,
-          theirs,
-          review,
-        });
-      } else {
-        ops.push({
-          type: "replace",
-          path,
-          level: "block",
-          base,
-          ours,
-          theirs,
-          review,
-        });
-      }
-    }
-    debugEvent("align", "result", {
-      review,
-      opCount: ops.length,
-      ops: ops.map(summarizeAlignOp),
-    });
-    return ops;
-  }
+  debugEvent("align", "strategy", { type: "lcs-similarity" });
 
   const baseKeys = baseBlocks.map(blockSignature);
   const oursKeys = oursBlocks.map(blockSignature);

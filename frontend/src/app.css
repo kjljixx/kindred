@@ -1221,11 +1221,12 @@ button.pane-title {
   color: var(--accent-success-300);
 }
 
-.diff-del {
+.editor .ProseMirror .diff-del {
   background: var(--color-danger-bg);
   color: var(--accent-danger-300);
   text-decoration: line-through;
   user-select: none;
+  white-space: pre-wrap;
 }
 
 .ProseMirror img.diff-image-ins,
