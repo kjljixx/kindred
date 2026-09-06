@@ -21,9 +21,10 @@ Working Changes Viewing Modes
 - Review: Shows the differences between your working changes and the last commit, but allows for easy reverting of changes. Use before you commit at the end of a long editing session to go through your changes and choose which to keep.
 
 Editor Keyboard Shortcuts
-- Ctrl+L: Select the next highest organizational unit (word, sentence, paragraph) of text. For example, if your cursor is in the middle of a word, Ctrl+L will select the entire word. If you Ctrl+L again, it will select the entire sentence. If you Ctrl+L again, it will select the entire paragraph.
-- Alt+Up/Down: Move the current organizational unit up or down in the text. This is useful for rearranging sentences in a paragraph or rearranging paragraphs in a document.
-- Alt+[ and Alt+]: Shift the current selection left or right by one organizational unit. For example, if you have a sentence selected, Alt+[ will select the previous sentence, and Alt+] will select the next sentence. If you have a paragraph selected, Alt+[ will select the previous paragraph, and Alt+] will select the next paragraph.
+- Ctrl+L: Select increasingly larger organizational units of text: word, sentence, then paragraph. Pressing Ctrl+L again on a selected paragraph loops back to the word at the original caret position.
+- Alt+Up/Down: Move the current organizational unit up or down in the text. This is useful for rearranging sentences in a paragraph or rearranging paragraphs in a document. The original caret position moves with the content.
+- Alt+[ and Alt+]: Shift the current selection left or right by one organizational unit. For example, if you have a sentence selected, Alt+[ will select the previous sentence, and Alt+] will select the next sentence. The original caret position moves with the selection.
+- Escape: Collapse the current selection to the position where the selection began. For selections expanded or moved with the shortcuts above, this returns to the tracked original caret position.
 - Ctrl+;: Focus the editor pane and the editor
 - Ctrl+[: Focus chat pane
 - Ctrl+]: Focus editor pane
