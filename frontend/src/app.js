@@ -2951,6 +2951,25 @@ import {
     }
   }
 
+  function parseXmlTextAnchor(token, expectedTag) {
+    const document = new DOMParser().parseFromString(token, "application/xml");
+    if (document.querySelector("parsererror")) return null;
+    const root = document.documentElement;
+    if (root.tagName !== expectedTag) return null;
+    const field = (name) => {
+      const element = Array.from(root.children).find((child) => child.tagName === name);
+      return element ? element.textContent : null;
+    };
+    return {
+      start: root.getAttribute("start"),
+      end: root.getAttribute("end"),
+      original: field("original"),
+      prefix: field("prefix"),
+      suffix: field("suffix"),
+      ...(expectedTag === "suggestion" ? { replacement: field("replacement") } : {}),
+    };
+  }
+
   function renderVerifiedTextAnchor(anchor, action, stackIndex, msgIndex, token) {
     const location = resolveTextAnchor(anchor);
     if (!location) {
@@ -2983,6 +3002,16 @@ import {
 
   function renderCoachReply(content, stackIndex, msgIndex) {
     const anchored = String(content || "")
+      .replace(/<mention\b[\s\S]*?<\/mention>/gi, (token) => {
+        const anchor = parseXmlTextAnchor(token, "mention");
+        return anchor ? renderVerifiedTextAnchor(anchor, "mention", stackIndex, msgIndex, token) : token;
+      })
+      .replace(/<suggestion\b[\s\S]*?<\/suggestion>/gi, (token) => {
+        const anchor = parseXmlTextAnchor(token, "suggestion");
+        return anchor && typeof anchor.replacement === "string"
+          ? renderVerifiedTextAnchor(anchor, "suggest", stackIndex, msgIndex, token)
+          : token;
+      })
       .replace(/\[{1,2}mention:(\{[\s\S]*?\})\]{1,2}/g, (token, payload) => {
         const anchor = parseTextAnchor(payload);
         return anchor ? renderVerifiedTextAnchor(anchor, "mention", stackIndex, msgIndex, token) : token;
