@@ -2,7 +2,7 @@ import { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import { describe, expect, it } from "vitest";
-import { SelectionUnits } from "../src/selectionUnits.js";
+import { detectSelectionUnit, SelectionUnits } from "../src/selectionUnits.js";
 
 function createEditor(content) {
   return new Editor({
@@ -17,12 +17,29 @@ function range(editor) {
 }
 
 describe("SelectionUnits", () => {
-  it("loops paragraph selection back to the word at the original caret", () => {
-    const editor = createEditor("<p>The quick brown fox.</p>");
+  it("detects the largest complete unit contained by a selection", () => {
+    const editor = createEditor("<p>One. Two words.</p><p>Next paragraph.</p>");
+
+    expect(detectSelectionUnit(editor.state.doc, 5, 10)).toBe("word");
+    expect(detectSelectionUnit(editor.state.doc, 0, 12)).toBe("sentence");
+    expect(detectSelectionUnit(editor.state.doc, 0, 20)).toBe("paragraph");
+
+    editor.destroy();
+  });
+
+  it("expands a caret directly to its sentence", () => {
+    const editor = createEditor("<p>First sentence. The quick brown fox.</p>");
     editor.commands.setTextSelection(12);
 
     editor.commands.expandSelectionUnit();
-    expect(range(editor)).toEqual({ from: 11, to: 16 });
+    expect(range(editor)).toEqual({ from: 1, to: 16 });
+
+    editor.destroy();
+  });
+
+  it("loops paragraph selection back to the word at the original caret", () => {
+    const editor = createEditor("<p>The quick brown fox.</p>");
+    editor.commands.setTextSelection(12);
 
     editor.commands.expandSelectionUnit();
     expect(range(editor)).toEqual({ from: 1, to: 21 });
@@ -30,12 +47,16 @@ describe("SelectionUnits", () => {
     editor.commands.expandSelectionUnit();
     expect(range(editor)).toEqual({ from: 11, to: 16 });
 
+    editor.commands.expandSelectionUnit();
+    expect(range(editor)).toEqual({ from: 1, to: 21 });
+
     editor.destroy();
   });
 
   it("moves the saved origin with an adjacent word selection", () => {
     const editor = createEditor("<p>extraordinary cat sleeps.</p>");
     editor.commands.setTextSelection(9);
+    editor.commands.expandSelectionUnit();
     editor.commands.expandSelectionUnit();
 
     editor.commands.moveSelectionUnit(1);
@@ -67,7 +88,6 @@ describe("SelectionUnits", () => {
   it("moves the saved origin with transposed content", () => {
     const editor = createEditor("<p>First.</p><p>Second.</p><p>Third.</p>");
     editor.commands.setTextSelection(12);
-    editor.commands.expandSelectionUnit();
     editor.commands.expandSelectionUnit();
 
     editor.commands.transposeSelectionUnit(1);

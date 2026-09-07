@@ -1,6 +1,6 @@
 /**
  * Selection unit helpers + TipTap keybinds:
- * - Mod-L loops character → word → sentence → paragraph around the original caret
+ * - Mod-L expands caret/word → sentence → paragraph, then loops to the original word
  * - Alt-[ / Alt-] moves the caret/selection to the adjacent unit
  * - Alt-Up / Alt-Down swaps the selected unit with its neighbor (moves content)
  * - Escape collapses a selection to its origin
@@ -153,19 +153,12 @@ function allSentenceRanges(doc) {
  * @param {number} from
  * @param {number} to
  */
-function coversExactUnits(ranges, from, to) {
-  if (from >= to || !ranges.length) return false;
-  const startIdx = ranges.findIndex((r) => r.from === from);
-  const endIdx = ranges.findIndex((r) => r.to === to);
-  if (startIdx < 0 || endIdx < 0 || endIdx < startIdx) return false;
-  for (let i = startIdx; i < endIdx; i++) {
-    if (ranges[i].to > ranges[i + 1].from) return false;
-  }
-  return true;
+function containsUnit(ranges, from, to) {
+  return from < to && ranges.some((range) => from <= range.from && to >= range.to);
 }
 
 /**
- * Detect the largest unit the current selection represents.
+ * Detect the largest complete unit contained by the current selection.
  * @param {import("@tiptap/pm/model").Node} doc
  * @param {number} from
  * @param {number} to
@@ -173,9 +166,9 @@ function coversExactUnits(ranges, from, to) {
  */
 export function detectSelectionUnit(doc, from, to) {
   if (from === to) return "character";
-  if (coversExactUnits(paragraphRanges(doc), from, to)) return "paragraph";
-  if (coversExactUnits(allSentenceRanges(doc), from, to)) return "sentence";
-  if (coversExactUnits(allWordRanges(doc), from, to)) return "word";
+  if (containsUnit(paragraphRanges(doc), from, to)) return "paragraph";
+  if (containsUnit(allSentenceRanges(doc), from, to)) return "sentence";
+  if (containsUnit(allWordRanges(doc), from, to)) return "word";
   return "character";
 }
 
@@ -267,10 +260,8 @@ export function expandSelectionRange(doc, from, to, origin = from) {
   const unit = detectSelectionUnit(doc, from, to);
 
   const nextUnit =
-    unit === "character"
-      ? "word"
-      : unit === "word"
-        ? "sentence"
+    unit === "character" || unit === "word"
+      ? "sentence"
         : unit === "sentence"
           ? "paragraph"
           : "word";
