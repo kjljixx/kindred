@@ -202,9 +202,8 @@ describe("Google Docs pull", () => {
               startIndex: 1,
               endIndex: 6,
               textRun: {
-                content: "Link\n",
+                content: "Text\n",
                 textStyle: {
-                  link: { url: "https://example.com" },
                   foregroundColor: { color: { rgbColor: { red: 0, green: 0, blue: 0 } } },
                   backgroundColor: { color: { rgbColor: { red: 1, green: 1, blue: 1 } } },
                 },

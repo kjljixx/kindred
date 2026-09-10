@@ -4,7 +4,7 @@ import { unified } from "unified";
 import rehypeStringify from "rehype-stringify";
 import { blockToHtml, htmlToDoc } from "./kindredSchema.js";
 import { debugEvent } from "./debug.js";
-import { invertColorValue } from "./colorInvert.js";
+import { invertColorValue, invertStyleDeclaration } from "./colorInvert.js";
 
 function summarizeProseMirrorDocument(document) {
   const json = document?.toJSON?.() || document || {};
@@ -41,18 +41,17 @@ function linkedGoogleTextStyles(value, styles = []) {
   return styles;
 }
 
-function googleColorToCss(color) {
-  const rgb = color?.color?.rgbColor || color?.rgbColor;
-  if (!rgb) return null;
-  const channel = (value = 0) => Math.round(value * 255);
-  return invertColorValue(`rgb(${channel(rgb.red)}, ${channel(rgb.green)}, ${channel(rgb.blue)})`);
-}
-
 function addEditorFontFallback(source) {
   source.body.querySelectorAll("[style]").forEach((element) => {
     const family = element.style.fontFamily;
     if (!family || family.includes("var(--font-content)")) return;
     element.style.fontFamily = `${family}, var(--font-content)`;
+  });
+}
+
+function invertGoogleDocumentColors(source) {
+  source.body.querySelectorAll("[style]").forEach((element) => {
+    element.setAttribute("style", invertStyleDeclaration(element.getAttribute("style")));
   });
 }
 
@@ -63,8 +62,6 @@ function restoreLinkedGoogleTextStyles(source, document) {
     if (!textStyle) return;
 
     const css = {};
-    if (textStyle.backgroundColor) css.backgroundColor = googleColorToCss(textStyle.backgroundColor);
-    if (textStyle.foregroundColor) css.color = googleColorToCss(textStyle.foregroundColor);
     if (textStyle.fontSize) {
       css.fontSize = `${textStyle.fontSize.magnitude}${String(textStyle.fontSize.unit).toLowerCase()}`;
     }
@@ -103,6 +100,7 @@ function restoreLinkedGoogleTextStyles(source, document) {
 export function googleDocumentToKindredHtml(document) {
   const sourceHtml = unified().use(rehypeStringify).stringify(toHast(document));
   const source = new DOMParser().parseFromString(sourceHtml, "text/html");
+  invertGoogleDocumentColors(source);
   restoreLinkedGoogleTextStyles(source, document);
   addEditorFontFallback(source);
   source.body.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((heading) => {
