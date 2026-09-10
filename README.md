@@ -10,7 +10,7 @@ See [HELP.md](https://github.com/kjljixx/kindred/blob/main/HELP.md) for general 
 pip install -e .
 ```
 
-Copy `.env.example` to `.env` and set API keys for whichever LiteLLM provider you use (e.g. `OPENAI_API_KEY`). The editor works without a key; chat needs one.
+Copy `.env.example` to `.env` and set `OPENROUTER_API_KEY`. The editor works without a key; chat needs one. Set `KINDRED_REQUIRE_OPENROUTER_FREE_MODEL=true` to make the server reject chat requests that select any model other than `openrouter/free`.
 
 ### Frontend (required after UI changes)
 
@@ -43,5 +43,5 @@ Useful flags: `--host`, `--port`, `--no-browser`.
 
 ## Notes
 
-- Default model is `openai/gpt-5.6-luna`.
+- Default model is `openrouter/free`.
 - Optional OpenLLMetry tracing when `TRACELOOP_API_KEY` or `TRACELOOP_BASE_URL` is set.
