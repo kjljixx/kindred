@@ -4,6 +4,7 @@ import { unified } from "unified";
 import rehypeStringify from "rehype-stringify";
 import { blockToHtml, htmlToDoc } from "./kindredSchema.js";
 import { debugEvent } from "./debug.js";
+import { invertColorValue } from "./colorInvert.js";
 
 function summarizeProseMirrorDocument(document) {
   const json = document?.toJSON?.() || document || {};
@@ -44,7 +45,7 @@ function googleColorToCss(color) {
   const rgb = color?.color?.rgbColor || color?.rgbColor;
   if (!rgb) return null;
   const channel = (value = 0) => Math.round(value * 255);
-  return `rgb(${channel(rgb.red)}, ${channel(rgb.green)}, ${channel(rgb.blue)})`;
+  return invertColorValue(`rgb(${channel(rgb.red)}, ${channel(rgb.green)}, ${channel(rgb.blue)})`);
 }
 
 function addEditorFontFallback(source) {
@@ -379,7 +380,7 @@ function insertedTextStyleRequests(json, startIndex, endIndex) {
 
 function cssColorToGoogleColor(value) {
   if (typeof value !== "string") return null;
-  const input = value.trim().toLowerCase();
+  const input = invertColorValue(value.trim()).toLowerCase();
   let channels = null;
   if (input.startsWith("#")) {
     const hex = input.slice(1);

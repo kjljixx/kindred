@@ -190,6 +190,35 @@ describe("Google Docs pull", () => {
     expect(html).toContain('href="https://github.com/kjljixx/Aurora-Chess-Engine"');
   });
 
+  it("inverts pulled Google Docs text and highlight colors for the dark editor", () => {
+    const html = googleDocumentToKindredHtml({
+      body: {
+        content: [{
+          startIndex: 1,
+          endIndex: 6,
+          paragraph: {
+            paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+            elements: [{
+              startIndex: 1,
+              endIndex: 6,
+              textRun: {
+                content: "Link\n",
+                textStyle: {
+                  link: { url: "https://example.com" },
+                  foregroundColor: { color: { rgbColor: { red: 0, green: 0, blue: 0 } } },
+                  backgroundColor: { color: { rgbColor: { red: 1, green: 1, blue: 1 } } },
+                },
+              },
+            }],
+          },
+        }],
+      },
+    });
+
+    expect(html).toContain("color: rgb(255, 255, 255)");
+    expect(html).toContain("background-color: rgb(0, 0, 0)");
+  });
+
   it("shows a pulled bare font family in the toolbar picker", () => {
     const editorElement = document.createElement("div");
     const toolbar = document.createElement("div");
@@ -527,6 +556,32 @@ describe("Google Docs list push", () => {
       weightedFontFamily: null,
       fontSize: null,
     });
+    editor.destroy();
+    editorElement.remove();
+  });
+
+  it("inverts editor text color before pushing it to Google Docs", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const editor = createKindredEditor({ element: editorElement, content: "<p>Color</p>" });
+    const before = editor.state.doc;
+    const transaction = editor.state.tr.addMark(
+      1,
+      6,
+      editor.schema.marks.textStyle.create({ color: "#000000" }),
+    );
+
+    const requests = transactionToGoogleDocsBatchUpdateRequests(transaction, before);
+
+    expect(requests).toEqual([{
+      updateTextStyle: {
+        range: { startIndex: 1, endIndex: 6 },
+        textStyle: {
+          foregroundColor: { color: { rgbColor: { red: 1, green: 1, blue: 1 } } },
+        },
+        fields: "foregroundColor",
+      },
+    }]);
     editor.destroy();
     editorElement.remove();
   });
