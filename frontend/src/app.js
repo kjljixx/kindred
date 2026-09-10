@@ -935,7 +935,7 @@ import {
     statusMessage = (msg || "").toLowerCase();
     statusLevel = statusMessage ? level : "";
     refreshStatusLeft();
-    if (EPHEMERAL_STATUS_MESSAGES.has(statusMessage)) {
+    if (EPHEMERAL_STATUS_MESSAGES.has(statusMessage) || statusMessage.startsWith("syncing to ")) {
       statusClearTimer = setTimeout(() => {
         statusClearTimer = null;
         setStatus("");
