@@ -39,12 +39,66 @@ function isUrlLike(value) {
   }
 }
 
+function isEmailLike(value) {
+  return /^[^\s@]+@(?:[\p{L}\p{N}-]+\.)+[\p{L}][\p{L}\p{N}-]*$/u.test(value);
+}
+
+function findPhonePiece(text, index) {
+  const phoneMatch = text
+    .slice(index)
+    .match(/^(?:\+\d{1,2}\s)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}(?![\p{L}\p{N}])/u);
+
+  if (!phoneMatch) {
+    return null;
+  }
+
+  return {
+    start: index,
+    end: index + phoneMatch[0].length,
+    text: phoneMatch[0],
+    kind: "phone",
+  };
+}
+
+function findTextLinkPiece(text, index) {
+  const candidateMatch = text.slice(index).match(/^[^\s<>"']+/u);
+
+  if (!candidateMatch) {
+    return null;
+  }
+
+  const candidate = candidateMatch[0].replace(/[.,;:!?)\]}]+$/u, "");
+
+  if (!candidate || (!isUrlLike(candidate) && !isEmailLike(candidate))) {
+    return null;
+  }
+
+  return {
+    start: index,
+    end: index + candidate.length,
+    text: candidate,
+    kind: "link",
+  };
+}
+
 function findProtectedPieces(text) {
   const pieces = [];
   let index = 1;
 
   while (index < text.length) {
     const previousCharacter = text[index - 1];
+    const protectedTextPiece =
+      findTextLinkPiece(text, index) || findPhonePiece(text, index);
+
+    if (
+      protectedTextPiece &&
+      !/[\p{L}\p{N}@._-]/u.test(previousCharacter)
+    ) {
+      pieces.push(protectedTextPiece);
+      index = protectedTextPiece.end;
+      continue;
+    }
+
     const validBoundary =
       /\s/u.test(previousCharacter) ||
       mathPunctuation.has(previousCharacter);
@@ -327,11 +381,19 @@ export function classifyMath(text) {
       let start = range.start;
       let end = range.end;
 
-      while (start > 0 && !/\s/u.test(text[start - 1])) {
+      while (
+        start > 0 &&
+        !/\s/u.test(text[start - 1]) &&
+        !textPunctuation.has(text[start - 1])
+      ) {
         start -= 1;
       }
 
-      while (end < text.length && !/\s/u.test(text[end])) {
+      while (
+        end < text.length &&
+        !/\s/u.test(text[end]) &&
+        !textPunctuation.has(text[end])
+      ) {
         end += 1;
       }
 
@@ -341,10 +403,6 @@ export function classifyMath(text) {
   const mergedRunRanges = [];
 
   for (const range of runRanges) {
-    if (isUrlLike(text.slice(range.start, range.end))) {
-      continue;
-    }
-
     const previousRange = mergedRunRanges[mergedRunRanges.length - 1];
 
     if (previousRange && range.start <= previousRange.end) {
@@ -352,7 +410,7 @@ export function classifyMath(text) {
       continue;
     }
 
-    mergedRunRanges.push({ ...range });
+    mergedRunRanges.push({ start: range.start, end: range.end });
   }
 
   let resultHtml = "";
@@ -414,7 +472,7 @@ export function classifyMathHtml(inputHtml) {
     let node;
 
     while ((node = walker.nextNode())) {
-      if (node.parentElement?.closest(".render-latex")) continue;
+      if (node.parentElement?.closest(".render-latex, a")) continue;
       const value = node.nodeValue ?? "";
       const start = linearText.length;
 

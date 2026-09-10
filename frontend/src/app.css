@@ -1293,7 +1293,9 @@ button.pane-title {
 }
 
 .editor .ProseMirror table td.selectedCell,
-.editor .ProseMirror table th.selectedCell {
+.editor .ProseMirror table th.selectedCell,
+.editor .ProseMirror table td.range-selected-cell,
+.editor .ProseMirror table th.range-selected-cell {
   background: var(--blue-bg);
 }
 

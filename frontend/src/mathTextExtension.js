@@ -101,6 +101,7 @@ export function mathNodeTransaction(
 ) {
   if (isDiffOverlayActive(state)) return null;
   const replacements = [];
+  const googleDocsTextInsertions = [];
 
   state.doc.descendants((node, pos) => {
     if (!MATH_BLOCK_TYPES.has(node.type.name) || !blockTouchesRanges(pos, node, changedRanges)) {
@@ -136,6 +137,15 @@ export function mathNodeTransaction(
     const calculatedAsciiMath = calculateAfterEquals
       ? calculateTrailingEquals(replacement.asciiMath)
       : null;
+    if (calculatedAsciiMath?.startsWith(replacement.asciiMath)) {
+      const calculatedSuffix = calculatedAsciiMath.slice(replacement.asciiMath.length);
+      if (calculatedSuffix) {
+        googleDocsTextInsertions.push({
+          position: replacement.to,
+          text: calculatedSuffix,
+        });
+      }
+    }
     const mathNode = tr.doc.type.schema.nodes.mathLive.create(
       { asciiMath: calculatedAsciiMath || replacement.asciiMath },
       null,
@@ -143,7 +153,11 @@ export function mathNodeTransaction(
     );
     tr = tr.replaceWith(replacement.from, replacement.to, mathNode);
   }
-  return tr.setMeta("mathNodeConversion", true);
+  tr.setMeta("mathNodeConversion", true);
+  if (googleDocsTextInsertions.length) {
+    tr.setMeta("googleDocsTextInsertions", googleDocsTextInsertions);
+  }
+  return tr;
 }
 
 export function normalizeMathNodes(editor) {
@@ -213,12 +227,17 @@ export const MathText = Extension.create({
         const editingTransaction = [...transactions].reverse().find(
           (tr) => tr.getMeta("mathNodeEditing") != null,
         );
-        return mathNodeTransaction(
+        const conversion = mathNodeTransaction(
           newState,
           editingTransaction?.getMeta("mathNodeEditing"),
           userInsertedEquals(transactions),
           changedRangesInFinalDoc(transactions),
         );
+        const googleDocsTextInsertions = conversion?.getMeta("googleDocsTextInsertions");
+        if (googleDocsTextInsertions?.length) {
+          transactions.at(-1).setMeta("googleDocsTextInsertions", googleDocsTextInsertions);
+        }
+        return conversion;
       },
     })];
   },

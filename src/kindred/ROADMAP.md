@@ -1,6 +1,12 @@
+Doc tabs
+
+Images
+Look into speed improvements; O(1) typing latency, other speed/memory improvements, gdocs sync speed
+
 Editor
 - Somehow detect if what got pasted in was code or text? and maybe do syntax highlighting accordingly?
 - Left margin for editor
+- Fix selected a section of text and then typing to replace it not working
 
 Chat
 - Horizontal chatting & message chunks

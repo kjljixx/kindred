@@ -17,6 +17,7 @@ const VOLUME = "kindred";
   const TRACKED = [TEXT_FILE, "meta.json"];
   const TITLE_FILE = "title.txt";
   const BRANCH_ACCESS_FILE = "branch-access.json";
+  const BRANCH_SYNC_FILE = "branch-sync.json";
   const CHATS_FILE = "draft-chats.json";
   const UI_STATE_FILE = "draft-ui.json";
   const DEFAULT_MODEL = CONFIG.chat.model;
@@ -383,6 +384,7 @@ const VOLUME = "kindred";
       hasConflict: !!m.hasConflict,
       pendingMerge: m.pendingMerge || null,
       customTitle: !!m.customTitle,
+      title: String(m.title || "").trim(),
     };
   }
 
@@ -592,6 +594,21 @@ const VOLUME = "kindred";
     await writeJson(`${dir}/${BRANCH_ACCESS_FILE}`, map || {});
   }
 
+  async function getBranchSync(id, branch) {
+    const syncByBranch = await readJson(`${textDir(id)}/${BRANCH_SYNC_FILE}`, {});
+    return syncByBranch?.[branch] || null;
+  }
+
+  async function setBranchSync(id, branch, documentId) {
+    const dir = textDir(id);
+    const syncByBranch = await readJson(`${dir}/${BRANCH_SYNC_FILE}`, {});
+    if (documentId) syncByBranch[branch] = { documentId, updatedAt: Date.now() };
+    else delete syncByBranch[branch];
+    await writeJson(`${dir}/${BRANCH_SYNC_FILE}`, syncByBranch);
+    await flush();
+    return syncByBranch[branch] || null;
+  }
+
   async function touchBranchAccess(dir, name, at = Date.now()) {
     const ref = String(name || "").trim();
     if (!ref) return;
@@ -644,6 +661,8 @@ const VOLUME = "kindred";
       "customTitle" in state
         ? !!state.customTitle
         : !!(state.meta && state.meta.customTitle);
+    const html = storeTextHtml(state.html ?? state.text ?? "", { hasConflict });
+    const title = await resolveTitle(dir, html, state.title, customTitle);
     const meta = normalizeMeta(
       {
         ...(state.meta || {}),
@@ -654,11 +673,10 @@ const VOLUME = "kindred";
         hasConflict,
         pendingMerge,
         customTitle,
+        title,
       },
       id
     );
-    const html = storeTextHtml(state.html ?? state.text ?? "", { hasConflict });
-    const title = await resolveTitle(dir, html, state.title, customTitle);
     await writeTitleFile(dir, title);
     await writeText(`${dir}/${TEXT_FILE}`, html);
     await writeJson(`${dir}/meta.json`, meta);
@@ -669,7 +687,7 @@ const VOLUME = "kindred";
     const dir = textDir(id);
     const html = await readText(`${dir}/${TEXT_FILE}`, "");
     const meta = normalizeMeta(await readJson(`${dir}/meta.json`, null), id);
-    const title = await resolveTitle(dir, html, null, meta.customTitle);
+    const title = await resolveTitle(dir, html, meta.title, meta.customTitle);
     return {
       id,
       html,
@@ -743,34 +761,47 @@ const VOLUME = "kindred";
     } catch {
       return [];
     }
-    const drafts = [];
-    for (const name of names) {
+    const drafts = (await Promise.all(names.map(async (name) => {
       const dir = textDir(name);
-      if (!(await pathExists(`${dir}/.git`))) continue;
       try {
-        const state = await readWorkingFiles(name);
-        const branch =
-          (await git.currentBranch({ fs, dir, test: true })) ||
-          state.activeBranch ||
-          "main";
-        const commitCount = (await listCommits(name, branch)).length;
-        drafts.push({
+        const meta = normalizeMeta(await readJson(`${dir}/meta.json`, null), name);
+        if (!(await pathExists(`${dir}/.git`))) return null;
+        const title = meta.title || await readTitleFile(dir);
+        return {
           id: name,
-          title: state.title || titleFromText(state.text),
-          customTitle: !!state.customTitle,
-          text: state.text,
-          updatedAt: state.updatedAt,
-          createdAt: state.createdAt,
-          activeBranch: branch,
-          commitCount,
-          hasConflict: state.hasConflict,
-        });
+          title,
+          customTitle: meta.customTitle,
+          updatedAt: meta.updatedAt,
+          createdAt: meta.createdAt,
+          activeBranch: meta.activeBranch,
+          commitCount: null,
+          hasConflict: meta.hasConflict,
+        };
       } catch (err) {
         console.warn("kindred: skip draft", name, err);
+        return null;
       }
-    }
+    }))).filter(Boolean);
     drafts.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     return drafts;
+  }
+
+  async function hydrateDraftSummary(summary) {
+    if (!summary?.id) return null;
+    const state = await readWorkingFiles(summary.id);
+    const branch =
+      (await git.currentBranch({ fs, dir: textDir(summary.id), test: true })) ||
+      state.activeBranch ||
+      "main";
+    return {
+      ...summary,
+      title: state.title || titleFromText(state.text),
+      customTitle: !!state.customTitle,
+      text: state.text,
+      activeBranch: branch,
+      commitCount: (await listCommits(summary.id, branch)).length,
+      hasConflict: state.hasConflict,
+    };
   }
 
   async function createDraft({ text = "", html, title = "" } = {}) {
@@ -842,6 +873,7 @@ const VOLUME = "kindred";
     const meta = normalizeMeta(await readJson(`${dir}/meta.json`, null), id);
     meta.updatedAt = Date.now();
     meta.customTitle = customTitle;
+    meta.title = next;
     await writeJson(`${dir}/meta.json`, meta);
     await flush();
     return next;
@@ -3251,6 +3283,7 @@ const VOLUME = "kindred";
 const KindredGitStore = {
   init,
   listDrafts,
+  hydrateDraftSummary,
   createDraft,
   deleteDraft,
   renameDraft,
@@ -3273,6 +3306,8 @@ const KindredGitStore = {
   readWorkingFiles,
   readChats,
   saveChats,
+  getBranchSync,
+  setBranchSync,
   readUiState,
   saveUiState,
   autoMessage,

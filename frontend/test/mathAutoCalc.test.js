@@ -163,6 +163,9 @@ describe("mathNodeTransaction", () => {
       type: { name: "mathLive" },
       attrs: { asciiMath: "2+2=4" },
     });
+    expect(transaction.getMeta("googleDocsTextInsertions")).toEqual([
+      { position: 5, text: "4" },
+    ]);
   });
 
   it("skips conversion while Diff overlay is active", () => {

@@ -20,6 +20,23 @@ describe("significant whitespace", () => {
     expect(docToPlainText(htmlToDoc(html))).toBe("Hello ");
   });
 
+  it("preserves boundaries when projecting selected document blocks", () => {
+    const content = [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "First paragraph." }],
+      },
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "Second paragraph." }],
+      },
+    ];
+
+    expect(docToPlainText({ type: "doc", content })).toBe(
+      "First paragraph.\n\nSecond paragraph.",
+    );
+  });
+
   it("includes trailing whitespace in paragraph identity and alignment", () => {
     const base = htmlToDoc("<p>Hello</p>");
     const current = {

@@ -1,6 +1,6 @@
 import { Editor, Extension, Node as TiptapNode } from "@tiptap/core";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import {
   canonicalizeTextHtml,
@@ -45,6 +45,146 @@ function storedMarksMatchLocked(storedMarks, lockedMarksJson, schema) {
 
 const formatLockPluginKey = new PluginKey("formatLock");
 
+const GoogleDocsCompatibility = Extension.create({
+  name: "googleDocsCompatibility",
+
+  addOptions() {
+    return {
+      mergeAdjacentLists: () => false,
+      preserveInitialTableParagraph: () => false,
+      requireTableSeparatorParagraphs: () => false,
+    };
+  },
+
+  addProseMirrorPlugins() {
+    const mergeAdjacentLists = () => this.options.mergeAdjacentLists?.() === true;
+    const preserveInitialTableParagraph = () =>
+      this.options.preserveInitialTableParagraph?.() === true;
+    const requireTableSeparatorParagraphs = () =>
+      this.options.requireTableSeparatorParagraphs?.() === true;
+    return [
+      new Plugin({
+        appendTransaction(transactions, oldState, newState) {
+          if (
+            preserveInitialTableParagraph()
+            && transactions.some((transaction) => transaction.docChanged)
+            && oldState.doc.childCount === 1
+            && oldState.doc.firstChild?.type.name === "paragraph"
+            && oldState.doc.firstChild.content.size === 0
+            && newState.doc.firstChild?.type.name === "table"
+          ) {
+            const transaction = newState.tr.insert(
+              0,
+              newState.schema.nodes.paragraph.create(),
+            );
+            transaction.setMeta("skipGoogleDocsSync", "initial-table-paragraph-repair");
+            return transaction;
+          }
+          if (!requireTableSeparatorParagraphs()) return null;
+          if (!transactions.some((transaction) => transaction.docChanged)) return null;
+          const separatorPositions = [];
+          let position = 0;
+          let previousWasTable = false;
+          newState.doc.forEach((node) => {
+            if (previousWasTable && node.type.name === "table") {
+              separatorPositions.push(position);
+            }
+            previousWasTable = node.type.name === "table";
+            position += node.nodeSize;
+          });
+          if (!separatorPositions.length) return null;
+
+          // A standalone separator deletion is a local no-op. A table command
+          // can also replace that separator, so only suppress the source
+          // transaction when removing the separator is the entire change.
+          let deletedSeparatorOnly = false;
+          let oldPosition = 0;
+          for (let index = 0; index + 2 < oldState.doc.childCount; index += 1) {
+            const before = oldState.doc.child(index);
+            const separator = oldState.doc.child(index + 1);
+            const after = oldState.doc.child(index + 2);
+            if (
+              before.type.name === "table"
+              && separator.type.name === "paragraph"
+              && separator.content.size === 0
+              && after.type.name === "table"
+              && newState.doc.maybeChild(index)?.type.name === "table"
+              && newState.doc.maybeChild(index + 1)?.type.name === "table"
+            ) {
+              const separatorPosition = oldPosition + before.nodeSize;
+              const withoutSeparator = oldState.tr.delete(
+                separatorPosition,
+                separatorPosition + separator.nodeSize,
+              ).doc;
+              if (withoutSeparator.eq(newState.doc)) {
+                deletedSeparatorOnly = true;
+                break;
+              }
+            }
+            oldPosition += before.nodeSize;
+          }
+          if (deletedSeparatorOnly) {
+            for (const transaction of transactions) {
+              transaction.setMeta("skipGoogleDocsSync", "table-separator-repair");
+            }
+          }
+          const transaction = newState.tr;
+          transaction.setMeta("skipGoogleDocsSync", "table-separator-repair");
+          const paragraph = newState.schema.nodes.paragraph.create();
+          for (const separatorPosition of separatorPositions.reverse()) {
+            transaction.insert(separatorPosition, paragraph);
+          }
+          return transaction;
+        },
+      }),
+      new Plugin({
+        appendTransaction: (transactions, _oldState, newState) => {
+          if (!mergeAdjacentLists()) return null;
+          if (!transactions.some((transaction) => transaction.docChanged)) return null;
+          const runs = [];
+          let position = 0;
+          let run = null;
+          newState.doc.forEach((node) => {
+            const isList = node.type.name === "bulletList" || node.type.name === "orderedList";
+            if (isList && run?.type === node.type) {
+              run.to = position + node.nodeSize;
+              run.content = run.content.append(node.content);
+              run.count += 1;
+            } else {
+              if (run?.count > 1) runs.push(run);
+              run = isList
+                ? {
+                    from: position,
+                    to: position + node.nodeSize,
+                    type: node.type,
+                    attrs: node.attrs,
+                    content: node.content,
+                    count: 1,
+                  }
+                : null;
+            }
+            position += node.nodeSize;
+          });
+          if (run?.count > 1) runs.push(run);
+          if (!runs.length) return null;
+
+          const transaction = newState.tr;
+          transaction.setMeta("skipGoogleDocsSync", "adjacent-list-merge");
+          transaction.setMeta("addToHistory", false);
+          for (const item of runs.reverse()) {
+            transaction.replaceWith(
+              item.from,
+              item.to,
+              item.type.create(item.attrs, item.content),
+            );
+          }
+          return transaction;
+        },
+      }),
+    ];
+  },
+});
+
 /** Shared with createKindredEditor handleTextInput (bindToolbar keeps in sync). */
 const formatLockRuntime = {
   enabled: false,
@@ -88,7 +228,7 @@ const TabIndent = Extension.create({
       },
       "Shift-Tab": () => {
         if (this.editor.isActive("listItem")) {
-          return this.editor.commands.liftListItem();
+          return this.editor.commands.liftListItem("listItem");
         }
         return false;
       },
@@ -156,6 +296,45 @@ const KeptSelection = Extension.create({
                 side: 0,
               }),
             ]);
+          },
+        },
+      }),
+    ];
+  },
+});
+
+const TableRangeSelection = Extension.create({
+  name: "tableRangeSelection",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("tableRangeSelection"),
+        props: {
+          decorations(state) {
+            const { from, to, empty } = state.selection;
+            if (empty) return DecorationSet.empty;
+
+            const decorations = [];
+            state.doc.nodesBetween(from, to, (node, pos) => {
+              if (node.type.name !== "tableCell" && node.type.name !== "tableHeader") {
+                return true;
+              }
+
+              const contentFrom = pos + 1;
+              const contentTo = pos + node.nodeSize - 1;
+              if (from < contentTo && to > contentFrom) {
+                decorations.push(
+                  Decoration.node(pos, pos + node.nodeSize, {
+                    class: "range-selected-cell",
+                  })
+                );
+              }
+              return false;
+            });
+
+            return decorations.length
+              ? DecorationSet.create(state.doc, decorations)
+              : DecorationSet.empty;
           },
         },
       }),
@@ -2727,15 +2906,14 @@ function fontSizeToToolbarNumber(value, fallback = DEFAULT_FONT_SIZE_PT) {
   if (!m) return fallback;
   let n = Number(m[1]);
   const unit = m[3] || "pt";
-  if (unit === "px") n = Math.round(n * 0.75);
-  return Number.isFinite(n) ? n : fallback;
+  if (unit === "px") n *= 0.75;
+  return Number.isFinite(n) ? Math.round(n) : fallback;
 }
 
 function normalizeToolbarFontFamily(value) {
-  let raw = String(value || "").trim();
+  let raw = fontNameFromCssValue(value);
   if (!raw) return "";
   return raw
-    .replace(/\s*,\s*/g, ", ")
     .replace(/\s+/g, " ")
     .replace(/["']/g, "")
     .toLowerCase();
@@ -3280,11 +3458,11 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
       editor.commands.setKeptSelection(stashedSelection);
     }
   };
-  const onFontSizeKeydown = (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      applyFontSize({ returnFocus: true });
-    }
+  const onFontSizeKeydown = (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    editor.commands.focus();
+    clearStashedSelection();
   };
   const onFontSizeFocus = () => {
     stashSelection();
@@ -3456,8 +3634,10 @@ export function bindToolbar(editor, toolbarEl, { onStateChange } = {}) {
  * @param {function} [opts.diffsFn]
  * @param {function} [opts.onConflictAction]
  * @param {function} [opts.onAlignConflictAction]
+ * @param {function} [opts.onTransaction]
  * @param {function} [opts.onUpdate]
  * @param {string} [opts.placeholder]
+ * @param {object} [opts.googleDocsCompatibility]
  */
 export function createKindredEditor({
   element,
@@ -3467,22 +3647,42 @@ export function createKindredEditor({
   onAlignConflictAction = null,
   onTableConflictAction = null,
   onListConflictAction = null,
+  onTransaction = null,
   onUpdate = null,
   placeholder = "Paste or type your text here. Double-click to import.",
+  googleDocsCompatibility = {},
 } = {}) {
+  const emptyDocumentPlaceholder = ({ editor: currentEditor, node }) => {
+    const isSingleEmptyParagraph =
+      currentEditor.state.doc.childCount === 1 &&
+      node.type.name === "paragraph";
+    return isSingleEmptyParagraph ? placeholder : "";
+  };
+
   const editor = new Editor({
     element,
     autofocus: true,
     extensions: [
-      ...kindredContentExtensions({ mathLiveNodeView: createMathLiveNodeView }),
+      ...kindredContentExtensions({
+        mathLiveNodeView: createMathLiveNodeView,
+        disableTrailingNode: googleDocsCompatibility.disableTrailingNode === true,
+      }),
       InputDebug,
       TabIndent,
+      GoogleDocsCompatibility.configure({
+        mergeAdjacentLists: googleDocsCompatibility.mergeAdjacentLists ?? (() => false),
+        preserveInitialTableParagraph:
+          googleDocsCompatibility.preserveInitialTableParagraph ?? (() => false),
+        requireTableSeparatorParagraphs:
+          googleDocsCompatibility.requireTableSeparatorParagraphs ?? (() => false),
+      }),
       ConflictParagraph,
       KeptSelection,
+      TableRangeSelection,
       SelectionUnits,
       MathText,
       MathLiveNavigation,
-      Placeholder.configure({ placeholder }),
+      Placeholder.configure({ placeholder: emptyDocumentPlaceholder }),
       KindredOverlay.configure({ diffsFn, onConflictAction, onAlignConflictAction, onTableConflictAction, onListConflictAction }),
     ],
     content: ensureHtml(content),
@@ -3511,11 +3711,13 @@ export function createKindredEditor({
     },
     onTransaction: ({ editor: ed, transaction }) => {
       if (!transaction.docChanged && !transaction.selectionSet) return;
-      if (!debugEnabled("editor")) return;
-      debugEvent("editor", "transaction", {
-        transaction: summarizeTransaction(transaction),
-        editor: summarizeEditor(ed),
-      });
+      if (debugEnabled("editor")) {
+        debugEvent("editor", "transaction", {
+          transaction: summarizeTransaction(transaction),
+          editor: summarizeEditor(ed),
+        });
+      }
+      onTransaction?.({ editor: ed, transaction });
     },
     onUpdate: ({ editor: ed }) => {
       if (debugEnabled("editor")) {
@@ -3542,17 +3744,62 @@ export function getHtml(editor) {
   return canonicalizeTextHtml(editor.getHTML());
 }
 
-export function setHtml(editor, html, { emitUpdate = false, source = "unknown" } = {}) {
+function mapPositionAcrossReplacement(oldDoc, newDoc, position) {
+  const start = oldDoc.content.findDiffStart(newDoc.content);
+  if (start == null) return Math.min(position, newDoc.content.size);
+
+  const end = oldDoc.content.findDiffEnd(newDoc.content);
+  if (!end || position <= start) return Math.min(position, newDoc.content.size);
+  if (position >= end.a) {
+    return Math.min(position + end.b - end.a, newDoc.content.size);
+  }
+
+  // The position was replaced, so there is no exact equivalent. Keeping its
+  // relative place within the changed region is less surprising than jumping
+  // to the beginning or end of the document.
+  const oldLength = end.a - start;
+  const newLength = end.b - start;
+  const ratio = oldLength ? (position - start) / oldLength : 0;
+  return Math.min(start + Math.round(ratio * newLength), newDoc.content.size);
+}
+
+function restoreSelectionAfterReplacement(editor, previousSelection) {
+  const { oldDoc, anchor, head } = previousSelection;
+  const { doc } = editor.state;
+  const mappedAnchor = mapPositionAcrossReplacement(oldDoc, doc, anchor);
+  const mappedHead = mapPositionAcrossReplacement(oldDoc, doc, head);
+  const selection = TextSelection.between(
+    doc.resolve(mappedAnchor),
+    doc.resolve(mappedHead),
+  );
+  const tr = editor.state.tr.setSelection(selection).setMeta("addToHistory", false);
+  editor.view.dispatch(tr);
+}
+
+export function setHtml(editor, html, {
+  emitUpdate = false,
+  source = "unknown",
+  preserveSelection = false,
+} = {}) {
   if (!editor) return;
   const incoming = ensureHtml(html);
+  const previousSelection = preserveSelection
+    ? {
+        oldDoc: editor.state.doc,
+        anchor: editor.state.selection.anchor,
+        head: editor.state.selection.head,
+      }
+    : null;
   debugEvent("editor", "setHtml", {
     source,
     emitUpdate,
+    preserveSelection,
     same: canonicalizeTextHtml(editor.getHTML()) === canonicalizeTextHtml(incoming),
     currentHtml: editor.getHTML(),
     incomingHtml: incoming,
   });
   editor.commands.setContent(incoming, emitUpdate);
+  if (previousSelection) restoreSelectionAfterReplacement(editor, previousSelection);
 }
 
 function setOverlay(editor, partial) {

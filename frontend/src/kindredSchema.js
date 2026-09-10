@@ -428,7 +428,10 @@ export function canonicalizeTextHtml(html) {
 }
 
 /** Content extensions shared by editor and headless HTML↔JSON (no UI plugins). */
-export function kindredContentExtensions({ mathLiveNodeView = null } = {}) {
+export function kindredContentExtensions({
+  mathLiveNodeView = null,
+  disableTrailingNode = false,
+} = {}) {
   return [
     StarterKit.configure({
       heading: false,
@@ -440,6 +443,7 @@ export function kindredContentExtensions({ mathLiveNodeView = null } = {}) {
       bulletList: false,
       orderedList: false,
       listItem: false,
+      trailingNode: disableTrailingNode ? false : {},
 
       link: {
         autolink: true,

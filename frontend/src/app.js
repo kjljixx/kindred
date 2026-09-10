@@ -33,7 +33,14 @@ import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, 
 import { listDiffsFromAlignOps, resolveListConflictHtml, resolveAllListConflicts } from "./listAlign.js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { CONFIG } from "./config.js";
+import {
+  buildProseMirrorToGoogleDocsPositionMap,
+  fetchGoogleDocumentRevision,
+  needsGoogleDocsAuthentication,
+  pullGoogleDocument as pullGoogleDocumentFromApi,
+  pushGoogleDocsTransactions,
+} from "./gdocsSync.js";
+import { assertGoogleDocsCompatibilityConfig, CONFIG } from "./config.js";
 import {
   wantsStyledDiffExport,
   hasDiffMarkers,
@@ -150,6 +157,7 @@ import {
 
   const DEFAULT_MODEL = CONFIG.chat.model;
   const EPHEMERAL_STATUS_MESSAGES = new Set([
+    "google docs sync disabled for this branch",
     "suggestion applied",
     "restored into working tree",
     "nothing to commit",
@@ -193,6 +201,7 @@ import {
   let statusLevel = "";
   let statusClearTimer = null;
   let drafts = [];
+  let draftListGeneration = 0;
   let activeDraftId = null;
   let saveTimer = null;
   let uiSaveTimer = null;
@@ -220,6 +229,119 @@ import {
 
   let tipTap = null;
   let suppressEditorUpdate = false;
+  let googleDocsSync = null;
+  const pendingGoogleDocsTransactions = [];
+  let googleDocsSyncInProgress = false;
+  let googleDocsPollTimer = null;
+  let googleDocsTransactionId = 0;
+  let googleDocsSyncGeneration = 0;
+  const GOOGLE_DOCS_POLL_INTERVAL_MS = 200;
+
+  function reportGoogleDocsSync(event, detail, verbose = false) {
+    window.dispatchEvent(new CustomEvent("kindred:google-docs-sync", {
+      detail: { event, ...detail },
+    }));
+    if (verbose) {
+      debugVerbose("gdocsSync", event, detail);
+      return;
+    }
+    debugEvent("gdocsSync", event, detail);
+  }
+
+  function googleDocsSyncState() {
+    return {
+      documentId: googleDocsSync?.documentId ?? null,
+      revisionId: googleDocsSync?.revisionId ?? null,
+      pendingTransactions: pendingGoogleDocsTransactions.length,
+      inProgress: googleDocsSyncInProgress,
+    };
+  }
+
+  function replaceGoogleDocsSync(syncState) {
+    googleDocsSyncGeneration += 1;
+    googleDocsSync = syncState;
+    pendingGoogleDocsTransactions.length = 0;
+  }
+
+  function isCurrentGoogleDocsSync(syncState, generation) {
+    return Boolean(syncState) && googleDocsSyncGeneration === generation;
+  }
+
+  async function drainGoogleDocsTransactions(syncState, generation) {
+    assertGoogleDocsCompatibilityConfig(syncState);
+    const transactions = pendingGoogleDocsTransactions.slice();
+    if (!transactions.length) return;
+    transactions.forEach(({ detail }) => reportGoogleDocsSync("started", detail));
+    const nextSync = await pushGoogleDocsTransactions(transactions, syncState);
+    if (!isCurrentGoogleDocsSync(syncState, generation)) return;
+    googleDocsSync = nextSync;
+    pendingGoogleDocsTransactions.splice(0, transactions.length);
+    transactions.forEach(({ detail }) => {
+      reportGoogleDocsSync("settled", {
+        ...detail,
+        revisionId: nextSync.revisionId,
+        pendingTransactions: pendingGoogleDocsTransactions.length,
+      });
+    });
+  }
+
+  async function syncGoogleDocs() {
+    if (!googleDocsSync || googleDocsSyncInProgress || converting) return;
+    googleDocsSyncInProgress = true;
+    const syncState = googleDocsSync;
+    const generation = googleDocsSyncGeneration;
+    try {
+      assertGoogleDocsCompatibilityConfig(syncState);
+      const remoteRevisionId = await fetchGoogleDocumentRevision(syncState.documentId);
+      if (!isCurrentGoogleDocsSync(syncState, generation)) return;
+      const localChanged = pendingGoogleDocsTransactions.length > 0;
+      const remoteChanged = remoteRevisionId !== syncState.revisionId;
+      reportGoogleDocsSync("revision-poll", {
+        ...googleDocsSyncState(),
+        remoteRevisionId,
+        localChanged,
+        remoteChanged,
+      }, true);
+      if (!localChanged && remoteChanged) {
+        await pullGoogleDocument({ clearPendingTransactions: false, syncState, generation });
+        return;
+      }
+      if (!localChanged) return;
+      await drainGoogleDocsTransactions(syncState, generation);
+      if (remoteChanged && isCurrentGoogleDocsSync(syncState, generation)) {
+        await pullGoogleDocument({ clearPendingTransactions: false, syncState, generation });
+      }
+    } catch (err) {
+      if (!isCurrentGoogleDocsSync(syncState, generation)) return;
+      reportGoogleDocsSync("failed", {
+        ...googleDocsSyncState(),
+        error: String(err.message || err),
+      });
+      console.error(err);
+      setStatus(String(err.message || err), "danger");
+    } finally {
+      googleDocsSyncInProgress = false;
+    }
+  }
+
+  function startGoogleDocsPolling() {
+    if (googleDocsPollTimer != null) return;
+    googleDocsPollTimer = window.setInterval(() => {
+      void syncGoogleDocs();
+    }, GOOGLE_DOCS_POLL_INTERVAL_MS);
+  }
+
+  async function refreshGoogleDocsTarget() {
+    if (!store || !activeDraftId || !currentBranchName) {
+      replaceGoogleDocsSync(null);
+      return;
+    }
+    const target = await store.getBranchSync(activeDraftId, currentBranchName);
+    if (target?.documentId === googleDocsSync?.documentId) return;
+    replaceGoogleDocsSync(target?.documentId
+      ? { documentId: target.documentId, revisionId: null }
+      : null);
+  }
 
   function getChatStacks(chat) {
     if (!chat) return [];
@@ -484,6 +606,47 @@ import {
       handleTableConflictAction(action, tablePos, conflictId),
     onListConflictAction: (action, listPos, conflictId) =>
       handleListConflictAction(action, listPos, conflictId),
+    googleDocsCompatibility: {
+      disableTrailingNode: CONFIG.googleDocs.compatibility.disableTrailingNode,
+      mergeAdjacentLists: () =>
+        Boolean(googleDocsSync) && CONFIG.googleDocs.compatibility.mergeAdjacentLists,
+      preserveInitialTableParagraph: () =>
+        Boolean(googleDocsSync) && CONFIG.googleDocs.compatibility.preserveInitialTableParagraph,
+      requireTableSeparatorParagraphs: () =>
+        Boolean(googleDocsSync) && CONFIG.googleDocs.compatibility.requireTableSeparatorParagraphs,
+    },
+    onTransaction: ({ transaction }) => {
+      const transactionId = ++googleDocsTransactionId;
+      const skipReason = transaction.getMeta("skipGoogleDocsSync")
+        || (!googleDocsSync
+        ? "not-pulled"
+        : !transaction.docChanged
+          ? "selection-only"
+          : suppressEditorUpdate
+            ? "suppressed-editor-update"
+            : converting
+              ? "converting"
+              : null);
+      const detail = {
+        transactionId,
+        docChanged: transaction.docChanged,
+        skipReason,
+        revisionId: googleDocsSync?.revisionId ?? null,
+        selection: { from: transaction.selection.from, to: transaction.selection.to },
+        steps: transaction.steps.map((step) => step.toJSON()),
+      };
+      reportGoogleDocsSync("transaction", detail, true);
+      if (skipReason) {
+        reportGoogleDocsSync("skipped", detail);
+        return;
+      }
+      pendingGoogleDocsTransactions.push({ transaction, before: transaction.before, detail });
+      reportGoogleDocsSync("queued", {
+        ...detail,
+        pendingTransactions: pendingGoogleDocsTransactions.length,
+      });
+      void syncGoogleDocs();
+    },
     onUpdate: () => {
       if (
         suppressEditorUpdate ||
@@ -806,7 +969,7 @@ import {
     if (!tipTap || tipTap.state.selection.empty) return null;
     const { from, to } = tipTap.state.selection;
     const selected = tipTap.state.doc.slice(from, to).content;
-    const raw = docToPlainText({ type: "paragraph", content: selected }).replace(/\u00a0/g, " ");
+    const raw = docToPlainText({ type: "doc", content: selected }).replace(/\u00a0/g, " ");
     return countStatsText(raw);
   }
 
@@ -1015,6 +1178,7 @@ import {
 
   function draftTitle(draft) {
     if (draft.title) return draft.title;
+    if (!draft.text) return "Untitled draft";
     return store.titleFromText(draft.text || "");
   }
 
@@ -1073,11 +1237,31 @@ import {
   }
 
   async function refreshDraftList() {
+    const generation = ++draftListGeneration;
     drafts = await store.listDrafts();
+    if (generation !== draftListGeneration) return;
     syncHeaderTitle();
     // Avoid remounting the rename input (focusout would commit after one key).
-    if (renamingDraftId) return;
-    renderDraftList();
+    if (!renamingDraftId) renderDraftList();
+    void hydrateDraftList(generation, drafts);
+  }
+
+  async function hydrateDraftList(generation, summaries) {
+    const hydrated = await Promise.all(
+      summaries.map(async (summary) => {
+        try {
+          return await store.hydrateDraftSummary(summary);
+        } catch (err) {
+          console.warn("kindred: could not hydrate draft", summary.id, err);
+          return summary;
+        }
+      })
+    );
+    if (generation !== draftListGeneration) return;
+    const byId = new Map(hydrated.filter(Boolean).map((draft) => [draft.id, draft]));
+    drafts = drafts.map((draft) => byId.get(draft.id) || draft);
+    syncHeaderTitle();
+    if (!renamingDraftId) renderDraftList();
   }
 
   function uiStateSnapshot() {
@@ -1325,6 +1509,7 @@ import {
     }
     currentBranchName = await store.currentBranch(activeDraftId);
     branches = await store.listBranches(activeDraftId);
+    await refreshGoogleDocsTarget();
     commits = await store.listCommits(activeDraftId, currentBranchName);
     headOid = commits.length ? commits[commits.length - 1].oid : null;
     if (viewingOid) {
@@ -1601,6 +1786,7 @@ import {
     await flushSaveTimer();
     await flushUiStateTimer();
     activeDraftId = null;
+    await refreshGoogleDocsTarget();
     paneMode = "chat";
     activeWorkspace = "draft";
     resetEditorState({ text: "" });
@@ -1651,7 +1837,15 @@ import {
   }
 
   async function deleteDraft(id) {
-    const summary = findDraft(id);
+    let summary = findDraft(id);
+    if (summary && !Number.isInteger(summary.commitCount)) {
+      try {
+        summary = await store.hydrateDraftSummary(summary);
+        drafts = drafts.map((draft) => (draft.id === id ? summary : draft));
+      } catch (err) {
+        console.warn("kindred: could not check draft history", id, err);
+      }
+    }
     if (summary && summary.commitCount > 0) {
       const ok = window.confirm("Delete this draft and its commit history?");
       if (!ok) return;
@@ -3173,7 +3367,9 @@ import {
           ? `<input class="git-row-title-input" data-git="rename-input" value="${escapeHtml(name)}" aria-label="Branch name" />`
           : `<span class="git-row-title">${escapeHtml(name)}</span>`;
         const actions = current
-          ? ""
+          ? `<div class="git-row-actions">` +
+            `<button type="button" class="btn btn-tertiary" data-git="sync"${gitBusy ? " disabled" : ""}>Sync</button>` +
+            `</div>`
           : `<div class="git-row-actions">` +
             `<button type="button" class="btn btn-tertiary" data-git="merge" data-branch="${escapeHtml(name)}">Merge</button>` +
             `<button type="button" class="draft-item-delete" data-git="delete" data-branch="${escapeHtml(name)}" title="Delete branch" aria-label="Delete branch">×</button>` +
@@ -3406,6 +3602,82 @@ import {
     }
   }
 
+  async function pullGoogleDocument({
+    clearPendingTransactions = true,
+    syncState = googleDocsSync,
+    generation = googleDocsSyncGeneration,
+    allowGitBusy = false,
+  } = {}) {
+    if (
+      converting ||
+      (gitBusy && !allowGitBusy) ||
+      applyingHistory ||
+      isViewingHistory() ||
+      !syncState ||
+      !isCurrentGoogleDocsSync(syncState, generation)
+    ) return false;
+    converting = true;
+    updateCommitBtn();
+    setStatus("pulling Google Doc...");
+    try {
+      const pulled = await pullGoogleDocumentFromApi(syncState.documentId);
+      if (!isCurrentGoogleDocsSync(syncState, generation)) return;
+      const html = pulled.html;
+      suppressEditorUpdate = true;
+      try {
+        setHtml(tipTap, html, {
+          emitUpdate: false,
+          source: "google-docs-pull",
+          preserveSelection: true,
+        });
+      } finally {
+        suppressEditorUpdate = false;
+      }
+      window.dispatchEvent(new CustomEvent("kindred:google-docs-pulled", {
+        detail: {
+          proseMirrorDocument: tipTap.getJSON(),
+          positionMap: buildProseMirrorToGoogleDocsPositionMap(tipTap.state.doc).entries,
+          revisionId: pulled.revisionId,
+        },
+      }));
+      googleDocsSync = {
+        documentId: syncState.documentId,
+        revisionId: pulled.revisionId,
+      };
+      assertGoogleDocsCompatibilityConfig(googleDocsSync);
+      if (clearPendingTransactions) pendingGoogleDocsTransactions.length = 0;
+      currentHtml = html;
+      currentText = getPlain(tipTap);
+      dirtyReviewing = false;
+      hasConflict = false;
+      pendingMerge = null;
+      syncDirtyBodyFromCurrent();
+      await ensureDraftForText(currentText || " ");
+      await persistActiveDraftNow();
+      syncOverlayFromState();
+      syncRightPane();
+      if (paneMode === "git") renderGitPane();
+      refreshStatusLeft();
+      syncHeaderTitle();
+      await refreshWorkingDirty();
+      setStatus("");
+      return true;
+    } catch (err) {
+      if (!isCurrentGoogleDocsSync(syncState, generation)) return false;
+      console.error(err);
+      if (needsGoogleDocsAuthentication(err)) {
+        window.open("/api/google-docs/oauth/start", "google-docs-oauth", "popup,width=560,height=720");
+        setStatus("sign in to Google Docs, then sync again");
+        return false;
+      }
+      setStatus(String(err.message || err), "danger");
+      return false;
+    } finally {
+      converting = false;
+      updateCommitBtn();
+    }
+  }
+
   function openImportDialog() {
     if (!canOpenImportDialog()) return;
     importFileInput.value = "";
@@ -3428,6 +3700,35 @@ import {
   importBtn.addEventListener("click", () => {
     openImportDialog();
   });
+
+  function googleDocIdFromPrompt(value) {
+    const match = /^https:\/\/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/.exec(String(value || "").trim());
+    if (!match) throw new Error("Paste a Google Docs link");
+    return match[1];
+  }
+
+  async function syncCurrentBranch() {
+    const target = await store.getBranchSync(activeDraftId, currentBranchName);
+    const currentLink = target?.documentId
+      ? `https://docs.google.com/document/d/${target.documentId}/edit`
+      : "";
+    const link = window.prompt("Paste Google Docs link for this branch:", currentLink);
+    if (link == null) return;
+    if (!link.trim()) {
+      await store.setBranchSync(activeDraftId, currentBranchName, null);
+      replaceGoogleDocsSync(null);
+      setStatus("google docs sync disabled for this branch");
+      return;
+    }
+    const documentId = googleDocIdFromPrompt(link);
+    await store.setBranchSync(activeDraftId, currentBranchName, documentId);
+    replaceGoogleDocsSync({ documentId, revisionId: null });
+    const pulled = await pullGoogleDocument({ allowGitBusy: true });
+    if (!pulled) return;
+    const response = await fetch(`/api/google-docs/title?documentId=${encodeURIComponent(documentId)}`);
+    const title = response.ok ? (await response.json()).title : "";
+    setStatus(`syncing to ${title ? `"${title}"` : "Google Docs"}`);
+  }
 
   async function exportDraft(formatId = CONFIG.export.defaultFormat) {
     if (exportBtn.disabled) return;
@@ -3759,6 +4060,8 @@ import {
       runGit(() => switchBranch(actionEl.dataset.branch));
     } else if (action === "merge") {
       runGit(() => mergeIntoCurrent(actionEl.dataset.branch));
+    } else if (action === "sync") {
+      runGit(syncCurrentBranch);
     } else if (action === "delete") {
       runGit(() => deleteBranchNamed(actionEl.dataset.branch));
     } else if (action === "dirty") {
@@ -4439,6 +4742,7 @@ import {
       setStatus("loading drafts...");
       await storeReady;
       await refreshDraftList();
+      startGoogleDocsPolling();
       updateMeta();
       setStatus("");
       warmPopularFontsAfterIdle();
@@ -4448,4 +4752,7 @@ import {
       setStatus(String(err.message || err), "danger");
     }
   })();
+  window.addEventListener("beforeunload", () => {
+    if (googleDocsPollTimer != null) window.clearInterval(googleDocsPollTimer);
+  }, { once: true });
 })();
