@@ -20,6 +20,8 @@ from kindred.tracing import (
 )
 
 HUMAN_MODEL = "human"
+OPENROUTER_FREE_MODEL = "openrouter/free"
+LITELLM_OPENROUTER_FREE_MODEL = "openrouter/openrouter/free"
 END_SENTINEL = "END"
 _HUMAN_PROMPT_LOCK = threading.Lock()
 _RESPONSE_LOG_LOCK = threading.Lock()
@@ -35,6 +37,13 @@ RESPONSE_LOG_PATH = Path(
 
 def is_human_model(model: str) -> bool:
   return model.strip().lower() == HUMAN_MODEL
+
+
+def litellm_model(model: str) -> str:
+  """Translate OpenRouter's free router model around LiteLLM's provider prefix."""
+  if model.strip().lower() == OPENROUTER_FREE_MODEL:
+    return LITELLM_OPENROUTER_FREE_MODEL
+  return model
 
 
 def is_reasoning_model(model: str) -> bool:
@@ -86,7 +95,7 @@ def complete_chat(
 
   configure_tracing()
   kwargs: dict[str, Any] = {
-    "model": model,
+    "model": litellm_model(model),
     "instructions": system,
     "input": user,
     "max_output_tokens": max_tokens,
@@ -262,7 +271,7 @@ def reflect_chat(
   configure_tracing()
   instructions, input_payload = _prompt_to_responses_io(prompt)
   kwargs: dict[str, Any] = {
-    "model": model,
+    "model": litellm_model(model),
     "input": input_payload,
     "max_output_tokens": max_tokens,
     "metadata": litellm_metadata(
@@ -332,7 +341,7 @@ def reflect_chat_stream(
   configure_tracing()
   instructions, input_payload = _prompt_to_responses_io(prompt)
   kwargs: dict[str, Any] = {
-    "model": model,
+    "model": litellm_model(model),
     "input": input_payload,
     "max_output_tokens": max_tokens,
     "stream": True,

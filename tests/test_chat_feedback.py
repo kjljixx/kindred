@@ -3,8 +3,23 @@
 import asyncio
 import json
 
-from kindred import chat, server
+import pytest
+from fastapi import HTTPException
+
+from kindred import chat, lm, server
 from kindred.prompts import annotate_draft
+
+
+def test_default_chat_model_is_openrouter_free():
+  assert chat.DEFAULT_MODEL == "openrouter/free"
+  assert server.ChatRequest(message="Help me revise this").model == chat.DEFAULT_MODEL
+
+
+def test_litellm_model_preserves_openrouter_free_router_id():
+  assert lm.litellm_model("openrouter/free") == "openrouter/openrouter/free"
+  assert lm.litellm_model("openrouter/google/gemini-3.7-flash") == (
+    "openrouter/google/gemini-3.7-flash"
+  )
 
 
 def test_streaming_endpoint_emits_deltas_and_done(monkeypatch):
@@ -33,6 +48,19 @@ def test_streaming_endpoint_emits_deltas_and_done(monkeypatch):
     {"type": "done", "reply": "A draft reply.", "cost": 0.0, "reasoning_summary": None},
   ]
   assert received["conflict_context"] == "Conflict 1: current / incoming"
+
+
+def test_chat_endpoint_rejects_non_free_model_when_restricted(monkeypatch):
+  monkeypatch.setattr(server, "REQUIRE_OPENROUTER_FREE_MODEL", True)
+  body = server.ChatRequest(message="Help me revise this", model="openai/gpt-5.6-luna")
+
+  async def request():
+    await server.api_chat(body)
+
+  with pytest.raises(HTTPException, match="Only the openrouter/free model is allowed") as exc:
+    asyncio.run(request())
+
+  assert exc.value.status_code == 403
 
 
 def test_stream_prompt_includes_conflicts_and_action_protocol(monkeypatch):

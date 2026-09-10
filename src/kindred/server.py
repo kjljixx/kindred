@@ -39,6 +39,9 @@ GOOGLE_OAUTH_REDIRECT_URI = os.environ.get(
   "GOOGLE_OAUTH_REDIRECT_URI",
   "https://kindred.kjljixx.com/api/google-docs/oauth/callback",
 )
+REQUIRE_OPENROUTER_FREE_MODEL = os.environ.get(
+  "KINDRED_REQUIRE_OPENROUTER_FREE_MODEL", ""
+).lower() in ("1", "true", "yes", "on")
 
 
 def get_google_session_store() -> GoogleSessionStore:
@@ -321,6 +324,12 @@ async def api_google_docs_title(
 
 @app.post("/api/chat")
 async def api_chat(body: ChatRequest) -> StreamingResponse:
+  if REQUIRE_OPENROUTER_FREE_MODEL and body.model != DEFAULT_MODEL:
+    raise HTTPException(
+      status_code=403,
+      detail=f"Only the {DEFAULT_MODEL} model is allowed",
+    )
+
   message = body.message.strip()
   if not message:
     raise HTTPException(status_code=400, detail="message is required")

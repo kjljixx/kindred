@@ -1619,7 +1619,6 @@ import {
     draftListEl.innerHTML = drafts
       .map((d) => {
         const active = d.id === activeDraftId ? " active" : "";
-        const branch = d.activeBranch ? ` · ${d.activeBranch}` : "";
         const title = escapeHtml(draftTitle(d));
         const renaming = renamingDraftId === d.id && renameSource === "list";
         const titleHtml = renaming
@@ -1629,7 +1628,7 @@ import {
           `<div class="draft-item${active}" role="listitem" data-id="${escapeHtml(d.id)}">` +
           `<div class="draft-item-body" data-action="open">` +
           titleHtml +
-          `<span class="draft-item-meta">${escapeHtml(formatDraftTime(d.updatedAt))}${escapeHtml(branch)}</span>` +
+          `<span class="draft-item-meta">${escapeHtml(formatDraftTime(d.updatedAt))}</span>` +
           `</div>` +
           `<button type="button" class="draft-item-delete" data-action="delete" title="Delete draft" aria-label="Delete draft">×</button>` +
           `</div>`

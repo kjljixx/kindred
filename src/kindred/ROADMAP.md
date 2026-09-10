@@ -11,6 +11,7 @@ Editor
 Chat
 - Horizontal chatting & message chunks
 - RAG message stacks
+- Revamp UI overall
 
 Git
 - Staging

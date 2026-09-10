@@ -1,6 +1,6 @@
 export const CONFIG = {
   chat: {
-    model: "openrouter/google/gemini-3.7-flash",
+    model: "openrouter/free",
   },
   googleDocs: {
     compatibility: {
