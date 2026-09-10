@@ -6,13 +6,20 @@ import json
 import pytest
 from fastapi import HTTPException
 
-from kindred import chat, server
+from kindred import chat, lm, server
 from kindred.prompts import annotate_draft
 
 
 def test_default_chat_model_is_openrouter_free():
   assert chat.DEFAULT_MODEL == "openrouter/free"
   assert server.ChatRequest(message="Help me revise this").model == chat.DEFAULT_MODEL
+
+
+def test_litellm_model_preserves_openrouter_free_router_id():
+  assert lm.litellm_model("openrouter/free") == "openrouter/openrouter/free"
+  assert lm.litellm_model("openrouter/google/gemini-3.7-flash") == (
+    "openrouter/google/gemini-3.7-flash"
+  )
 
 
 def test_streaming_endpoint_emits_deltas_and_done(monkeypatch):
