@@ -218,6 +218,34 @@ describe("Google Docs pull", () => {
     expect(html).toContain("background-color: rgb(0, 0, 0)");
   });
 
+  it("inverts Google Docs colors serialized with fractional RGB channels", () => {
+    const html = googleDocumentToKindredHtml({
+      body: {
+        content: [{
+          startIndex: 1,
+          endIndex: 6,
+          paragraph: {
+            paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+            elements: [{
+              startIndex: 1,
+              endIndex: 6,
+              textRun: {
+                content: "Text\n",
+                textStyle: {
+                  foregroundColor: {
+                    color: { rgbColor: { red: 0.2627451, green: 0.2627451, blue: 0.2627451 } },
+                  },
+                },
+              },
+            }],
+          },
+        }],
+      },
+    });
+
+    expect(html).toContain("color: rgb(140, 140, 140)");
+  });
+
   it("shows a pulled bare font family in the toolbar picker", () => {
     const editorElement = document.createElement("div");
     const toolbar = document.createElement("div");
