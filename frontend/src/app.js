@@ -708,6 +708,48 @@ import {
     onStateChange: () => persistUiStateSoon(),
   });
   editor?.addEventListener("scroll", () => persistUiStateSoon(), { passive: true });
+  const editorPaddingStorageKey = "kindred-editor-padding-left";
+  let paddingDrag = null;
+  const minEditorPadding = Number.parseFloat(getComputedStyle(editor).paddingLeft) || 0;
+  const editorPaddingHit = (clientX) => {
+    const rect = editor.getBoundingClientRect();
+    const paddingLeft = Number.parseFloat(getComputedStyle(editor).paddingLeft) || 0;
+    return clientX >= rect.left && clientX <= rect.left + paddingLeft;
+  };
+  const setEditorPadding = (paddingLeft) => {
+    const maxEditorPadding = Math.max(minEditorPadding, editor.clientWidth / 2);
+    const nextPadding = Math.min(maxEditorPadding, Math.max(minEditorPadding, paddingLeft));
+    draftPane.style.setProperty("--editor-padding-left", `${nextPadding}px`);
+    localStorage.setItem(editorPaddingStorageKey, String(nextPadding));
+  };
+  const savedEditorPadding = Number.parseFloat(localStorage.getItem(editorPaddingStorageKey));
+  if (Number.isFinite(savedEditorPadding)) setEditorPadding(savedEditorPadding);
+  editor.addEventListener("pointermove", (e) => {
+    if (paddingDrag) {
+      e.preventDefault();
+      setEditorPadding(paddingDrag.startPadding + e.clientX - paddingDrag.startX);
+      return;
+    }
+    editor.classList.toggle("is-padding-resizable", editorPaddingHit(e.clientX));
+  });
+  editor.addEventListener("pointerleave", () => {
+    if (!paddingDrag) editor.classList.remove("is-padding-resizable");
+  });
+  editor.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !editorPaddingHit(e.clientX)) return;
+    const paddingLeft = Number.parseFloat(getComputedStyle(editor).paddingLeft) || 0;
+    paddingDrag = { startPadding: paddingLeft, startX: e.clientX };
+    editor.classList.remove("is-padding-resizable");
+    editor.classList.add("is-padding-resizing");
+    editor.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  });
+  const stopPaddingDrag = () => {
+    paddingDrag = null;
+    editor.classList.remove("is-padding-resizing");
+  };
+  editor.addEventListener("pointerup", stopPaddingDrag);
+  editor.addEventListener("pointercancel", stopPaddingDrag);
   resetEditorState({ text: "" });
   requestAnimationFrame(() => tipTap?.commands.focus());
   toolbarEl.querySelectorAll(".toolbar-color")?.forEach((el) => {
@@ -4603,6 +4645,7 @@ import {
   });
 
   // Resizable divider between draft and feedback
+  const splitStorageKey = "kindred-draft-pane-width";
   let resizing = false;
 
   function setSplitFromClientX(clientX) {
@@ -4614,6 +4657,12 @@ import {
     const clamped = Math.min(max, Math.max(min, x));
     const leftPct = (clamped / rect.width) * 100;
     draftPane.style.setProperty("--draft-pane-width", `${leftPct}%`);
+    localStorage.setItem(splitStorageKey, String(leftPct));
+  }
+
+  const savedSplit = Number.parseFloat(localStorage.getItem(splitStorageKey));
+  if (Number.isFinite(savedSplit)) {
+    draftPane.style.setProperty("--draft-pane-width", `${savedSplit}%`);
   }
 
   function endResize() {

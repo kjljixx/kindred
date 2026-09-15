@@ -691,7 +691,7 @@ button.pane-title {
   flex: 1;
   overflow: auto;
   padding: var(--space-4);
-  padding-left: var(--space-6);
+  padding-left: var(--editor-padding-left, var(--space-6));
   font-family: var(--font-content);
   font-size: var(--font-size-3);
   line-height: var(--line-height-3);
@@ -700,12 +700,17 @@ button.pane-title {
   background: var(--color-bg-deep);
 }
 
+.editor.is-padding-resizable,
+.editor.is-padding-resizing {
+  cursor: ew-resize;
+}
+
 .editor-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-2) var(--space-6);
+  padding: var(--space-2) var(--space-6) var(--space-2) var(--editor-padding-left, var(--space-6));
   background: var(--color-bg);
   flex-shrink: 0;
 }
