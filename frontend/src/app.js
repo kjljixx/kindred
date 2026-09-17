@@ -235,6 +235,7 @@ import {
   let googleDocsPollTimer = null;
   let googleDocsTransactionId = 0;
   let googleDocsSyncGeneration = 0;
+  let googleDocsSyncErrorMessage = null;
   const GOOGLE_DOCS_POLL_INTERVAL_MS = 200;
 
   function reportGoogleDocsSync(event, detail, verbose = false) {
@@ -267,6 +268,22 @@ import {
     return Boolean(syncState) && googleDocsSyncGeneration === generation;
   }
 
+  function setGoogleDocsSyncError(err) {
+    setStatus(String(err.message || err), "danger");
+    googleDocsSyncErrorMessage = statusMessage;
+  }
+
+  function clearGoogleDocsSyncError() {
+    if (
+      googleDocsSyncErrorMessage
+      && statusLevel === "danger"
+      && statusMessage === googleDocsSyncErrorMessage
+    ) {
+      setStatus("");
+    }
+    googleDocsSyncErrorMessage = null;
+  }
+
   async function drainGoogleDocsTransactions(syncState, generation) {
     assertGoogleDocsCompatibilityConfig(syncState);
     const transactions = pendingGoogleDocsTransactions.slice();
@@ -294,6 +311,7 @@ import {
       assertGoogleDocsCompatibilityConfig(syncState);
       const remoteRevisionId = await fetchGoogleDocumentRevision(syncState.documentId);
       if (!isCurrentGoogleDocsSync(syncState, generation)) return;
+      clearGoogleDocsSyncError();
       const localChanged = pendingGoogleDocsTransactions.length > 0;
       const remoteChanged = remoteRevisionId !== syncState.revisionId;
       reportGoogleDocsSync("revision-poll", {
@@ -318,7 +336,7 @@ import {
         error: String(err.message || err),
       });
       console.error(err);
-      setStatus(String(err.message || err), "danger");
+      setGoogleDocsSyncError(err);
     } finally {
       googleDocsSyncInProgress = false;
     }
@@ -3711,7 +3729,7 @@ import {
         setStatus("sign in to Google Docs, then sync again");
         return false;
       }
-      setStatus(String(err.message || err), "danger");
+      setGoogleDocsSyncError(err);
       return false;
     } finally {
       converting = false;
