@@ -243,7 +243,7 @@ describe("Google Docs pull", () => {
       },
     });
 
-    expect(html).toContain("color: rgb(140, 140, 140)");
+    expect(html).toContain("color: rgb(209, 209, 209)");
   });
 
   it("shows a pulled bare font family in the toolbar picker", () => {

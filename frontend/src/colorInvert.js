@@ -1,64 +1,50 @@
+const LIGHTNESS_INVERSION_GAMMA = 1.6;
+
 function srgbToLinear(c) {
   const v = c / 255;
   return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
 }
 
-function relativeLuminance(r, g, b) {
+function linearToSrgb(c) {
+  const value = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+  return Math.round(Math.max(0, Math.min(1, value)) * 255);
+}
+
+function rgbToOklab(r, g, b) {
   const lr = srgbToLinear(r);
   const lg = srgbToLinear(g);
   const lb = srgbToLinear(b);
-  return lr * 0.2126 + lg * 0.7152 + lb * 0.0722;
+  const l = Math.cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb);
+  const m = Math.cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb);
+  const s = Math.cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb);
+  return {
+    l: 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    a: 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    b: 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  };
+}
+
+function oklabToRgb(l, a, b) {
+  const lRoot = l + 0.3963377774 * a + 0.2158037573 * b;
+  const mRoot = l - 0.1055613458 * a - 0.0638541728 * b;
+  const sRoot = l - 0.0894841775 * a - 1.291485548 * b;
+  const lr = lRoot ** 3;
+  const lg = mRoot ** 3;
+  const lb = sRoot ** 3;
+  return {
+    r: linearToSrgb(4.0767416621 * lr - 3.3077115913 * lg + 0.2309699292 * lb),
+    g: linearToSrgb(-1.2684380046 * lr + 2.6097574011 * lg - 0.3413193965 * lb),
+    b: linearToSrgb(-0.0041960863 * lr - 0.7034186147 * lg + 1.707614701 * lb),
+  };
 }
 
 export function invertWordLuminanceWindow(r, g, b) {
-  if (r === 0 && g === 0 && b === 0) return { r: 255, g: 255, b: 255 };
-  if (r === 255 && g === 255 && b === 255) return { r: 0, g: 0, b: 0 };
-
-  const y = relativeLuminance(r, g, b);
-
-  if (y > 0.28) {
-    const targetY = 0.095;
-    let low = 0;
-    let high = 1;
-    for (let i = 0; i < 16; i++) {
-      const mid = (low + high) / 2;
-      const curY = relativeLuminance(r * mid, g * mid, b * mid);
-      if (curY > targetY) high = mid;
-      else low = mid;
-    }
-    return {
-      r: Math.round(r * low),
-      g: Math.round(g * low),
-      b: Math.round(b * low),
-    };
-  }
-
-  if (y < 0.25) {
-    const targetY = 0.264;
-    let low = 0;
-    let high = 255;
-    for (let i = 0; i < 16; i++) {
-      const lift = (low + high) / 2;
-      const curY = relativeLuminance(
-        Math.min(255, r + lift),
-        Math.min(255, g + lift),
-        Math.min(255, b + lift)
-      );
-      if (curY < targetY) low = lift;
-      else high = lift;
-    }
-    return {
-      r: Math.round(Math.min(255, r + low)),
-      g: Math.round(Math.min(255, g + low)),
-      b: Math.round(Math.min(255, b + low)),
-    };
-  }
-
-  return {
-    r: Math.min(252, r),
-    g: Math.min(252, g),
-    b: Math.min(252, b),
-  };
+  const { l, a, b: oklabB } = rgbToOklab(r, g, b);
+  const invertedLightness = Math.pow(
+    1 - Math.pow(Math.max(0, Math.min(1, l)), LIGHTNESS_INVERSION_GAMMA),
+    1 / LIGHTNESS_INVERSION_GAMMA,
+  );
+  return oklabToRgb(invertedLightness, a, oklabB);
 }
 
 function hslToRgbFloat(h, s, l) {
