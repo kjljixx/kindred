@@ -322,6 +322,27 @@ describe("Google Docs pull", () => {
 });
 
 describe("Google Docs text push", () => {
+  it("inserts one newline when splitting a paragraph", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const editor = createKindredEditor({ element: editorElement, content: "<p>a</p><p>b</p>" });
+    editor.commands.setTextSelection(2);
+    const before = editor.state.doc;
+    let transaction = null;
+    editor.on("transaction", ({ transaction: nextTransaction }) => {
+      if (nextTransaction.docChanged) transaction = nextTransaction;
+    });
+
+    editor.commands.splitBlock();
+
+    expect(transactionToGoogleDocsBatchUpdateRequests(transaction, before)).toEqual([
+      { insertText: { location: { index: 2 }, text: "\n" } },
+    ]);
+
+    editor.destroy();
+    editorElement.remove();
+  });
+
   it("preserves the required final newline when all document text is deleted", () => {
     const editorElement = document.createElement("div");
     document.body.append(editorElement);

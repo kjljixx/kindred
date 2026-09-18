@@ -963,7 +963,12 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
         fields: "alignment",
       } }], { alignment });
     }
-    if (json.stepType === "replace" && json.from === json.to && insertedNode?.type === "paragraph") {
+    if (
+      json.stepType === "replace" &&
+      json.from === json.to &&
+      json.slice?.content?.length === 1 &&
+      insertedNode?.type === "paragraph"
+    ) {
       const paragraphText = googleDocsPlainText(step.slice.content);
       return finish("insert-paragraph", [{ insertText: {
         location: { index: mappedStart },
