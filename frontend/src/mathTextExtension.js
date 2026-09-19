@@ -3,6 +3,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 import { overlayKey } from "./editorKeys.js";
 import { calculateTrailingEquals } from "./mathCompute.js";
+import { selectCalculatedSuffix } from "./mathLiveNodeView.js";
 import { classifyMath } from "./mathTextDetector.js";
 
 const mathTextKey = new PluginKey("kindredMathText");
@@ -144,6 +145,11 @@ export function mathNodeTransaction(
           position: replacement.to,
           text: calculatedSuffix,
         });
+        tr.setMeta("selectCalculatedSuffix", {
+          pos: replacement.from,
+          expression: replacement.asciiMath,
+          calculation: calculatedSuffix,
+        });
       }
     }
     const mathNode = tr.doc.type.schema.nodes.mathLive.create(
@@ -221,6 +227,29 @@ export const MathText = Extension.create({
   addProseMirrorPlugins() {
     return [new Plugin({
       key: mathTextKey,
+      state: {
+        init: () => null,
+        apply: (tr) => tr.getMeta("selectCalculatedSuffix") || null,
+      },
+      view() {
+        return {
+          update(view) {
+            const pendingSelection = mathTextKey.getState(view.state);
+            if (!pendingSelection) return;
+            requestAnimationFrame(() => {
+              const nodeDom = view.nodeDOM(pendingSelection.pos);
+              const field = nodeDom?.querySelector?.("math-field");
+              if (!field) return;
+              field.focus();
+              selectCalculatedSuffix(
+                field,
+                pendingSelection.expression,
+                pendingSelection.calculation,
+              );
+            });
+          },
+        };
+      },
       appendTransaction(transactions, _oldState, newState) {
         if (!transactions.some((tr) => tr.docChanged && !tr.getMeta("mathNodeConversion"))) return null;
         if (!userInsertedMathDelimiter(transactions)) return null;

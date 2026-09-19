@@ -78,6 +78,36 @@ describe("mathLive node editing", () => {
     nodeView.destroy();
   });
 
+  it("copies a selected calculation without math delimiters", () => {
+    const nodeView = createMathLiveNodeView({
+      node: {
+        attrs: { asciiMath: "2+2=4" },
+        nodeSize: 1,
+      },
+      view: {},
+      getPos: () => 1,
+    });
+    const field = nodeView.dom.querySelector("math-field");
+    field.selectionIsCollapsed = false;
+    field.selection = { ranges: [[4, 5]], direction: "forward" };
+    field.getValue = (selection, format) => (
+      selection === field.selection && format === "ascii-math" ? "4" : "2+2=4"
+    );
+    const clipboard = new Map();
+    const event = new Event("copy", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        setData: (format, value) => clipboard.set(format, value),
+      },
+    });
+
+    field.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(clipboard.get("text/plain")).toBe("4");
+    nodeView.destroy();
+  });
+
   it.each(["ArrowLeft", "ArrowRight"])("leaves Shift+%s selection to MathLive", (key) => {
     const nodeView = createMathLiveNodeView({
       node: {
