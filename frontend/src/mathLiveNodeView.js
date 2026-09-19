@@ -11,6 +11,19 @@ function asciiMathForMathLive(source) {
   return convertAsciiMathToLatex(String(source || "").trim());
 }
 
+export function selectCalculatedSuffix(field, expression, calculation) {
+  field.value = asciiMathForMathLive(expression);
+  field.position = -1;
+  const resultStart = field.position;
+  field.value = asciiMathForMathLive(`${expression}${calculation}`);
+  field.position = -1;
+  field.selection = {
+    ranges: [[resultStart, field.position]],
+    direction: "forward",
+  };
+  field.dataset.autocalcResultSelected = "true";
+}
+
 let activeMathField = null;
 const mathFocusListeners = new Set();
 
@@ -80,15 +93,9 @@ export function createMathLiveNodeView({ node, view, getPos }) {
       ? calculateTrailingEquals(nextAsciiMath)
       : null;
     if (calculatedAsciiMath && calculatedAsciiMath !== nextAsciiMath) {
-      field.position = -1;
-      const resultStart = field.position;
+      const calculatedSuffix = calculatedAsciiMath.slice(nextAsciiMath.length);
+      selectCalculatedSuffix(field, nextAsciiMath, calculatedSuffix);
       nextAsciiMath = calculatedAsciiMath;
-      field.value = asciiMathForMathLive(nextAsciiMath);
-      field.position = -1;
-      field.selection = {
-        ranges: [[resultStart, field.position]],
-        direction: "forward",
-      };
     }
     if (nextAsciiMath === lastAsciiMath) return;
     const pos = getPos();
@@ -118,6 +125,13 @@ export function createMathLiveNodeView({ node, view, getPos }) {
 
   const moveWithinFormulaOrExit = (event) => {
     if (event.shiftKey) return;
+    if (event.key === "ArrowRight" && field.dataset.autocalcResultSelected === "true") {
+      delete field.dataset.autocalcResultSelected;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      exitToDocument("forward");
+      return;
+    }
     if (!field.selectionIsCollapsed) return;
     const forward = event.key === "ArrowRight";
     const backward = event.key === "ArrowLeft";
@@ -156,10 +170,24 @@ export function createMathLiveNodeView({ node, view, getPos }) {
     });
   };
 
+  const copySelectionAsAsciiMath = (event) => {
+    if (field.selectionIsCollapsed || !event.clipboardData) return;
+    const selectedAsciiMath = field.getValue(field.selection, "ascii-math");
+    if (!selectedAsciiMath) return;
+    event.preventDefault();
+    event.clipboardData.setData("text/plain", selectedAsciiMath);
+  };
+
+  const clearAutocalcSelectionState = () => {
+    delete field.dataset.autocalcResultSelected;
+  };
+
   field.addEventListener("input", persist);
   field.addEventListener("move-out", moveOut);
   field.addEventListener("focus", onFocus);
   field.addEventListener("blur", onBlur);
+  field.addEventListener("copy", copySelectionAsAsciiMath);
+  field.addEventListener("selection-change", clearAutocalcSelectionState);
   field.addEventListener("keydown", moveWithinFormulaOrExit, true);
 
   const stopEvent = (event) => {
@@ -207,6 +235,8 @@ export function createMathLiveNodeView({ node, view, getPos }) {
       field.removeEventListener("move-out", moveOut);
       field.removeEventListener("focus", onFocus);
       field.removeEventListener("blur", onBlur);
+      field.removeEventListener("copy", copySelectionAsAsciiMath);
+      field.removeEventListener("selection-change", clearAutocalcSelectionState);
       field.removeEventListener("keydown", moveWithinFormulaOrExit, true);
       if (getActiveMathField() === field) setActiveMathField(null);
     },

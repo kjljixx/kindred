@@ -172,6 +172,11 @@ describe("mathNodeTransaction", () => {
     expect(transaction.getMeta("googleDocsTextInsertions")).toEqual([
       { position: 5, text: "4" },
     ]);
+    expect(transaction.getMeta("selectCalculatedSuffix")).toEqual({
+      pos: 1,
+      expression: "2+2=",
+      calculation: "4",
+    });
   });
 
   it("skips conversion while Diff overlay is active", () => {
