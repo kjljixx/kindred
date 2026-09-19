@@ -86,4 +86,27 @@ describe("classifyMath", () => {
 
     expect(classifyMathHtml(html)).toBe(html);
   });
+
+  it("marks strong math syntax as definite", () => {
+    for (const text of ["sin(x)", "sqrt(x)", "x^2", "x=3", "v=a*t", "x'+y", "pi", "dx"]) {
+      expect(classifyMath(`${text}.`).candidates).toEqual([
+        expect.objectContaining({ confidence: "definite" }),
+      ]);
+    }
+  });
+
+  it("marks context-dependent candidates as potential", () => {
+    for (const text of [
+      "School year 2026-2027.",
+      "About 3,500 characters",
+      "SAT - 1560 (790 Math, 770 Reading)",
+      "AP Physics C: Mechanics - 5",
+    ]) {
+      expect(classifyMath(text).candidates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ confidence: "potential" }),
+        ]),
+      );
+    }
+  });
 });

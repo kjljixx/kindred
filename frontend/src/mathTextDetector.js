@@ -188,6 +188,34 @@ function randomNamespace() {
   return String(Math.floor(Math.random() * 1e9));
 }
 
+function confidenceForRange(text, range) {
+  const candidate = text.slice(range.start, range.end).trim();
+  const normalizedCandidate = candidate.toLowerCase();
+  const functionName = normalizedCandidate.match(/^(\p{L}+)\s*\(/u)?.[1];
+  const isDifferential =
+    candidate.length === 2 &&
+    candidate[0] === "d" &&
+    differentialVariables.has(candidate[1].toLowerCase());
+  const isDerivative = /^\p{L}['’](?:\(|$)/u.test(candidate);
+
+  if (mathWords.has(normalizedCandidate)) {
+    return { confidence: "definite", reason: "math-word" };
+  }
+  if (isDifferential) {
+    return { confidence: "definite", reason: "differential" };
+  }
+  if (functionName && mathFunctions.has(functionName)) {
+    return { confidence: "definite", reason: "math-function" };
+  }
+  if (isDerivative) {
+    return { confidence: "definite", reason: "derivative" };
+  }
+  if (/[=^_+*/<>]/u.test(candidate)) {
+    return { confidence: "definite", reason: "math-operator" };
+  }
+  return { confidence: "potential", reason: "context-dependent" };
+}
+
 /** Classify plain text into math tokens and merged run ranges. */
 export function classifyMath(text) {
   const analysisText = ` ${text}`;
@@ -425,6 +453,10 @@ export function classifyMath(text) {
   }
 
   resultHtml += escapeHtml(text.slice(htmlCursor));
+  const candidates = mergedRunRanges.map((range) => ({
+    ...range,
+    ...confidenceForRange(text, range),
+  }));
 
   return {
     analysisText,
@@ -434,6 +466,7 @@ export function classifyMath(text) {
     tokens,
     runs: filteredRuns,
     ranges: mergedRunRanges,
+    candidates,
     html: resultHtml,
   };
 }

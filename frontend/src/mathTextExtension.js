@@ -67,7 +67,7 @@ function pmPosForOffset(segments, offset) {
 }
 
 function rangesRequiringMathNode(linearText, segments, editingMathNodePos = null) {
-  return classifyMath(linearText).ranges.filter((range) => {
+  return classifyMath(linearText).candidates.filter((range) => {
     const includedMathNodes = segments.filter((segment) => (
       segment.mathNode &&
       segment.start >= range.start &&
@@ -245,6 +245,7 @@ export const MathText = Extension.create({
         const changedRanges = changedRangesInFinalDoc(transactions);
         const editingMathNodePos = editingTransaction?.getMeta("mathNodeEditing");
         const candidates = [];
+        const definiteRangeKeys = new Set();
         newState.doc.descendants((node, pos) => {
           if (
             !MATH_BLOCK_TYPES.has(node.type.name) ||
@@ -258,13 +259,36 @@ export const MathText = Extension.create({
             segments,
             editingMathNodePos,
           );
-          if (ranges.length) candidates.push({ pos, linearText, ranges });
+          const potentialRanges = ranges.filter(
+            (range) => range.confidence === "potential",
+          );
+          for (const range of ranges) {
+            if (range.confidence === "definite") {
+              definiteRangeKeys.add(
+                `${linearText}:${range.start}:${range.end}`,
+              );
+            }
+          }
+          if (potentialRanges.length) {
+            candidates.push({ linearText, ranges: potentialRanges });
+          }
         });
-        if (!candidates.length) return null;
 
         const version = ++requestVersion;
-        const expectedDoc = newState.doc;
         const calculateAfterEquals = userInsertedEquals(transactions);
+        const immediateConversion = definiteRangeKeys.size
+          ? mathNodeTransaction(
+            newState,
+            editingMathNodePos,
+            calculateAfterEquals,
+            changedRanges,
+            (text, range) => (
+              definiteRangeKeys.has(`${text}:${range.start}:${range.end}`)
+            ),
+          )
+          : null;
+        if (!candidates.length) return immediateConversion;
+
         Promise.all(candidates.map(async (candidate) => {
           const result = await classifyMathWithJev(
             candidate.linearText,
@@ -277,23 +301,21 @@ export const MathText = Extension.create({
             ),
           };
         })).then((decisions) => {
-          if (
-            version !== requestVersion ||
-            !editor?.view ||
-            !editor.state.doc.eq(expectedDoc)
-          ) {
-            return;
-          }
-          const acceptedByBlock = new Map(
-            decisions.map((decision) => [decision.pos, decision.accepted]),
+          if (version !== requestVersion || !editor?.view) return;
+          const acceptedRanges = new Set(
+            decisions.flatMap((decision) => (
+              [...decision.accepted].map(
+                (rangeKey) => `${decision.linearText}:${rangeKey}`,
+              )
+            )),
           );
           const conversion = mathNodeTransaction(
             editor.state,
             editingMathNodePos,
             calculateAfterEquals,
-            changedRanges,
-            (_text, range, pos) => (
-              acceptedByBlock.get(pos)?.has(`${range.start}:${range.end}`) ?? false
+            null,
+            (text, range) => (
+              acceptedRanges.has(`${text}:${range.start}:${range.end}`)
             ),
           );
           if (conversion) editor.view.dispatch(conversion);
@@ -302,23 +324,27 @@ export const MathText = Extension.create({
             "Jev math veto unavailable; using local math detection.",
             error,
           );
-          if (
-            version !== requestVersion ||
-            !editor?.view ||
-            !editor.state.doc.eq(expectedDoc)
-          ) {
-            return;
-          }
+          if (version !== requestVersion || !editor?.view) return;
+          const fallbackRanges = new Set(
+            candidates.flatMap((candidate) => (
+              candidate.ranges.map(
+                (range) => `${candidate.linearText}:${range.start}:${range.end}`,
+              )
+            )),
+          );
           const conversion = mathNodeTransaction(
             editor.state,
             editingMathNodePos,
             calculateAfterEquals,
-            changedRanges,
+            null,
+            (text, range) => (
+              fallbackRanges.has(`${text}:${range.start}:${range.end}`)
+            ),
           );
           if (conversion) editor.view.dispatch(conversion);
         });
 
-        return null;
+        return immediateConversion;
       },
     })];
   },
