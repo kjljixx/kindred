@@ -108,6 +108,33 @@ describe("mathLive node editing", () => {
     nodeView.destroy();
   });
 
+  it("exits the math node when ArrowRight follows an autocalculation", () => {
+    const nodeView = createMathLiveNodeView({
+      node: {
+        attrs: { asciiMath: "2+2=4" },
+        nodeSize: 1,
+      },
+      view: {},
+      getPos: () => null,
+    });
+    const field = nodeView.dom.querySelector("math-field");
+    field.dataset.autocalcResultSelected = "true";
+    const commands = [];
+    field.executeCommand = (command) => commands.push(command);
+    const event = new KeyboardEvent("keydown", {
+      key: "ArrowRight",
+      bubbles: true,
+      cancelable: true,
+    });
+
+    field.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(commands).toEqual([]);
+    expect(field.dataset.autocalcResultSelected).toBeUndefined();
+    nodeView.destroy();
+  });
+
   it.each(["ArrowLeft", "ArrowRight"])("leaves Shift+%s selection to MathLive", (key) => {
     const nodeView = createMathLiveNodeView({
       node: {
