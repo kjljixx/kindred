@@ -1,4 +1,4 @@
-/** Ask Jev to veto math ranges proposed by the local detector. */
+/** Ask Jev to approve potential math ranges proposed by the local detector. */
 export async function classifyMathWithJev(
   text,
   candidates = undefined,

@@ -173,8 +173,66 @@ export function mathNodeTransaction(
 }
 
 export function normalizeMathNodes(editor) {
-  const tr = mathNodeTransaction(editor.state);
-  if (tr) editor.view.dispatch(tr);
+  if (!editor?.state) return;
+  const definiteRangeKeys = new Set();
+  const candidates = [];
+
+  editor.state.doc.descendants((node, pos) => {
+    if (!MATH_BLOCK_TYPES.has(node.type.name)) return;
+    const { linearText, segments } = collectLinearText(node, pos);
+    const ranges = rangesRequiringMathNode(linearText, segments);
+    const potentialRanges = ranges.filter(
+      (range) => range.confidence === "potential",
+    );
+    for (const range of ranges) {
+      if (range.confidence === "definite") {
+        definiteRangeKeys.add(`${linearText}:${range.start}:${range.end}`);
+      }
+    }
+    if (potentialRanges.length) {
+      candidates.push({ linearText, ranges: potentialRanges });
+    }
+  });
+
+  const immediateConversion = mathNodeTransaction(
+    editor.state,
+    null,
+    false,
+    null,
+    (text, range) => (
+      definiteRangeKeys.has(`${text}:${range.start}:${range.end}`)
+    ),
+  );
+  if (immediateConversion) editor.view.dispatch(immediateConversion);
+  if (!candidates.length) return;
+
+  Promise.all(candidates.map(async (candidate) => {
+    const result = await classifyMathWithJev(
+      candidate.linearText,
+      candidate.ranges,
+    );
+    return result.ranges.map(
+      (range) => `${candidate.linearText}:${range.start}:${range.end}`,
+    );
+  })).then((acceptedByCandidate) => {
+    if (!editor?.view) return;
+    const acceptedRanges = new Set(acceptedByCandidate.flat());
+    const conversion = mathNodeTransaction(
+      editor.state,
+      null,
+      false,
+      null,
+      (text, range) => (
+        acceptedRanges.has(`${text}:${range.start}:${range.end}`)
+      ),
+    );
+    if (conversion) editor.view.dispatch(conversion);
+  }).catch((error) => {
+    console.error(
+      "Jev math approval unavailable; leaving potential math as text.",
+      error,
+    );
+  });
 }
 
 /** Replace mathLive atoms with their asciiMath text (Diff / plain view). */
@@ -321,27 +379,9 @@ export const MathText = Extension.create({
           if (conversion) editor.view.dispatch(conversion);
         }).catch((error) => {
           console.error(
-            "Jev math veto unavailable; using local math detection.",
+            "Jev math approval unavailable; leaving potential math as text.",
             error,
           );
-          if (version !== requestVersion || !editor?.view) return;
-          const fallbackRanges = new Set(
-            candidates.flatMap((candidate) => (
-              candidate.ranges.map(
-                (range) => `${candidate.linearText}:${range.start}:${range.end}`,
-              )
-            )),
-          );
-          const conversion = mathNodeTransaction(
-            editor.state,
-            editingMathNodePos,
-            calculateAfterEquals,
-            null,
-            (text, range) => (
-              fallbackRanges.has(`${text}:${range.start}:${range.end}`)
-            ),
-          );
-          if (conversion) editor.view.dispatch(conversion);
         });
 
         return immediateConversion;
