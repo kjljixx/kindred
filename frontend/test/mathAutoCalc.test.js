@@ -66,6 +66,12 @@ describe("calculateTrailingEquals", () => {
     expect(calculateTrailingEquals("|-4|=")).toBe("|-4|=4");
   });
 
+  it("uses readable scientific notation for very small and large results", () => {
+    expect(calculateTrailingEquals("1/10000000=")).toBe("1/10000000=1*10^-7");
+    expect(calculateTrailingEquals("10^30=")).toBe("10^30=1*10^30");
+    expect(calculateTrailingEquals("1/30000000=")).toBe("1/30000000=3.333333*10^-8");
+  });
+
   it("leaves symbolic expressions and equations alone", () => {
     expect(calculateTrailingEquals("x+x=")).toBeNull();
     expect(calculateTrailingEquals("x^2=4=")).toBeNull();

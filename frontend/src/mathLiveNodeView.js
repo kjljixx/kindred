@@ -80,8 +80,15 @@ export function createMathLiveNodeView({ node, view, getPos }) {
       ? calculateTrailingEquals(nextAsciiMath)
       : null;
     if (calculatedAsciiMath && calculatedAsciiMath !== nextAsciiMath) {
+      field.position = -1;
+      const resultStart = field.position;
       nextAsciiMath = calculatedAsciiMath;
       field.value = asciiMathForMathLive(nextAsciiMath);
+      field.position = -1;
+      field.selection = {
+        ranges: [[resultStart, field.position]],
+        direction: "forward",
+      };
     }
     if (nextAsciiMath === lastAsciiMath) return;
     const pos = getPos();
@@ -110,6 +117,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
   };
 
   const moveWithinFormulaOrExit = (event) => {
+    if (event.shiftKey) return;
     if (!field.selectionIsCollapsed) return;
     const forward = event.key === "ArrowRight";
     const backward = event.key === "ArrowLeft";
