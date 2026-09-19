@@ -225,16 +225,25 @@ async def detect_math_with_jev(
     f"candidate_{index}": {
       "type": "noul",
       "instructions": (
-        f"Is candidate {index}, {candidate['text']!r} at source offsets "
-        f"{candidate['start']}:{candidate['end']}, mathematical notation in "
-        "this exact source context? Judge only this candidate, independently "
-        "of every other candidate. "
-        "Answer false for prose, isolated quantities, names, contractions, URLs, "
-        "email addresses, and phone numbers. Answer true for formulas, named "
-        "mathematical constants or functions, and differential tokens such as dx."
+        f"Does candidate {index}, {candidate['text']!r} at source offsets "
+        f"{candidate['start']}:{candidate['end']}, function as mathematical "
+        "notation in the source sentence? A letter naming a variable, unknown, "
+        "root, set, point, or other mathematical object is mathematical notation "
+        "even when it appears alone in a sentence, such as 'let x be real', "
+        "'solve for y', or 'the root is x'. A letter in a name, course title, "
+        "grade, acronym, or ordinary prose is not mathematical notation. "
+        "Likewise, ordinary quantities, numeric ranges, URLs, email addresses, "
+        "and phone numbers are not mathematical notation. Judge only the "
+        "identified candidate using the complete source context."
       ),
-      "true": "Mathematical notation that should be rendered as math",
-      "false": "Ordinary text that should remain unchanged",
+      "true": (
+        "The candidate denotes a mathematical object or expression that should "
+        "be rendered as math"
+      ),
+      "false": (
+        "The candidate is ordinary prose, a name, label, title, grade, quantity, "
+        "URL, email address, or phone number"
+      ),
     }
     for index, candidate in enumerate(candidates)
   }
