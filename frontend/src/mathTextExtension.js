@@ -3,6 +3,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 import { overlayKey } from "./editorKeys.js";
 import { calculateTrailingEquals } from "./mathCompute.js";
+import { classifyMathWithJev } from "./jevMathDetector.js";
 import { classifyMath } from "./mathTextDetector.js";
 
 const mathTextKey = new PluginKey("kindredMathText");
@@ -65,6 +66,24 @@ function pmPosForOffset(segments, offset) {
   return null;
 }
 
+function rangesRequiringMathNode(linearText, segments, editingMathNodePos = null) {
+  return classifyMath(linearText).ranges.filter((range) => {
+    const includedMathNodes = segments.filter((segment) => (
+      segment.mathNode &&
+      segment.start >= range.start &&
+      segment.end <= range.end
+    ));
+    const isUnchangedMathNode =
+      includedMathNodes.length === 1 &&
+      range.start === includedMathNodes[0].start &&
+      range.end === includedMathNodes[0].end;
+    const editsActiveMathNode = includedMathNodes.some(
+      (segment) => segment.pmStart === editingMathNodePos,
+    );
+    return !isUnchangedMathNode && !editsActiveMathNode;
+  });
+}
+
 export function changedRangesInFinalDoc(transactions) {
   const ranges = [];
   transactions.forEach((transaction, transactionIndex) => {
@@ -98,6 +117,7 @@ export function mathNodeTransaction(
   editingMathNodePos = null,
   calculateAfterEquals = false,
   changedRanges = null,
+  acceptRange = null,
 ) {
   if (isDiffOverlayActive(state)) return null;
   const replacements = [];
@@ -108,24 +128,16 @@ export function mathNodeTransaction(
       return;
     }
     const { linearText, segments } = collectLinearText(node, pos);
-    for (const range of classifyMath(linearText).ranges) {
+    for (const range of rangesRequiringMathNode(
+      linearText,
+      segments,
+      editingMathNodePos,
+    )) {
+      if (acceptRange && !acceptRange(linearText, range, pos)) continue;
       const from = pmPosForOffset(segments, range.start);
       const to = pmPosForOffset(segments, range.end);
       if (from == null || to == null || from >= to) continue;
       const asciiMath = linearText.slice(range.start, range.end);
-      const includedMathNodes = segments.filter((segment) => (
-        segment.mathNode &&
-        segment.start >= range.start &&
-        segment.end <= range.end
-      ));
-      const isUnchangedMathNode =
-        includedMathNodes.length === 1 &&
-        range.start === includedMathNodes[0].start &&
-        range.end === includedMathNodes[0].end;
-      const editsActiveMathNode = includedMathNodes.some(
-        (segment) => segment.pmStart === editingMathNodePos,
-      );
-      if (isUnchangedMathNode || editsActiveMathNode) continue;
       replacements.push({ from, to, asciiMath });
     }
   });
@@ -219,6 +231,9 @@ export function userInsertedMathDelimiter(transactions) {
 export const MathText = Extension.create({
   name: "mathText",
   addProseMirrorPlugins() {
+    let requestVersion = 0;
+    const editor = this.editor;
+
     return [new Plugin({
       key: mathTextKey,
       appendTransaction(transactions, _oldState, newState) {
@@ -227,17 +242,83 @@ export const MathText = Extension.create({
         const editingTransaction = [...transactions].reverse().find(
           (tr) => tr.getMeta("mathNodeEditing") != null,
         );
-        const conversion = mathNodeTransaction(
-          newState,
-          editingTransaction?.getMeta("mathNodeEditing"),
-          userInsertedEquals(transactions),
-          changedRangesInFinalDoc(transactions),
-        );
-        const googleDocsTextInsertions = conversion?.getMeta("googleDocsTextInsertions");
-        if (googleDocsTextInsertions?.length) {
-          transactions.at(-1).setMeta("googleDocsTextInsertions", googleDocsTextInsertions);
-        }
-        return conversion;
+        const changedRanges = changedRangesInFinalDoc(transactions);
+        const editingMathNodePos = editingTransaction?.getMeta("mathNodeEditing");
+        const candidates = [];
+        newState.doc.descendants((node, pos) => {
+          if (
+            !MATH_BLOCK_TYPES.has(node.type.name) ||
+            !blockTouchesRanges(pos, node, changedRanges)
+          ) {
+            return;
+          }
+          const { linearText, segments } = collectLinearText(node, pos);
+          const ranges = rangesRequiringMathNode(
+            linearText,
+            segments,
+            editingMathNodePos,
+          );
+          if (ranges.length) candidates.push({ pos, linearText, ranges });
+        });
+        if (!candidates.length) return null;
+
+        const version = ++requestVersion;
+        const expectedDoc = newState.doc;
+        const calculateAfterEquals = userInsertedEquals(transactions);
+        Promise.all(candidates.map(async (candidate) => {
+          const result = await classifyMathWithJev(
+            candidate.linearText,
+            candidate.ranges,
+          );
+          return {
+            ...candidate,
+            accepted: new Set(
+              result.ranges.map((range) => `${range.start}:${range.end}`),
+            ),
+          };
+        })).then((decisions) => {
+          if (
+            version !== requestVersion ||
+            !editor?.view ||
+            !editor.state.doc.eq(expectedDoc)
+          ) {
+            return;
+          }
+          const acceptedByBlock = new Map(
+            decisions.map((decision) => [decision.pos, decision.accepted]),
+          );
+          const conversion = mathNodeTransaction(
+            editor.state,
+            editingMathNodePos,
+            calculateAfterEquals,
+            changedRanges,
+            (_text, range, pos) => (
+              acceptedByBlock.get(pos)?.has(`${range.start}:${range.end}`) ?? false
+            ),
+          );
+          if (conversion) editor.view.dispatch(conversion);
+        }).catch((error) => {
+          console.error(
+            "Jev math veto unavailable; using local math detection.",
+            error,
+          );
+          if (
+            version !== requestVersion ||
+            !editor?.view ||
+            !editor.state.doc.eq(expectedDoc)
+          ) {
+            return;
+          }
+          const conversion = mathNodeTransaction(
+            editor.state,
+            editingMathNodePos,
+            calculateAfterEquals,
+            changedRanges,
+          );
+          if (conversion) editor.view.dispatch(conversion);
+        });
+
+        return null;
       },
     })];
   },

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import time
@@ -28,6 +29,7 @@ load_dotenv()
 STATIC_DIR = Path(__file__).resolve().parent / "static" / "dist"
 
 app = FastAPI(title="kindred", docs_url=None, redoc_url=None)
+logger = logging.getLogger(__name__)
 
 _http_client: httpx.AsyncClient | None = None
 _google_session_store: GoogleSessionStore | None = None
@@ -165,6 +167,11 @@ class ChatRequest(BaseModel):
   conflict_context: str = ""
 
 
+class MathDetectionRequest(BaseModel):
+  text: str = Field(max_length=10_000)
+  candidates: list[dict[str, Any]] | None = None
+
+
 class GoogleDocsBatchUpdateRequest(BaseModel):
   document_id: str = Field(alias="documentId")
   requests: list[dict[str, Any]] = Field(default_factory=list)
@@ -174,6 +181,99 @@ class GoogleDocsBatchUpdateRequest(BaseModel):
 
 
 GOOGLE_DOCS_DOCUMENT_ID = "1sADU8OrbDmZW1VyuaARqjVNjmWLHl2wWl3R71WkCEDI"
+
+
+def math_detection_candidates(text: str) -> list[dict[str, Any]]:
+  candidates = []
+  for match in re.finditer(r"[^\s.;:!?]+", text):
+    value = match.group()
+    start = match.start()
+    while value and value[0] in ",)]}\"":
+      value = value[1:]
+      start += 1
+    while value and value[-1] in ",([{":
+      value = value[:-1]
+    if value:
+      candidates.append({"start": start, "end": start + len(value), "text": value})
+  return candidates
+
+
+async def detect_math_with_jev(
+  text: str,
+  supplied_candidates: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+  api_key = os.environ.get("OPENROUTER_API_KEY")
+  if not api_key:
+    raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY is not configured")
+
+  candidates = supplied_candidates or math_detection_candidates(text)
+  candidates = [
+    candidate
+    for candidate in candidates
+    if (
+      isinstance(candidate.get("start"), int)
+      and isinstance(candidate.get("end"), int)
+      and 0 <= candidate["start"] < candidate["end"] <= len(text)
+    )
+  ]
+  for candidate in candidates:
+    candidate["text"] = text[candidate["start"]:candidate["end"]]
+  if not candidates:
+    return []
+
+  questions = {
+    f"candidate_{index}": {
+      "type": "noul",
+      "instructions": (
+        f"Is candidate {index}, {candidate['text']!r} at source offsets "
+        f"{candidate['start']}:{candidate['end']}, mathematical notation in "
+        "this exact source context? Judge only this candidate, independently "
+        "of every other candidate. "
+        "Answer false for prose, isolated quantities, names, contractions, URLs, "
+        "email addresses, and phone numbers. Answer true for formulas, named "
+        "mathematical constants or functions, and differential tokens such as dx."
+      ),
+      "true": "Mathematical notation that should be rendered as math",
+      "false": "Ordinary text that should remain unchanged",
+    }
+    for index, candidate in enumerate(candidates)
+  }
+  response = await get_http_client().post(
+    "https://openrouter.ai/api/alpha/decisions",
+    headers={"Authorization": f"Bearer {api_key}"},
+    json={
+      "model": "~typesafe/jev-latest",
+      "state": {"source": text, "candidates": candidates},
+      "questions": questions,
+    },
+  )
+  if response.is_error:
+    logger.warning(
+      "Jev math detection failed status=%s candidates=%s",
+      response.status_code,
+      len(candidates),
+    )
+    raise HTTPException(status_code=502, detail="Math detection provider failed")
+
+  answers = response.json().get("answers", {})
+  ranges = [
+    candidate
+    for index, candidate in enumerate(candidates)
+    if answers.get(f"candidate_{index}", {}).get("noul", 0) >= 0.7
+  ]
+  logger.info(
+    "Jev math detection complete candidates=%s accepted=%s",
+    len(candidates),
+    len(ranges),
+  )
+  return ranges
+
+
+@app.post("/api/math/detect")
+async def detect_math(request: MathDetectionRequest) -> dict[str, Any]:
+  return {
+    "ranges": await detect_math_with_jev(request.text, request.candidates),
+  }
 
 
 @app.get("/api/google-docs/oauth/start")
