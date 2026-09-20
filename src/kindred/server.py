@@ -555,8 +555,7 @@ async def api_google_docs_batch_update(
     raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@app.get("/")
-def index() -> FileResponse:
+def index_response() -> FileResponse:
   index_path = STATIC_DIR / "index.html"
   if not index_path.is_file():
     raise HTTPException(status_code=404, detail="UI not found")
@@ -566,6 +565,17 @@ def index() -> FileResponse:
   if stylesheet:
     headers["Link"] = f'<{stylesheet.group(1)}>; rel=preload; as=style; fetchpriority=high'
   return FileResponse(index_path, headers=headers)
+
+
+@app.get("/")
+def index() -> FileResponse:
+  return index_response()
+
+
+@app.get("/drafts/{draft_id}")
+def draft(draft_id: str) -> FileResponse:
+  del draft_id
+  return index_response()
 
 
 if STATIC_DIR.is_dir():

@@ -203,6 +203,7 @@ import {
   let drafts = [];
   let draftListGeneration = 0;
   let activeDraftId = null;
+  let browserRouteNavigation = Promise.resolve();
   let saveTimer = null;
   let uiSaveTimer = null;
   /** @type {{ destroy: Function, getState: Function, applyState: Function } | null} */
@@ -1524,6 +1525,7 @@ import {
         : currentHtml || plainToHtml(text || "");
     const draft = await store.createDraft({ html, text: html });
     activeDraftId = draft.id;
+    syncBrowserRoute(draft.id);
     syncWorkspaceNavigation();
     commits = [];
     activeCommitIndex = -1;
@@ -1848,7 +1850,37 @@ import {
     syncRightPane();
   }
 
-  async function enterDraftsHome() {
+  function draftIdFromBrowserRoute() {
+    const match = window.location.pathname.match(/^\/drafts\/([^/]+)\/?$/);
+    if (!match) return null;
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return null;
+    }
+  }
+
+  function syncBrowserRoute(draftId, { replace = false } = {}) {
+    const pathname = draftId ? `/drafts/${encodeURIComponent(draftId)}` : "/";
+    if (window.location.pathname === pathname) return;
+    window.history[replace ? "replaceState" : "pushState"](
+      { draftId: draftId || null },
+      "",
+      `${pathname}${window.location.search}${window.location.hash}`
+    );
+  }
+
+  function queueBrowserRouteNavigation(navigate) {
+    browserRouteNavigation = browserRouteNavigation
+      .then(navigate)
+      .catch((err) => {
+        console.error("kindred: browser navigation failed", err);
+        setStatus(String(err.message || err), "danger");
+      });
+    return browserRouteNavigation;
+  }
+
+  async function enterDraftsHome({ history = "push" } = {}) {
     await flushSaveTimer();
     await flushUiStateTimer();
     activeDraftId = null;
@@ -1858,11 +1890,12 @@ import {
     resetEditorState({ text: "" });
     syncWorkspaceNavigation();
     syncHeaderTitle();
+    if (history !== "none") syncBrowserRoute(null, { replace: history === "replace" });
     tipTap?.commands.focus();
   }
 
-  async function openDraft(id) {
-    if (openingDraftId) return;
+  async function openDraft(id, { history = "push" } = {}) {
+    if (openingDraftId) return false;
     openingDraftId = id;
     activeWorkspace = "draft";
     syncWorkspaceNavigation();
@@ -1870,7 +1903,7 @@ import {
       await flushSaveTimer();
       await flushUiStateTimer();
       const draft = findDraft(id) || (await store.readWorkingFiles(id));
-      if (!draft) return;
+      if (!draft) return false;
       const ui = await store.readUiState(id);
       activeDraftId = id;
       viewingOid = null;
@@ -1897,9 +1930,21 @@ import {
       await refreshDraftList();
       if (paneMode === "git") renderGitPane();
       await refreshWorkingDirty();
+      if (history !== "none") syncBrowserRoute(id, { replace: history === "replace" });
+      return true;
     } finally {
       openingDraftId = null;
     }
+  }
+
+  async function applyBrowserRoute() {
+    const draftId = draftIdFromBrowserRoute();
+    if (draftId && findDraft(draftId)) {
+      await openDraft(draftId, { history: "none" });
+      return;
+    }
+    if (activeDraftId) await enterDraftsHome({ history: "none" });
+    if (window.location.pathname !== "/") syncBrowserRoute(null, { replace: true });
   }
 
   async function deleteDraft(id) {
@@ -1921,6 +1966,7 @@ import {
     await store.deleteDraft(id);
     if (activeDraftId === id) {
       activeDraftId = null;
+      syncBrowserRoute(null, { replace: true });
       activeWorkspace = "draft";
       resetEditorState({ text: "" });
       syncWorkspaceNavigation();
@@ -1956,7 +2002,7 @@ import {
       return;
     }
     if (action === "rename-input") return;
-    openDraft(id);
+    void queueBrowserRouteNavigation(() => openDraft(id));
   });
 
   draftListEl.addEventListener("contextmenu", (e) => {
@@ -2030,7 +2076,7 @@ import {
   });
 
   homeBtn.addEventListener("click", () => {
-    void enterDraftsHome();
+    void queueBrowserRouteNavigation(() => enterDraftsHome());
   });
 
   function syncMergeStatus() {
@@ -4747,6 +4793,10 @@ import {
     persistActiveDraftNow();
   });
 
+  window.addEventListener("popstate", () => {
+    void queueBrowserRouteNavigation(applyBrowserRoute);
+  });
+
   let composerSepObserver;
   composerSepObserver = new ResizeObserver(() => {
     syncComposerSeparators();
@@ -4823,6 +4873,7 @@ import {
       setStatus("loading drafts...");
       await storeReady;
       await refreshDraftList();
+      await applyBrowserRoute();
       startGoogleDocsPolling();
       updateMeta();
       setStatus("");
