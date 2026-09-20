@@ -1041,7 +1041,13 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
       json.slice?.content?.length === 2 &&
       json.slice.content.every((node) => node.type === "paragraph")
     ) {
-      return finish("paragraph-break", [{ insertText: { location: { index: mappedStart }, text: "\n" } }]);
+      const restoredText = insertedPlainText(stepDocument, nextDoc);
+      return finish(restoredText === "\n" ? "paragraph-break" : "insert-paragraphs", [{
+        insertText: {
+          location: { index: mappedStart },
+          text: restoredText || "\n",
+        },
+      }], { restoredText });
     }
     if (json.stepType === "replace" && json.from === json.to && insertedNode?.type === "hardBreak") {
       return finish("hard-break", [{ insertText: { location: { index: mappedStart }, text: "\n" } }]);

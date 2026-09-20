@@ -343,6 +343,30 @@ describe("Google Docs text push", () => {
     editorElement.remove();
   });
 
+  it("inserts multiple pasted paragraphs between existing paragraphs", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const editor = createKindredEditor({
+      element: editorElement,
+      content: "<p>Test1</p><p></p><p>Test3</p>",
+    });
+    const before = editor.state.doc;
+    let transaction = null;
+    editor.on("transaction", ({ transaction: nextTransaction }) => {
+      if (nextTransaction.docChanged) transaction = nextTransaction;
+    });
+
+    editor.commands.setTextSelection(8);
+    editor.view.pasteText("Test2\nTest2");
+
+    expect(transactionToGoogleDocsBatchUpdateRequests(transaction, before)).toEqual([
+      { insertText: { location: { index: 7 }, text: "Test2\nTest2" } },
+    ]);
+
+    editor.destroy();
+    editorElement.remove();
+  });
+
   it("preserves the required final newline when all document text is deleted", () => {
     const editorElement = document.createElement("div");
     document.body.append(editorElement);
