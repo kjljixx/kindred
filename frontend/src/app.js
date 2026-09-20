@@ -1261,6 +1261,8 @@ import {
   }
 
   function syncHeaderTitle() {
+    const title = activeDraftDisplayTitle();
+    document.title = title ? `${title} / kindred` : "kindred";
     if (!draftHeaderTitleEl || !draftHeaderTitleInput) return;
     if (isHeaderRenaming()) return;
     draftHeaderTitleInput.hidden = true;
@@ -1271,7 +1273,6 @@ import {
       if (draftHeaderSep) draftHeaderSep.hidden = true;
       return;
     }
-    const title = activeDraftDisplayTitle();
     draftHeaderTitleEl.textContent = title;
     draftHeaderTitleEl.hidden = !title;
     draftHeaderTitleEl.title = title ? "Rename draft" : "";
