@@ -726,6 +726,18 @@ import {
   toolbarController = bindToolbar(tipTap, toolbarEl, {
     onStateChange: () => persistUiStateSoon(),
   });
+  editor.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.key !== "Tab" || e.shiftKey || activeDraftId || draftListEl.hidden) return;
+      const firstDraft = draftListEl.querySelector(".draft-item");
+      if (!firstDraft) return;
+      e.preventDefault();
+      e.stopPropagation();
+      focusDraftItem(firstDraft);
+    },
+    { capture: true }
+  );
   editor?.addEventListener("scroll", () => persistUiStateSoon(), { passive: true });
   const editorPaddingStorageKey = "kindred-editor-padding-left";
   let paddingDrag = null;
@@ -1688,7 +1700,7 @@ import {
           ? `<input class="draft-item-title-input" data-action="rename-input" value="${title}" aria-label="Draft title" />`
           : `<span class="draft-item-title">${title}</span>`;
         return (
-          `<div class="draft-item${active}" role="listitem" data-id="${escapeHtml(d.id)}">` +
+          `<div class="draft-item${active}" role="listitem" tabindex="-1" data-id="${escapeHtml(d.id)}">` +
           `<div class="draft-item-body" data-action="open">` +
           titleHtml +
           `<span class="draft-item-meta">${escapeHtml(formatDraftTime(d.updatedAt))}</span>` +
@@ -1707,6 +1719,19 @@ import {
         input.select();
       }
     }
+  }
+
+  function focusDraftItem(item) {
+    if (!item) return false;
+    item.focus();
+    return true;
+  }
+
+  function moveDraftListFocus(item, offset) {
+    const items = [...draftListEl.querySelectorAll(".draft-item")];
+    const index = items.indexOf(item);
+    if (index < 0 || !items.length) return false;
+    return focusDraftItem(items[(index + offset + items.length) % items.length]);
   }
 
   function startDraftListRename(item) {
@@ -2021,16 +2046,29 @@ import {
 
   draftListEl.addEventListener("keydown", (e) => {
     const input = e.target.closest(".draft-item-title-input");
-    if (!input) return;
-    const item = input.closest(".draft-item");
-    const id = item?.dataset.id;
-    if (!id) return;
-    if (e.key === "Enter") {
+    if (input) {
+      const item = input.closest(".draft-item");
+      const id = item?.dataset.id;
+      if (!id) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        finishRename(id, input.value);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        finishRename(id, input.value, { cancel: true });
+      }
+      return;
+    }
+
+    const item = e.target.closest(".draft-item");
+    if (!item || e.target !== item) return;
+    if (e.key === "Tab" || e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      finishRename(id, input.value);
-    } else if (e.key === "Escape") {
+      const offset = e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey) ? -1 : 1;
+      moveDraftListFocus(item, offset);
+    } else if (e.key === "Enter") {
       e.preventDefault();
-      finishRename(id, input.value, { cancel: true });
+      void queueBrowserRouteNavigation(() => openDraft(item.dataset.id));
     }
   });
 
