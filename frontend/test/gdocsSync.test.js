@@ -608,6 +608,51 @@ describe("Google Docs list push", () => {
     editorElement.remove();
   });
 
+  it("preserves text styles when replacing the complete document", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const transactions = [];
+    const editor = createKindredEditor({
+      element: editorElement,
+      content: "<p>Old text</p>",
+      onTransaction: ({ transaction }) => {
+        if (transaction.docChanged) transactions.push({
+          transaction,
+          before: transaction.before,
+        });
+      },
+    });
+    editor.commands.setContent(
+      '<p><strong>Bold</strong> <span style="color: #ff0000">red</span></p>',
+      true,
+    );
+
+    const requests = transactions.flatMap(({ transaction, before }) =>
+      transactionToGoogleDocsBatchUpdateRequests(transaction, before),
+    );
+
+    expect(requests.map((request) => Object.keys(request)[0])).toEqual([
+      "deleteContentRange",
+      "insertText",
+      "updateTextStyle",
+      "updateTextStyle",
+      "updateTextStyle",
+    ]);
+    expect(requests[2].updateTextStyle).toMatchObject({
+      range: { startIndex: 1, endIndex: 5 },
+      textStyle: { bold: true },
+    });
+    expect(requests[4].updateTextStyle).toMatchObject({
+      range: { startIndex: 6, endIndex: 9 },
+      textStyle: {
+        foregroundColor: { color: { rgbColor: expect.any(Object) } },
+      },
+    });
+
+    editor.destroy();
+    editorElement.remove();
+  });
+
   it("inverts editor text color before pushing it to Google Docs", () => {
     const editorElement = document.createElement("div");
     document.body.append(editorElement);

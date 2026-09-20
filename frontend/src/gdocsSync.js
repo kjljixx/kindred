@@ -339,13 +339,10 @@ function googleTextStyleForMark(mark, enabled = true, existingMark = null) {
   return null;
 }
 
-function insertedTextStyleRequests(json, startIndex, endIndex) {
-  const insertedMarks = json.slice?.content
-    ?.find((node) => node.type === "text")
-    ?.marks || [];
+function completeGoogleTextStyle(insertedMarks) {
   const markByType = new Map(insertedMarks.map((mark) => [mark.type, mark]));
   const textStyleMark = markByType.get("textStyle");
-  const textStyle = {
+  return {
     bold: markByType.has("bold"),
     italic: markByType.has("italic"),
     underline: markByType.has("underline"),
@@ -369,11 +366,35 @@ function insertedTextStyleRequests(json, startIndex, endIndex) {
       ? cssFontSizeToGoogleSize(textStyleMark.attrs.fontSize)
       : null,
   };
+}
+
+function insertedTextStyleRequests(json, startIndex, endIndex) {
+  const insertedMarks = json.slice?.content
+    ?.find((node) => node.type === "text")
+    ?.marks || [];
+  const textStyle = completeGoogleTextStyle(insertedMarks);
   return [{ updateTextStyle: {
     range: { startIndex, endIndex },
     textStyle,
     fields: Object.keys(textStyle).join(","),
   } }];
+}
+
+function documentTextStyleRequests(document, positionMap, from, to) {
+  const requests = [];
+  document.nodesBetween(from, to, (node, position) => {
+    if (!node.isText) return;
+    const startIndex = positionMap.mapPosition(position);
+    const endIndex = positionMap.mapPosition(position + node.nodeSize);
+    if (startIndex >= endIndex) return;
+    const textStyle = completeGoogleTextStyle(node.marks.map((mark) => mark.toJSON()));
+    requests.push({ updateTextStyle: {
+      range: { startIndex, endIndex },
+      textStyle,
+      fields: Object.keys(textStyle).join(","),
+    } });
+  });
+  return requests;
 }
 
 function cssColorToGoogleColor(value) {
@@ -989,6 +1010,12 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
         replacementRequests.push({
           insertText: { location: { index: mappedStart }, text: replacementText },
         });
+        replacementRequests.push(...documentTextStyleRequests(
+          nextDoc,
+          resultingPositionMap,
+          json.from,
+          json.from + step.slice.content.size,
+        ));
       }
       return finish("replace-paragraphs", [
         ...replacementRequests,

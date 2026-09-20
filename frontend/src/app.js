@@ -1716,9 +1716,9 @@ import {
     return true;
   }
 
-  function applyRevisionToEditor() {
-    debugEvent("app", "applyRevisionToEditor:start", { currentHtml });
-    suppressEditorUpdate = true;
+  function applyRevisionToEditor({ syncGoogleDocs = false, source = "applyRevisionToEditor" } = {}) {
+    debugEvent("app", "applyRevisionToEditor:start", { currentHtml, syncGoogleDocs, source });
+    suppressEditorUpdate = !syncGoogleDocs;
     rendering = true;
     try {
       const hasMarkers = conflictMarkerCount(currentHtml) > 0;
@@ -1742,7 +1742,7 @@ import {
           setHtml(tipTap, currentHtml || "<p></p>", { emitUpdate: false, source: "applyRevisionToEditor" });
         }
       } else {
-        setHtml(tipTap, currentHtml || "<p></p>", { emitUpdate: false, source: "applyRevisionToEditor" });
+        setHtml(tipTap, currentHtml || "<p></p>", { emitUpdate: syncGoogleDocs, source });
       }
       currentText = getPlain(tipTap);
       void store.hydrateImageElements(activeDraftId, editor, viewingOid);
@@ -1758,7 +1758,13 @@ import {
     }
   }
 
-  function loadSnapshotState(snap, { historical = false, historyBaseline = undefined, historyBaselineHtml = undefined } = {}) {
+  function loadSnapshotState(snap, {
+    historical = false,
+    historyBaseline = undefined,
+    historyBaselineHtml = undefined,
+    syncGoogleDocs = false,
+    source = "loadSnapshotState",
+  } = {}) {
     // Past commits / tip-after-commit: diff against previous commit when provided.
     baseline = historyBaseline !== undefined ? historyBaseline : "";
     baselineHtml = historyBaselineHtml !== undefined ? historyBaselineHtml : "";
@@ -1778,7 +1784,7 @@ import {
       dirtyReviewing = hasConflict && !pendingMerge;
     }
     clearHistory();
-    applyRevisionToEditor();
+    applyRevisionToEditor({ syncGoogleDocs, source });
     if (!historical) syncDirtyBodyFromCurrent();
     setEditorEditable(!historical);
     updateMeta();
@@ -4065,7 +4071,11 @@ import {
     const wt = await store.readWorkingFiles(activeDraftId);
     await refreshCommits();
     activeCommitIndex = commits.length - 1;
-    loadSnapshotState(wt, { historical: false });
+    loadSnapshotState(wt, {
+      historical: false,
+      syncGoogleDocs: true,
+      source: "git-restore",
+    });
     setStatus("restored into working tree");
     await refreshDraftList();
     renderGitPane();
@@ -4095,7 +4105,11 @@ import {
     pendingMerge = null;
     await refreshCommits();
     activeCommitIndex = commits.length - 1;
-    loadSnapshotState(wt, { historical: false });
+    loadSnapshotState(wt, {
+      historical: false,
+      syncGoogleDocs: true,
+      source: "git-reset",
+    });
     await refreshDraftList();
     syncPaneModeTabs();
     syncRightPane();
