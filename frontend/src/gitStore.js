@@ -7,7 +7,6 @@ import {
   htmlToPlainText,
   projectDocument,
 } from "./kindredSchema.js";
-import { CONFIG } from "./config.js";
 
 const VOLUME = "kindred";
   const ROOT = "/texts";
@@ -20,7 +19,6 @@ const VOLUME = "kindred";
   const BRANCH_SYNC_FILE = "branch-sync.json";
   const CHATS_FILE = "draft-chats.json";
   const UI_STATE_FILE = "draft-ui.json";
-  const DEFAULT_MODEL = CONFIG.chat.model;
   const DEFAULT_CHAT_TITLE = "New Chat";
   const DEFAULT_HIGHLIGHT_COLOR = "rgba(117, 114, 12, 1.0)";
 
@@ -377,7 +375,6 @@ const VOLUME = "kindred";
     const m = meta && typeof meta === "object" ? meta : {};
     return {
       id,
-      model: m.model || DEFAULT_MODEL,
       createdAt: Number(m.createdAt) || now,
       updatedAt: Number(m.updatedAt) || now,
       activeBranch: m.activeBranch || "main",
@@ -629,14 +626,13 @@ const VOLUME = "kindred";
     return titleFromText(text || "");
   }
 
-  // text + model content (excludes meta bookkeeping, title, chats).
+  // Draft content, excluding metadata bookkeeping, title, and chats.
   function dirtyContentKey(state) {
     const hasConflict =
       !!state.hasConflict ||
       !!(state.meta && state.meta.hasConflict);
     return JSON.stringify({
       html: storeTextHtml(state.html || state.text || "", { hasConflict }),
-      model: state.model || DEFAULT_MODEL,
     });
   }
 
@@ -666,7 +662,6 @@ const VOLUME = "kindred";
     const meta = normalizeMeta(
       {
         ...(state.meta || {}),
-        model: state.model ?? state.meta?.model,
         createdAt: state.createdAt ?? state.meta?.createdAt,
         updatedAt: state.updatedAt ?? Date.now(),
         activeBranch: state.activeBranch ?? state.meta?.activeBranch,
@@ -692,7 +687,6 @@ const VOLUME = "kindred";
       id,
       html,
       text: html,
-      model: meta.model,
       title,
       customTitle: meta.customTitle,
       createdAt: meta.createdAt,
@@ -821,7 +815,6 @@ const VOLUME = "kindred";
       id,
       html: body,
       text: body,
-      model: DEFAULT_MODEL,
       ...(trimmedTitle ? { title: trimmedTitle, customTitle: true } : { customTitle: false }),
       createdAt: now,
       updatedAt: now,
@@ -1025,7 +1018,6 @@ const VOLUME = "kindred";
     return {
       html: body,
       text: body,
-      model: metaRaw?.model || DEFAULT_MODEL,
       createdAt: metaRaw?.createdAt,
       updatedAt: metaRaw?.updatedAt,
       activeBranch: metaRaw?.activeBranch || "main",
@@ -1059,7 +1051,6 @@ const VOLUME = "kindred";
       ...prev,
       html: body,
       text: body,
-      model: snap.model,
       updatedAt: Date.now(),
       hasConflict: false,
       pendingMerge: null,
@@ -1103,7 +1094,6 @@ const VOLUME = "kindred";
       ...prev,
       html: body,
       text: body,
-      model: snap.model,
       activeBranch: branch,
       updatedAt: Date.now(),
       hasConflict: false,
@@ -3142,7 +3132,6 @@ const VOLUME = "kindred";
       ? await readFilesAtOid(dir, baseOid)
       : {
           text: "",
-          model: DEFAULT_MODEL,
         };
 
     const text = mergeText(
@@ -3161,8 +3150,6 @@ const VOLUME = "kindred";
       ...prev,
       html: text.mergedText,
       text: text.mergedText,
-      model: pickThreeWay(baseSnap.model, oursSnap.model, theirsSnap.model) ||
-        DEFAULT_MODEL,
       activeBranch: ours,
       updatedAt: Date.now(),
       hasConflict: !text.cleanMerge,

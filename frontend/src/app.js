@@ -194,7 +194,6 @@ import {
   let rendering = false;
   let converting = false;
   let applyingHistory = false;
-  let currentModel = DEFAULT_MODEL;
   let draftCost = 0;
   let statusMessage = "";
   let statusLevel = "";
@@ -1171,7 +1170,7 @@ import {
           statusParts.push(`${currentBranchName} · +${additions} -${deletions}`);
         }
       }
-      metaEl.textContent = `${statusParts.join(" · ")}\u2003|\u2003${currentModel} · ${formatCost(draftCost)}`;
+      metaEl.textContent = `${statusParts.join(" · ")}\u2003|\u2003${DEFAULT_MODEL} · ${formatCost(draftCost)}`;
     }
     else {
       metaEl.textContent = "";
@@ -1374,7 +1373,6 @@ import {
     return {
       html: currentHtml,
       text: currentHtml,
-      model: currentModel,
       hasConflict,
       pendingMerge,
       activeBranch: currentBranchName,
@@ -1750,7 +1748,6 @@ import {
     currentHtml = snap.html || snap.text || "";
     if (!currentHtml) currentHtml = "<p></p>";
     currentText = ""; // filled by applyRevisionToEditor via getPlain
-    currentModel = snap.model || DEFAULT_MODEL;
     if (historical) {
       // Merge bookkeeping is working-tree only; never adopt it from old commits.
       hasConflict = false;
@@ -1779,7 +1776,6 @@ import {
     baselineHtml = "";
     currentHtml = text ? plainToHtml(text) : "<p></p>";
     currentText = "";
-    currentModel = DEFAULT_MODEL;
     commits = [];
     activeCommitIndex = -1;
     viewingOid = null;
@@ -4277,7 +4273,7 @@ import {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: currentModel,
+          model: DEFAULT_MODEL,
           messages: apiMessagesFromChat(priorMessages),
           message: text,
           draft_text: draftText,
