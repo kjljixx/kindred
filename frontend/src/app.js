@@ -4336,23 +4336,7 @@ import {
   function apiMessagesFromChat(messages) {
     return (messages || [])
       .filter((m) => m && (m.role === "user" || m.role === "assistant"))
-      .map((m) => {
-        if (m.role === "assistant") {
-          return { role: "assistant", content: m.content || "" };
-        }
-        const item = {
-          role: "user",
-          content: m.content || "",
-          draft_text: m.draftText ?? "",
-        };
-        if (m.selection && typeof m.selection === "object") {
-          item.selection = {
-            from: Number(m.selection.from) || 0,
-            to: Number(m.selection.to) || 0,
-          };
-        }
-        return item;
-      });
+      .map((m) => ({ role: m.role, content: m.content || "" }));
   }
 
   async function sendChat({ retryStackIndex = null, retryUserIndex = null, overrideText = null } = {}) {
@@ -4374,12 +4358,8 @@ import {
     if (!text) return;
 
     pullFromEditor();
-    const draftText = isRetrying
-      ? String(source.draftText ?? "")
-      : tipTap ? getPlain(tipTap) : currentText || "";
-    const selection = isRetrying
-      ? source.selection || { from: 0, to: 0 }
-      : caretSelectionOffsets();
+    const draftText = tipTap ? getPlain(tipTap) : currentText || "";
+    const selection = caretSelectionOffsets();
 
     let priorMessages = [];
     if (isRetrying) {
@@ -4391,12 +4371,12 @@ import {
       ];
       targetStack.messages = [
         ...priorInStack,
-        { role: "user", content: text, draftText, selection },
+        { role: "user", content: text },
         { role: "assistant", content: "" },
       ];
     } else {
       priorMessages = getChatStacks(chat).flatMap((s) => s.messages || []);
-      const userMsg = { role: "user", content: text, draftText, selection };
+      const userMsg = { role: "user", content: text };
       targetStack.messages.push(userMsg, { role: "assistant", content: "" });
     }
 

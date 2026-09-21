@@ -102,12 +102,7 @@ def chat_draft_stream(
     if role == "assistant":
       prompt.append({"role": "assistant", "content": content})
     else:
-      p_from, p_to = _selection_offsets(prior.get("selection"))
-      prompt.append({"role": "user", "content": prompts.chat_user_turn(
-        draft_text=str(prior.get("draft_text", "") or ""), selection_from=p_from,
-        selection_to=p_to, message=content,
-        conflict_context=str(prior.get("conflict_context", "") or ""),
-      )})
+      prompt.append({"role": "user", "content": content})
   prompt.append({"role": "user", "content": prompts.chat_user_turn(
     draft_text=str(draft_text or ""), selection_from=sel_from, selection_to=sel_to,
     message=user_message, conflict_context=conflict_context,

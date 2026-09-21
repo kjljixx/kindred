@@ -92,6 +92,35 @@ def test_stream_prompt_includes_conflicts_and_action_protocol(monkeypatch):
   assert "Unresolved merge-conflict context" in prompt[-1]["content"]
 
 
+def test_stream_prompt_only_includes_current_draft_snapshot(monkeypatch):
+  captured = {}
+
+  def fake_reflect_stream(**kwargs):
+    captured.update(kwargs)
+    yield "text", "Reply"
+
+  monkeypatch.setattr(chat, "reflect_chat_stream", fake_reflect_stream)
+  list(chat.chat_draft_stream(
+    draft_text="Current draft",
+    message="Current question",
+    messages=[
+      {
+        "role": "user",
+        "content": "Earlier question",
+        "draft_text": "Historical draft",
+        "selection": {"from": 0, "to": 10},
+      },
+      {"role": "assistant", "content": "Earlier answer"},
+    ],
+  ))
+
+  prompt = captured["prompt"]
+  assert prompt[1] == {"role": "user", "content": "Earlier question"}
+  assert prompt[2] == {"role": "assistant", "content": "Earlier answer"}
+  assert "Current draft" in prompt[3]["content"]
+  assert "Historical draft" not in str(prompt)
+
+
 def test_draft_annotation_only_adds_focus_markers():
   assert annotate_draft("Hello, world!", 0, 0) == (
     "<caret>Hello, world!"
