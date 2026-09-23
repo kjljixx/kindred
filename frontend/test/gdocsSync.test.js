@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildProseMirrorToGoogleDocsPositionMap,
   googleDocumentToKindredHtml,
+  googleDocumentIdFromUrl,
   insertedPlainText,
   needsGoogleDocsAuthentication,
   pullGoogleDocument,
@@ -10,6 +11,18 @@ import {
   transactionsToGoogleDocsBatchUpdatePhases,
 } from "../src/gdocsSync.js";
 import { bindToolbar, createKindredEditor, setHtml } from "../src/tiptapEditor.js";
+
+describe("Google Docs links", () => {
+  it("extracts a document ID from pasted editor and sharing links", () => {
+    expect(googleDocumentIdFromUrl("https://docs.google.com/document/d/document_123/edit")).toBe("document_123");
+    expect(googleDocumentIdFromUrl("  https://docs.google.com/document/d/document-456/view?usp=sharing  ")).toBe("document-456");
+  });
+
+  it("rejects non-document links and surrounding clipboard text", () => {
+    expect(googleDocumentIdFromUrl("https://docs.google.com/spreadsheets/d/sheet-id/edit")).toBeNull();
+    expect(googleDocumentIdFromUrl("Open https://docs.google.com/document/d/document-id/edit")).toBeNull();
+  });
+});
 
 describe("Google Docs pull", () => {
   it("preserves a permission response status for authentication handling", async () => {

@@ -6,6 +6,13 @@ import { blockToHtml, htmlToDoc } from "./kindredSchema.js";
 import { debugEvent } from "./debug.js";
 import { invertColorValue, invertStyleDeclaration } from "./colorInvert.js";
 
+export function googleDocumentIdFromUrl(value) {
+  const match = /^https:\/\/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/.exec(
+    String(value || "").trim(),
+  );
+  return match?.[1] || null;
+}
+
 function summarizeProseMirrorDocument(document) {
   const json = document?.toJSON?.() || document || {};
   const content = json.content || [];

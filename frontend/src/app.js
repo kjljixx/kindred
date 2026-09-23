@@ -36,6 +36,7 @@ import DOMPurify from "dompurify";
 import {
   buildProseMirrorToGoogleDocsPositionMap,
   fetchGoogleDocumentRevision,
+  googleDocumentIdFromUrl,
   needsGoogleDocsAuthentication,
   pullGoogleDocument as pullGoogleDocumentFromApi,
   pushGoogleDocsTransactions,
@@ -658,7 +659,7 @@ import {
       });
       persistActiveDraftSoon();
     },
-    placeholder: editor.dataset.placeholder || "Paste or type your text here. Double-click to import.",
+    placeholder: editor.dataset.placeholder || "Paste or type text here. Paste Google Docs link to begin sync. Double-click to import.",
   });
   tipTap.on("kindredImage", async ({ file }) => {
     try {
@@ -688,6 +689,21 @@ import {
       focusDraftItem(firstDraft);
     },
     { capture: true }
+  );
+  editor.addEventListener(
+    "paste",
+    (e) => {
+      if (activeDraftId) return;
+      const link = e.clipboardData?.getData("text/plain") || "";
+      if (!googleDocumentIdFromUrl(link)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void syncGoogleDocumentFromLink(link, { createDraftIfNeeded: true }).catch((err) => {
+        console.error(err);
+        setStatus(String(err.message || err), "danger");
+      });
+    },
+    { capture: true },
   );
   editor?.addEventListener("scroll", () => persistUiStateSoon(), { passive: true });
   const editorPaddingStorageKey = "kindred-editor-padding-left";
@@ -3725,10 +3741,22 @@ import {
     openImportDialog();
   });
 
-  function googleDocIdFromPrompt(value) {
-    const match = /^https:\/\/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/.exec(String(value || "").trim());
-    if (!match) throw new Error("Paste a Google Docs link");
-    return match[1];
+  async function syncGoogleDocumentFromLink(link, { createDraftIfNeeded = false } = {}) {
+    const documentId = googleDocumentIdFromUrl(link);
+    if (!documentId) throw new Error("Paste a Google Docs link");
+    if (!activeDraftId && createDraftIfNeeded) {
+      await createDraft("");
+      syncRightPane({ stickChatBottom: true });
+      updateCommitBtn();
+    }
+    if (!activeDraftId) return;
+    await store.setBranchSync(activeDraftId, currentBranchName, documentId);
+    replaceGoogleDocsSync({ documentId, revisionId: null });
+    const pulled = await pullGoogleDocument({ allowGitBusy: true });
+    if (!pulled) return;
+    const response = await fetch(`/api/google-docs/title?documentId=${encodeURIComponent(documentId)}`);
+    const title = response.ok ? (await response.json()).title : "";
+    setStatus(`syncing to ${title ? `"${title}"` : "Google Docs"}`);
   }
 
   async function syncCurrentBranch() {
@@ -3744,14 +3772,7 @@ import {
       setStatus("google docs sync disabled for this branch");
       return;
     }
-    const documentId = googleDocIdFromPrompt(link);
-    await store.setBranchSync(activeDraftId, currentBranchName, documentId);
-    replaceGoogleDocsSync({ documentId, revisionId: null });
-    const pulled = await pullGoogleDocument({ allowGitBusy: true });
-    if (!pulled) return;
-    const response = await fetch(`/api/google-docs/title?documentId=${encodeURIComponent(documentId)}`);
-    const title = response.ok ? (await response.json()).title : "";
-    setStatus(`syncing to ${title ? `"${title}"` : "Google Docs"}`);
+    await syncGoogleDocumentFromLink(link);
   }
 
   async function exportDraft(formatId = CONFIG.export.defaultFormat) {
