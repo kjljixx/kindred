@@ -1045,7 +1045,7 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
     if (
       json.stepType === "replace" &&
       json.from === json.to &&
-      json.slice?.content?.length === 2 &&
+      json.slice?.content?.length >= 2 &&
       json.slice.content.every((node) => node.type === "paragraph")
     ) {
       const restoredText = insertedPlainText(stepDocument, nextDoc);

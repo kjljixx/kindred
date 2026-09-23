@@ -3649,7 +3649,7 @@ export function createKindredEditor({
   onListConflictAction = null,
   onTransaction = null,
   onUpdate = null,
-  placeholder = "Paste or type your text here. Double-click to import.",
+  placeholder = "Paste or type text here. Paste Google Docs link to begin sync. Double-click to import.",
   googleDocsCompatibility = {},
 } = {}) {
   const emptyDocumentPlaceholder = ({ editor: currentEditor, node }) => {
