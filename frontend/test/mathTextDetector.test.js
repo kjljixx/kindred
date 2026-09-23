@@ -74,6 +74,15 @@ describe("classifyMath", () => {
     }
   });
 
+  it("does not send pasted HTML markup from console logs to the math parser", () => {
+    const text = `html: '<p>Eee</p><p><span style="color: rgb(0, 0, 0); font-size: 11pt; font-family: Arial, sans-serif;"><mark style="background-color: transparent;">1</mark></span></p>'`;
+
+    expect(classifyMath(text).candidates).toHaveLength(0);
+    expect(classifyMath('x<y and x^2').candidates).toEqual(
+      expect.arrayContaining([expect.objectContaining({ confidence: "definite" })]),
+    );
+  });
+
   it("does not expand a math range across text punctuation", () => {
     const result = classifyMath("x.");
 

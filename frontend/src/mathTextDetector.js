@@ -60,6 +60,14 @@ function findPhonePiece(text, index) {
   };
 }
 
+function findMarkupPiece(text, index) {
+  const match = text.slice(index).match(
+    /^<\/?[\p{L}][\p{L}\p{N}:-]*(?:\s+(?:"[^"]*"|'[^']*'|[^"'<>])*)?\/?>/u,
+  );
+  if (!match) return null;
+  return { start: index, end: index + match[0].length, text: match[0], kind: "markup" };
+}
+
 function findTextLinkPiece(text, index) {
   const candidateMatch = text.slice(index).match(/^[^\s<>"']+/u);
 
@@ -88,7 +96,7 @@ function findProtectedPieces(text) {
   while (index < text.length) {
     const previousCharacter = text[index - 1];
     const protectedTextPiece =
-      findTextLinkPiece(text, index) || findPhonePiece(text, index);
+      findMarkupPiece(text, index) || findTextLinkPiece(text, index) || findPhonePiece(text, index);
 
     if (
       protectedTextPiece &&
@@ -298,10 +306,10 @@ export function classifyMath(text) {
       return {
         text: protectedPiece.text,
         kind: protectedPiece.kind,
-        math: !incomplete,
+        math: protectedPiece.kind !== "markup" && !incomplete,
         protected: true,
         incomplete,
-        breaksMathRun: false,
+        breaksMathRun: protectedPiece.kind === "markup",
       };
     }
 
