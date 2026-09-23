@@ -69,6 +69,21 @@ function mapSideToBase(baseKeys, sideKeys) {
   return { baseToSide, inserts };
 }
 
+function reanchorInserts(mapping) {
+  for (const insert of mapping.inserts) {
+    const anchorSideIndex = mapping.baseToSide[insert.afterBase];
+    if (anchorSideIndex == null || anchorSideIndex < insert.sideIndex) continue;
+
+    insert.afterBase = -1;
+    for (let baseIndex = 0; baseIndex < mapping.baseToSide.length; baseIndex++) {
+      const sideIndex = mapping.baseToSide[baseIndex];
+      if (sideIndex != null && sideIndex < insert.sideIndex) {
+        insert.afterBase = baseIndex;
+      }
+    }
+  }
+}
+
 const PARAGRAPH_MATCH_THRESHOLD = 0.2;
 
 function normalizedWords(node) {
@@ -272,6 +287,8 @@ export function alignDocs(baseDoc, oursDoc, theirsDoc, options = {}) {
   const theirsMap = mapSideToBase(baseKeys, theirsKeys);
   reconcileEditedStructuralBlocks(baseBlocks, oursBlocks, oursMap);
   reconcileEditedStructuralBlocks(baseBlocks, theirsBlocks, theirsMap);
+  reanchorInserts(oursMap);
+  reanchorInserts(theirsMap);
 
   debugEvent("align", "lcs-map", {
     baseKeys,

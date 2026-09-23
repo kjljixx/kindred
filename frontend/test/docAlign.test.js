@@ -64,4 +64,43 @@ describe("alignTwoWay", () => {
 
     expect(changed).toEqual(["delete", "insert"]);
   });
+
+  it("keeps an insertion before the edited paragraph that follows it", () => {
+    const before = htmlToDoc(`
+      <p>Stable opening.</p>
+      <p>(300 word maximum)</p>
+      <p>My interest in Computer Science began because I loved finding useful information in dormant data. I built models for games and chess matches.</p>
+      <p>Stable closing.</p>
+    `);
+    const after = htmlToDoc(`
+      <p>Stable opening.</p>
+      <p>(300 word maximum)</p>
+      <p>My passion started with the idea that a keyboard and computer could create anything.</p>
+      <p>My interest in Computer Science began because I loved finding useful information in dormant data. I built models for games, chess matches, and programming competitions.</p>
+      <p>Stable closing.</p>
+    `);
+
+    const changed = alignTwoWay(before, after)
+      .filter((operation) => operation.type !== "equal")
+      .map((operation) => ({
+        type: operation.type,
+        ...operationTexts(operation),
+      }));
+
+    expect(changed).toEqual([
+      {
+        type: "insert",
+        base: "",
+        current:
+          "My passion started with the idea that a keyboard and computer could create anything.",
+      },
+      {
+        type: "replace",
+        base:
+          "My interest in Computer Science began because I loved finding useful information in dormant data. I built models for games and chess matches.",
+        current:
+          "My interest in Computer Science began because I loved finding useful information in dormant data. I built models for games, chess matches, and programming competitions.",
+      },
+    ]);
+  });
 });
