@@ -3702,8 +3702,7 @@ export function createKindredEditor({
         const marks = formatLockRuntime.lockedMarks.map((mark) =>
           view.state.schema.markFromJSON(mark),
         );
-        const tr = view.state.tr.replaceWith(from, to, view.state.schema.text(text, marks));
-        tr.setStoredMarks(marks);
+        const tr = view.state.tr.setStoredMarks(marks).insertText(text, from, to);
         view.dispatch(tr);
         return true;
       },
