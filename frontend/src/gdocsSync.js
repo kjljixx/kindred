@@ -183,7 +183,8 @@ function nodeChildren(node) {
 
 function googleDocsPlainText(content) {
   return content.textBetween(0, content.size, "\n", (node) => (
-    nodeType(node) === "mathLive" ? String(node.attrs?.asciiMath || "") : ""
+    nodeType(node) === "mathLive" ? String(node.attrs?.asciiMath || "")
+      : nodeType(node) === "hardBreak" ? "\n" : ""
   ));
 }
 

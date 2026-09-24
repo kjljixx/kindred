@@ -335,6 +335,25 @@ describe("Google Docs pull", () => {
 });
 
 describe("Google Docs text push", () => {
+  it("preserves hard breaks when replacing a document with HTML", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const editor = createKindredEditor({ element: editorElement, content: "<p>Old</p>" });
+    const before = editor.state.doc;
+    let transaction = null;
+    editor.on("transaction", ({ transaction: nextTransaction }) => {
+      if (nextTransaction.docChanged) transaction = nextTransaction;
+    });
+
+    setHtml(editor, "<p>First<br>Second<br>Third</p>", { source: "git-reset" });
+
+    const requests = transactionToGoogleDocsBatchUpdateRequests(transaction, before);
+    expect(requests.filter((request) => request.insertText).map((request) => request.insertText.text))
+      .toEqual(["First\nSecond\nThird"]);
+    editor.destroy();
+    editorElement.remove();
+  });
+
   it("inserts one newline when splitting a paragraph", () => {
     const editorElement = document.createElement("div");
     document.body.append(editorElement);
