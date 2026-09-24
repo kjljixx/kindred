@@ -32,7 +32,7 @@ function zipMinimalDocx(bodyInner) {
 
 describe("prepareHtmlForDocxMath", () => {
   it("replaces KaTeX with placeholders and collects OMML", () => {
-    const rendered = renderMathForExport("<p>sin(x)</p>");
+    const rendered = renderMathForExport('<p><span class="render-latex" data-kindred-math="sin(x)">sin(x)</span></p>');
     if (document.compatMode !== "CSS1Compat") return;
 
     const { html, mathEntries } = prepareHtmlForDocxMath(rendered);
@@ -53,7 +53,7 @@ describe("prepareHtmlForDocxMath", () => {
 
 describe("extractMathmlFromKatex", () => {
   it("reads MathML from a rendered KaTeX element", () => {
-    const rendered = renderMathForExport("<p>sin(x)</p>");
+    const rendered = renderMathForExport('<p><span class="render-latex" data-kindred-math="sin(x)">sin(x)</span></p>');
     if (document.compatMode !== "CSS1Compat") return;
 
     const doc = new DOMParser().parseFromString(`<div>${rendered}</div>`, "text/html");

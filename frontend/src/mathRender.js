@@ -2,7 +2,6 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import katexCssBundled from "katex/dist/katex.min.css?raw";
 import AsciiMathParser from "asciimath2tex";
-import { classifyMathHtml } from "./mathTextDetector.js";
 
 /** KaTeX CSS embedded in HTML/PDF exports (font URLs point at jsDelivr). */
 export function getMathExportEmbeddedCss() {
@@ -44,11 +43,10 @@ export function renderLatexIn(root) {
   }
 }
 
-/** Classify + wrap math in HTML, then render KaTeX (export/preview only). */
-export function renderMathHtml(inputHtml, classify = classifyMathHtml) {
-  const classified = classify(inputHtml);
+/** Render accepted math in HTML without classifying plain text. */
+export function renderMathHtml(inputHtml) {
   const container = document.createElement("div");
-  container.innerHTML = classified;
+  container.innerHTML = inputHtml;
   renderLatexIn(container);
   return container.innerHTML;
 }
@@ -58,9 +56,9 @@ export function htmlHasRenderedMath(html) {
   return /class="katex(?:\s|")/.test(String(html || ""));
 }
 
-/** Classify + render math for HTML/PDF/DOCX export. */
+/** Render accepted math for HTML/PDF/DOCX export. */
 export function renderMathForExport(inputHtml) {
-  return renderMathHtml(inputHtml, classifyMathHtml);
+  return renderMathHtml(inputHtml);
 }
 
 /** Inject KaTeX CSS into a full HTML document (or wrap a fragment). */

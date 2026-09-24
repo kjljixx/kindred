@@ -7,8 +7,8 @@ import {
 } from "../src/mathRender.js";
 
 describe("renderMathForExport", () => {
-  it("wraps detected math for export", () => {
-    const html = "<p>sin(x)</p>";
+  it("renders accepted math for export", () => {
+    const html = '<p><span class="render-latex" data-kindred-math="sin(x)">sin(x)</span></p>';
     const out = renderMathForExport(html);
     expect(out).toContain('class="render-latex"');
     if (document.compatMode === "CSS1Compat") {
@@ -17,11 +17,18 @@ describe("renderMathForExport", () => {
     }
   });
 
-  it("leaves plain text unchanged when no math is detected", () => {
-    const html = "<p>I have 3 apples.</p>";
+  it("leaves unaccepted math as plain text", () => {
+    const html = "<p>sin(x) and I have 3 apples.</p>";
     const out = renderMathForExport(html);
     expect(htmlHasRenderedMath(out)).toBe(false);
     expect(out).toBe(html);
+  });
+
+  it("does not classify plain text beside accepted math", () => {
+    const html = '<p>sin(x) <span class="render-latex" data-kindred-math="x^2">x^2</span></p>';
+    const out = renderMathForExport(html);
+    expect(out.match(/class="render-latex"/g)).toHaveLength(1);
+    expect(out).toContain("sin(x) ");
   });
 });
 
