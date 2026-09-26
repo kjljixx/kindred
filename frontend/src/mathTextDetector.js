@@ -19,6 +19,12 @@ const differentialVariables = new Set([
 
 const textPunctuation = new Set([".", ";", ":", "!", "?"]);
 
+function isDecimalPoint(text, index) {
+  return text[index] === "."
+    && /\p{N}/u.test(text[index - 1] || "")
+    && /\p{N}/u.test(text[index + 1] || "");
+}
+
 function isUrlLike(value) {
   const hasExplicitProtocol = /^https?:\/\//iu.test(value);
   const isBareDomain =
@@ -244,7 +250,8 @@ export function classifyMath(text) {
   let textPunctuationIndex = 0;
 
   const punctuationReplaced = [...protectedStream]
-    .map((character) => {
+    .map((character, index) => {
+      if (isDecimalPoint(protectedStream, index)) return character;
       if (/[\p{L}\p{N}\s]/u.test(character)) {
         return character;
       }
@@ -319,7 +326,7 @@ export function classifyMath(text) {
       token.length === 2 &&
       token[0] === "d" &&
       differentialVariables.has(token[1].toLowerCase());
-    const isNumber = /^\p{N}+$/u.test(token);
+    const isNumber = /^\p{N}+(?:\.\p{N}+)?$/u.test(token);
     const isSingleLetter = /^\p{L}$/u.test(token);
 
     const isMathLetter =
@@ -420,7 +427,7 @@ export function classifyMath(text) {
       while (
         start > 0 &&
         !/\s/u.test(text[start - 1]) &&
-        !textPunctuation.has(text[start - 1])
+        (!textPunctuation.has(text[start - 1]) || isDecimalPoint(text, start - 1))
       ) {
         start -= 1;
       }
@@ -428,7 +435,7 @@ export function classifyMath(text) {
       while (
         end < text.length &&
         !/\s/u.test(text[end]) &&
-        !textPunctuation.has(text[end])
+        (!textPunctuation.has(text[end]) || isDecimalPoint(text, end))
       ) {
         end += 1;
       }

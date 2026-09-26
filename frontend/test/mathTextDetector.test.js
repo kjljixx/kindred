@@ -90,6 +90,18 @@ describe("classifyMath", () => {
     expect(result.html).toBe('<span class="render-latex">x</span>.');
   });
 
+  it("keeps decimal points between digits in math without including sentence punctuation", () => {
+    expect(classifyMath("14/11.8=").html).toBe(
+      '<span class="render-latex">14/11.8=</span>',
+    );
+    expect(classifyMath("14/11.8=.").html).toBe(
+      '<span class="render-latex">14/11.8=</span>.',
+    );
+    expect(classifyMath("x=1.25 ").html).toBe(
+      '<span class="render-latex">x=1.25</span> ',
+    );
+  });
+
   it("does not classify visible link text as math", () => {
     const html = '<p><a href="https://example.com">x^2</a></p>';
 
