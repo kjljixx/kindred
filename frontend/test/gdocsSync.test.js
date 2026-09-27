@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { EditorState, Plugin } from "@tiptap/pm/state";
+import { overlayKey } from "../src/editorKeys.js";
 import {
   buildProseMirrorToGoogleDocsPositionMap,
   googleDocumentToKindredHtml,
@@ -57,6 +58,45 @@ describe("Google Docs editor transaction events", () => {
     expect(transactions[1].transaction).toBe(appendedTransactions[0]);
     expect(transactions[1].before).toBe(rootTransaction.doc);
 
+    editor.destroy();
+    element.remove();
+  });
+
+  it("captures and translates a math conversion appended after equals is typed", async () => {
+    const element = document.createElement("div");
+    document.body.append(element);
+    const events = [];
+    const editor = createKindredEditor({
+      element,
+      content: "<p>2+2</p>",
+      onTransaction: (event) => events.push(event),
+    });
+    editor.view.dispatch(editor.state.tr.setMeta(overlayKey, {
+      type: "set",
+      partial: { showDiffs: false },
+    }));
+    events.length = 0;
+
+    editor.view.dispatch(editor.state.tr.insertText("=", 4));
+
+    const event = events[0];
+    expect(editor.state.doc.firstChild.firstChild.type.name).toBe("mathLive");
+    expect(editor.state.doc.firstChild.firstChild.attrs.asciiMath).toBe("2+2=4");
+    expect(event.appendedTransactions.some(
+      (transaction) => transaction.getMeta("mathNodeConversion"),
+    )).toBe(true);
+    const transactions = googleDocsTransactionsFromEditorEvent(event);
+    expect(transactions).toHaveLength(
+      1 + event.appendedTransactions.length,
+    );
+    const requests = transactions.flatMap(({ transaction, before }) => (
+      transactionToGoogleDocsBatchUpdateRequests(transaction, before)
+    ));
+    expect(requests).toContainEqual({
+      insertText: { location: { index: 1 }, text: "2+2=4" },
+    });
+
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     editor.destroy();
     element.remove();
   });

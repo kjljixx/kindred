@@ -3708,15 +3708,16 @@ export function createKindredEditor({
       },
       // Remove handlePaste and handleDrop to let TipTap parse HTML & paragraphs natively
     },
-    onTransaction: ({ editor: ed, transaction }) => {
+    onTransaction: ({ editor: ed, transaction, appendedTransactions = [] }) => {
       if (!transaction.docChanged && !transaction.selectionSet) return;
       if (debugEnabled("editor")) {
         debugEvent("editor", "transaction", {
           transaction: summarizeTransaction(transaction),
+          appendedTransactions: appendedTransactions.map(summarizeTransaction),
           editor: summarizeEditor(ed),
         });
       }
-      onTransaction?.({ editor: ed, transaction });
+      onTransaction?.({ editor: ed, transaction, appendedTransactions });
     },
     onUpdate: ({ editor: ed }) => {
       if (debugEnabled("editor")) {
