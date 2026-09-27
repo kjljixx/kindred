@@ -386,16 +386,28 @@ function completeGoogleTextStyle(insertedMarks) {
   };
 }
 
-function insertedTextStyleRequests(json, startIndex, endIndex) {
-  const insertedMarks = json.slice?.content
-    ?.find((node) => node.type === "text")
-    ?.marks || [];
-  const textStyle = completeGoogleTextStyle(insertedMarks);
-  return [{ updateTextStyle: {
+function completeGoogleTextStyleRequest(startIndex, endIndex, marks) {
+  const textStyle = completeGoogleTextStyle(marks);
+  return { updateTextStyle: {
     range: { startIndex, endIndex },
     textStyle,
     fields: Object.keys(textStyle).join(","),
-  } }];
+  } };
+}
+
+function insertedTextStyleRequests(json, startIndex) {
+  const requests = [];
+  let currentIndex = startIndex;
+  for (const node of json.slice?.content || []) {
+    const length = node.type === "mathLive"
+      ? String(node.attrs?.asciiMath || "").length
+      : String(node.text || "").length;
+    if (!length) continue;
+    const endIndex = currentIndex + length;
+    requests.push(completeGoogleTextStyleRequest(currentIndex, endIndex, node.marks || []));
+    currentIndex = endIndex;
+  }
+  return requests;
 }
 
 function documentTextStyleRequests(document, positionMap, from, to) {
@@ -405,12 +417,11 @@ function documentTextStyleRequests(document, positionMap, from, to) {
     const startIndex = positionMap.mapPosition(position);
     const endIndex = positionMap.mapPosition(position + node.nodeSize);
     if (startIndex >= endIndex) return;
-    const textStyle = completeGoogleTextStyle(node.marks.map((mark) => mark.toJSON()));
-    requests.push({ updateTextStyle: {
-      range: { startIndex, endIndex },
-      textStyle,
-      fields: Object.keys(textStyle).join(","),
-    } });
+    requests.push(completeGoogleTextStyleRequest(
+      startIndex,
+      endIndex,
+      node.marks.map((mark) => mark.toJSON()),
+    ));
   });
   return requests;
 }
@@ -1138,7 +1149,7 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
     if (json.from !== json.to || !text) return finish("skipped-noop", []);
     return finish("insert-text", [
       { insertText: { location: { index: mappedStart }, text } },
-      ...insertedTextStyleRequests(json, mappedStart, mappedStart + text.length),
+      ...insertedTextStyleRequests(json, mappedStart),
     ]);
   });
   const calculatedTextRequests = (transaction.getMeta?.("googleDocsTextInsertions") || [])

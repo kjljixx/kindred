@@ -513,11 +513,12 @@ describe("Google Docs text push", () => {
     document.body.append(editorElement);
     const editor = createKindredEditor({ element: editorElement, content: "<p>old</p>" });
     const before = editor.state.doc;
-    const transaction = editor.state.tr.replaceWith(1, 4, [
+    const pastedParagraph = editor.schema.node("paragraph", null, [
       editor.schema.text("bold ", [editor.schema.marks.bold.create()]),
       editor.schema.text("italic", [editor.schema.marks.italic.create()]),
       editor.schema.text(" plain"),
     ]);
+    const transaction = editor.state.tr.replaceWith(0, before.content.size, pastedParagraph);
 
     const requests = transactionToGoogleDocsBatchUpdateRequests(transaction, before);
     const textStyleRequests = requests
@@ -533,6 +534,37 @@ describe("Google Docs text push", () => {
     ]);
     expect(textStyleRequests.map(({ textStyle }) => textStyle.bold)).toEqual([true, false, false]);
     expect(textStyleRequests.map(({ textStyle }) => textStyle.italic)).toEqual([false, true, false]);
+
+    editor.destroy();
+    editorElement.remove();
+  });
+
+  it("preserves each text run when rich HTML is pasted at a caret", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const editor = createKindredEditor({ element: editorElement, content: "<p>prepost</p>" });
+    editor.commands.setTextSelection(4);
+    const before = editor.state.doc;
+    let transaction = null;
+    editor.on("transaction", ({ transaction: nextTransaction }) => {
+      if (nextTransaction.docChanged) transaction = nextTransaction;
+    });
+
+    editor.view.pasteHTML("<strong>Bold</strong> plain <em>Italic</em>");
+
+    expect(transaction.getMeta("uiEvent")).toBe("paste");
+    expect(transaction.steps[0].toJSON()).toMatchObject({ stepType: "replace", from: 4, to: 4 });
+    const requests = transactionToGoogleDocsBatchUpdateRequests(transaction, before);
+    expect(requests[0].insertText).toEqual({ location: { index: 4 }, text: "Bold plain Italic" });
+    expect(requests.filter((request) => request.updateTextStyle).map(({ updateTextStyle }) => ({
+      range: updateTextStyle.range,
+      bold: updateTextStyle.textStyle.bold,
+      italic: updateTextStyle.textStyle.italic,
+    }))).toEqual([
+      { range: { startIndex: 4, endIndex: 8 }, bold: true, italic: false },
+      { range: { startIndex: 8, endIndex: 15 }, bold: false, italic: false },
+      { range: { startIndex: 15, endIndex: 21 }, bold: false, italic: true },
+    ]);
 
     editor.destroy();
     editorElement.remove();
