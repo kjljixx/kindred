@@ -1114,7 +1114,15 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
     }
     if (json.from !== json.to && text !== null) {
       const requests = deleteContentRequests(mappedStart, mappedEnd);
-      if (text) requests.push({ insertText: { location: { index: mappedStart }, text } });
+      if (text) {
+        requests.push({ insertText: { location: { index: mappedStart }, text } });
+        requests.push(...documentTextStyleRequests(
+          nextDoc,
+          resultingPositionMap,
+          json.from,
+          json.from + step.slice.content.size,
+        ));
+      }
       return finish("replace-plain-text", requests);
     }
     if (json.from !== json.to || !text) return finish("skipped-noop", []);

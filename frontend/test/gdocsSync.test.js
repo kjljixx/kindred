@@ -399,6 +399,67 @@ describe("Google Docs text push", () => {
     editorElement.remove();
   });
 
+  it("applies pasted formatting when replacing selected text", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const editor = createKindredEditor({ element: editorElement, content: "<p>old</p>" });
+    const before = editor.state.doc;
+    const bold = editor.schema.marks.bold.create();
+    const transaction = editor.state.tr.replaceWith(
+      1,
+      4,
+      editor.schema.text("formatted", [bold]),
+    );
+
+    const requests = transactionToGoogleDocsBatchUpdateRequests(transaction, before);
+
+    expect(requests.map((request) => Object.keys(request)[0])).toEqual([
+      "deleteContentRange",
+      "insertText",
+      "updateTextStyle",
+    ]);
+    expect(requests[1]).toEqual({
+      insertText: { location: { index: 1 }, text: "formatted" },
+    });
+    expect(requests[2].updateTextStyle).toMatchObject({
+      range: { startIndex: 1, endIndex: 10 },
+      textStyle: { bold: true },
+    });
+
+    editor.destroy();
+    editorElement.remove();
+  });
+
+  it("preserves mixed formatting across pasted text runs", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const editor = createKindredEditor({ element: editorElement, content: "<p>old</p>" });
+    const before = editor.state.doc;
+    const transaction = editor.state.tr.replaceWith(1, 4, [
+      editor.schema.text("bold ", [editor.schema.marks.bold.create()]),
+      editor.schema.text("italic", [editor.schema.marks.italic.create()]),
+      editor.schema.text(" plain"),
+    ]);
+
+    const requests = transactionToGoogleDocsBatchUpdateRequests(transaction, before);
+    const textStyleRequests = requests
+      .filter((request) => request.updateTextStyle)
+      .map((request) => request.updateTextStyle);
+
+    expect(requests[1].insertText.text).toBe("bold italic plain");
+    expect(textStyleRequests).toHaveLength(3);
+    expect(textStyleRequests.map(({ range }) => range)).toEqual([
+      { startIndex: 1, endIndex: 6 },
+      { startIndex: 6, endIndex: 12 },
+      { startIndex: 12, endIndex: 18 },
+    ]);
+    expect(textStyleRequests.map(({ textStyle }) => textStyle.bold)).toEqual([true, false, false]);
+    expect(textStyleRequests.map(({ textStyle }) => textStyle.italic)).toEqual([false, true, false]);
+
+    editor.destroy();
+    editorElement.remove();
+  });
+
   it("pushes a paste of five paragraphs", () => {
     const editorElement = document.createElement("div");
     document.body.append(editorElement);
