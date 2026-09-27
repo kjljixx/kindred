@@ -782,7 +782,7 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
       });
     }
     const deleteContentRequest = (startIndex, endIndex) => {
-      const preservesFinalNewline = endIndex === mappedDocumentEnd || deletesAllContent;
+      const preservesFinalNewline = endIndex === mappedDocumentEnd;
       const safeEndIndex = preservesFinalNewline ? endIndex - 1 : endIndex;
       if (startIndex >= safeEndIndex) return null;
       return { deleteContentRange: { range: { startIndex, endIndex: safeEndIndex } } };

@@ -436,6 +436,36 @@ describe("Google Docs text push", () => {
     editorElement.remove();
   });
 
+  it("deletes the only character while preserving the required final newline", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const editor = createKindredEditor({ element: editorElement, content: "<p>x</p>" });
+    const before = editor.state.doc;
+    const transaction = editor.state.tr.delete(1, 2);
+
+    expect(transactionToGoogleDocsBatchUpdateRequests(transaction, before)).toEqual([
+      { deleteContentRange: { range: { startIndex: 1, endIndex: 2 } } },
+    ]);
+
+    editor.destroy();
+    editorElement.remove();
+  });
+
+  it("preserves the final newline when selecting all of a one-character document", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const editor = createKindredEditor({ element: editorElement, content: "<p>x</p>" });
+    const before = editor.state.doc;
+    const transaction = editor.state.tr.delete(0, before.content.size);
+
+    expect(transactionToGoogleDocsBatchUpdateRequests(transaction, before)).toEqual([
+      { deleteContentRange: { range: { startIndex: 1, endIndex: 2 } } },
+    ]);
+
+    editor.destroy();
+    editorElement.remove();
+  });
+
   it("preserves the required final newline when an entire list document is deleted", () => {
     const editorElement = document.createElement("div");
     document.body.append(editorElement);
@@ -453,7 +483,7 @@ describe("Google Docs text push", () => {
 
     expect(transactionToGoogleDocsBatchUpdateRequests(transaction, before)).toEqual([
       { deleteParagraphBullets: { range: { startIndex: 1, endIndex: 14 } } },
-      { deleteContentRange: { range: { startIndex: 1, endIndex: 13 } } },
+      { deleteContentRange: { range: { startIndex: 1, endIndex: 14 } } },
     ]);
 
     editor.destroy();
