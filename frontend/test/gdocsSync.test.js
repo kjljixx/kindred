@@ -570,6 +570,33 @@ describe("Google Docs text push", () => {
     editorElement.remove();
   });
 
+  it("preserves formatting in rich HTML pasted as multiple paragraphs", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const editor = createKindredEditor({ element: editorElement, content: "<p>before after</p>" });
+    editor.commands.setTextSelection(8);
+    const before = editor.state.doc;
+    let transaction = null;
+    editor.on("transaction", ({ transaction: nextTransaction }) => {
+      if (nextTransaction.docChanged) transaction = nextTransaction;
+    });
+
+    editor.view.pasteHTML("<p><strong>Bold</strong></p><p><em>Italic</em></p>");
+
+    const requests = transactionToGoogleDocsBatchUpdateRequests(transaction, before);
+    expect(requests.filter((request) => request.updateTextStyle).map(({ updateTextStyle }) => ({
+      range: updateTextStyle.range,
+      bold: updateTextStyle.textStyle.bold,
+      italic: updateTextStyle.textStyle.italic,
+    }))).toEqual([
+      { range: { startIndex: 8, endIndex: 12 }, bold: true, italic: false },
+      { range: { startIndex: 13, endIndex: 19 }, bold: false, italic: true },
+    ]);
+
+    editor.destroy();
+    editorElement.remove();
+  });
+
   it("pushes a paste of five paragraphs", () => {
     const editorElement = document.createElement("div");
     document.body.append(editorElement);

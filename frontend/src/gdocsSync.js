@@ -1071,12 +1071,25 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
       json.slice.content.every((node) => node.type === "paragraph")
     ) {
       const restoredText = insertedPlainText(stepDocument, nextDoc);
-      return finish(restoredText === "\n" ? "paragraph-break" : "insert-paragraphs", [{
+      const paragraphRequests = [{
         insertText: {
           location: { index: mappedStart },
           text: restoredText || "\n",
         },
-      }], { restoredText });
+      }];
+      let hasFormattedText = false;
+      step.slice.content.descendants((node) => {
+        if (node.isText && node.marks.length) hasFormattedText = true;
+      });
+      if (hasFormattedText && restoredText && restoredText !== "\n") {
+        paragraphRequests.push(...documentTextStyleRequests(
+          nextDoc,
+          resultingPositionMap,
+          json.from,
+          step.getMap().map(json.from, 1),
+        ));
+      }
+      return finish(restoredText === "\n" ? "paragraph-break" : "insert-paragraphs", paragraphRequests, { restoredText });
     }
     if (json.stepType === "replace" && json.from === json.to && insertedNode?.type === "hardBreak") {
       return finish("hard-break", [{ insertText: { location: { index: mappedStart }, text: "\n" } }]);
