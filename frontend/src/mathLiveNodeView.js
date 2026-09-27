@@ -281,11 +281,28 @@ export const MathLiveNavigation = Extension.create({
           if (target?.type.name !== "mathLive") return false;
 
           const pos = forward ? $from.pos : $from.pos - target.nodeSize;
+          if (backspace) {
+            event.preventDefault();
+            const asciiMath = Array.from(target.attrs.asciiMath || "").slice(0, -1).join("");
+            if (!asciiMath) {
+              view.dispatch(view.state.tr.delete(pos, pos + target.nodeSize));
+              return true;
+            }
+            view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, {
+              ...target.attrs,
+              asciiMath,
+            }));
+            const nodeDom = view.nodeDOM(pos);
+            const field = nodeDom?.querySelector?.("math-field");
+            if (field) {
+              field.focus();
+              field.position = -1;
+            }
+            return true;
+          }
           const commands = forward
             ? ["moveToMathfieldStart", "moveToNextChar"]
-            : left
-              ? ["moveToMathfieldEnd", "moveToPreviousChar"]
-              : ["moveToMathfieldEnd", "deleteBackward"];
+            : ["moveToMathfieldEnd", "moveToPreviousChar"];
           if (!focusMathField(view, pos, commands)) return false;
           event.preventDefault();
           return true;
