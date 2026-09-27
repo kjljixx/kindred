@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+import { EditorState, Plugin } from "@tiptap/pm/state";
+import { overlayKey } from "../src/editorKeys.js";
 import {
   buildProseMirrorToGoogleDocsPositionMap,
   googleDocumentToKindredHtml,
   googleDocumentIdFromUrl,
+  googleDocsTransactionsFromEditorEvent,
   insertedPlainText,
   needsGoogleDocsAuthentication,
   pullGoogleDocument,
@@ -21,6 +24,81 @@ describe("Google Docs links", () => {
   it("rejects non-document links and surrounding clipboard text", () => {
     expect(googleDocumentIdFromUrl("https://docs.google.com/spreadsheets/d/sheet-id/edit")).toBeNull();
     expect(googleDocumentIdFromUrl("Open https://docs.google.com/document/d/document-id/edit")).toBeNull();
+  });
+});
+
+describe("Google Docs editor transaction events", () => {
+  it("returns root and appended transactions in order with their own before-documents", () => {
+    const element = document.createElement("div");
+    document.body.append(element);
+    const editor = createKindredEditor({ element, content: "<p>Text</p>" });
+    const state = EditorState.create({
+      doc: editor.state.doc,
+      plugins: [new Plugin({
+        appendTransaction(transactions, _oldState, newState) {
+          if (!transactions.some((transaction) => transaction.getMeta("appendTest"))) {
+            return null;
+          }
+          return newState.tr.insertText("B", 6);
+        },
+      })],
+    });
+    const applied = state.applyTransaction(
+      state.tr.insertText("A", 5).setMeta("appendTest", true),
+    );
+    const [rootTransaction, ...appendedTransactions] = applied.transactions;
+    const transactions = googleDocsTransactionsFromEditorEvent({
+      transaction: rootTransaction,
+      appendedTransactions,
+    });
+
+    expect(transactions).toHaveLength(2);
+    expect(transactions[0].transaction).toBe(rootTransaction);
+    expect(transactions[0].before).toBe(state.doc);
+    expect(transactions[1].transaction).toBe(appendedTransactions[0]);
+    expect(transactions[1].before).toBe(rootTransaction.doc);
+
+    editor.destroy();
+    element.remove();
+  });
+
+  it("captures and translates a math conversion appended after equals is typed", async () => {
+    const element = document.createElement("div");
+    document.body.append(element);
+    const events = [];
+    const editor = createKindredEditor({
+      element,
+      content: "<p>2+2</p>",
+      onTransaction: (event) => events.push(event),
+    });
+    editor.view.dispatch(editor.state.tr.setMeta(overlayKey, {
+      type: "set",
+      partial: { showDiffs: false },
+    }));
+    events.length = 0;
+
+    editor.view.dispatch(editor.state.tr.insertText("=", 4));
+
+    const event = events[0];
+    expect(editor.state.doc.firstChild.firstChild.type.name).toBe("mathLive");
+    expect(editor.state.doc.firstChild.firstChild.attrs.asciiMath).toBe("2+2=4");
+    expect(event.appendedTransactions.some(
+      (transaction) => transaction.getMeta("mathNodeConversion"),
+    )).toBe(true);
+    const transactions = googleDocsTransactionsFromEditorEvent(event);
+    expect(transactions).toHaveLength(
+      1 + event.appendedTransactions.length,
+    );
+    const requests = transactions.flatMap(({ transaction, before }) => (
+      transactionToGoogleDocsBatchUpdateRequests(transaction, before)
+    ));
+    expect(requests).toContainEqual({
+      insertText: { location: { index: 1 }, text: "2+2=4" },
+    });
+
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    editor.destroy();
+    element.remove();
   });
 });
 

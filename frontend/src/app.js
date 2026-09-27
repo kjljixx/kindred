@@ -40,6 +40,7 @@ import {
   needsGoogleDocsAuthentication,
   pullGoogleDocument as pullGoogleDocumentFromApi,
   pushGoogleDocsTransactions,
+  googleDocsTransactionsFromEditorEvent,
 } from "./gdocsSync.js";
 import { assertGoogleDocsCompatibilityConfig, CONFIG } from "./config.js";
 import {
@@ -586,37 +587,49 @@ import {
       requireTableSeparatorParagraphs: () =>
         Boolean(googleDocsSync) && CONFIG.googleDocs.compatibility.requireTableSeparatorParagraphs,
     },
-    onTransaction: ({ transaction }) => {
-      const transactionId = ++googleDocsTransactionId;
-      const skipReason = transaction.getMeta("skipGoogleDocsSync")
-        || (!googleDocsSync
-        ? "not-pulled"
-        : !transaction.docChanged
-          ? "selection-only"
-          : suppressEditorUpdate
-            ? "suppressed-editor-update"
-            : converting
-              ? "converting"
-              : null);
-      const detail = {
-        transactionId,
-        docChanged: transaction.docChanged,
-        skipReason,
-        revisionId: googleDocsSync?.revisionId ?? null,
-        selection: { from: transaction.selection.from, to: transaction.selection.to },
-        steps: transaction.steps.map((step) => step.toJSON()),
-      };
-      reportGoogleDocsSync("transaction", detail, true);
-      if (skipReason) {
-        reportGoogleDocsSync("skipped", detail);
-        return;
+    onTransaction: (event) => {
+      let queuedTransaction = false;
+      const eventTransactions = googleDocsTransactionsFromEditorEvent(event);
+      for (const { transaction: currentTransaction, before } of eventTransactions) {
+        const transactionId = ++googleDocsTransactionId;
+        const skipReason = currentTransaction.getMeta("skipGoogleDocsSync")
+          || (!googleDocsSync
+          ? "not-pulled"
+          : !currentTransaction.docChanged
+            ? "selection-only"
+            : suppressEditorUpdate
+              ? "suppressed-editor-update"
+              : converting
+                ? "converting"
+                : null);
+        const detail = {
+          transactionId,
+          docChanged: currentTransaction.docChanged,
+          skipReason,
+          revisionId: googleDocsSync?.revisionId ?? null,
+          selection: {
+            from: currentTransaction.selection.from,
+            to: currentTransaction.selection.to,
+          },
+          steps: currentTransaction.steps.map((step) => step.toJSON()),
+        };
+        reportGoogleDocsSync("transaction", detail, true);
+        if (skipReason) {
+          reportGoogleDocsSync("skipped", detail);
+          continue;
+        }
+        pendingGoogleDocsTransactions.push({
+          transaction: currentTransaction,
+          before,
+          detail,
+        });
+        queuedTransaction = true;
+        reportGoogleDocsSync("queued", {
+          ...detail,
+          pendingTransactions: pendingGoogleDocsTransactions.length,
+        });
       }
-      pendingGoogleDocsTransactions.push({ transaction, before: transaction.before, detail });
-      reportGoogleDocsSync("queued", {
-        ...detail,
-        pendingTransactions: pendingGoogleDocsTransactions.length,
-      });
-      void syncGoogleDocs();
+      if (queuedTransaction) void syncGoogleDocs();
     },
     onUpdate: () => {
       if (
