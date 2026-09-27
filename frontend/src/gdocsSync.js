@@ -188,6 +188,16 @@ function googleDocsPlainText(content) {
   ));
 }
 
+export function googleDocsTransactionsFromEditorEvent({
+  transaction,
+  appendedTransactions = [],
+}) {
+  return [transaction, ...appendedTransactions].map((currentTransaction) => ({
+    transaction: currentTransaction,
+    before: currentTransaction.before,
+  }));
+}
+
 function isGoogleDocsPlainTextContent(content) {
   return nodeChildren(content).every((node) => ["text", "mathLive"].includes(nodeType(node)));
 }

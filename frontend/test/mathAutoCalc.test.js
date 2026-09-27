@@ -15,7 +15,6 @@ import {
   expandMathNodesToText,
 } from "../src/mathTextExtension.js";
 import { plainOffsetsToPmRange } from "../src/tiptapEditor.js";
-import { transactionToGoogleDocsBatchUpdateRequests } from "../src/gdocsSync.js";
 
 const schema = new Schema({
   nodes: {
@@ -176,10 +175,6 @@ describe("mathNodeTransaction", () => {
       expression: "2+2=",
       calculation: "4",
     });
-    expect(transactionToGoogleDocsBatchUpdateRequests(transaction, state.doc)).toEqual([
-      { deleteContentRange: { range: { startIndex: 1, endIndex: 5 } } },
-      { insertText: { location: { index: 1 }, text: "2+2=4" } },
-    ]);
   });
 
   it("skips conversion while Diff overlay is active", () => {

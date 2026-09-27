@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import { EditorState, Plugin } from "@tiptap/pm/state";
 import {
   buildProseMirrorToGoogleDocsPositionMap,
   googleDocumentToKindredHtml,
   googleDocumentIdFromUrl,
+  googleDocsTransactionsFromEditorEvent,
   insertedPlainText,
   needsGoogleDocsAuthentication,
   pullGoogleDocument,
@@ -21,6 +23,42 @@ describe("Google Docs links", () => {
   it("rejects non-document links and surrounding clipboard text", () => {
     expect(googleDocumentIdFromUrl("https://docs.google.com/spreadsheets/d/sheet-id/edit")).toBeNull();
     expect(googleDocumentIdFromUrl("Open https://docs.google.com/document/d/document-id/edit")).toBeNull();
+  });
+});
+
+describe("Google Docs editor transaction events", () => {
+  it("returns root and appended transactions in order with their own before-documents", () => {
+    const element = document.createElement("div");
+    document.body.append(element);
+    const editor = createKindredEditor({ element, content: "<p>Text</p>" });
+    const state = EditorState.create({
+      doc: editor.state.doc,
+      plugins: [new Plugin({
+        appendTransaction(transactions, _oldState, newState) {
+          if (!transactions.some((transaction) => transaction.getMeta("appendTest"))) {
+            return null;
+          }
+          return newState.tr.insertText("B", 6);
+        },
+      })],
+    });
+    const applied = state.applyTransaction(
+      state.tr.insertText("A", 5).setMeta("appendTest", true),
+    );
+    const [rootTransaction, ...appendedTransactions] = applied.transactions;
+    const transactions = googleDocsTransactionsFromEditorEvent({
+      transaction: rootTransaction,
+      appendedTransactions,
+    });
+
+    expect(transactions).toHaveLength(2);
+    expect(transactions[0].transaction).toBe(rootTransaction);
+    expect(transactions[0].before).toBe(state.doc);
+    expect(transactions[1].transaction).toBe(appendedTransactions[0]);
+    expect(transactions[1].before).toBe(rootTransaction.doc);
+
+    editor.destroy();
+    element.remove();
   });
 });
 
