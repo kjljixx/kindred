@@ -15,6 +15,7 @@ import {
   expandMathNodesToText,
 } from "../src/mathTextExtension.js";
 import { plainOffsetsToPmRange } from "../src/tiptapEditor.js";
+import { transactionToGoogleDocsBatchUpdateRequests } from "../src/gdocsSync.js";
 
 const schema = new Schema({
   nodes: {
@@ -169,14 +170,16 @@ describe("mathNodeTransaction", () => {
       type: { name: "mathLive" },
       attrs: { asciiMath: "2+2=4" },
     });
-    expect(transaction.getMeta("googleDocsTextInsertions")).toEqual([
-      { position: 5, text: "4" },
-    ]);
+    expect(transaction.getMeta("googleDocsTextInsertions")).toBeUndefined();
     expect(transaction.getMeta("selectCalculatedSuffix")).toEqual({
       pos: 1,
       expression: "2+2=",
       calculation: "4",
     });
+    expect(transactionToGoogleDocsBatchUpdateRequests(transaction, state.doc)).toEqual([
+      { deleteContentRange: { range: { startIndex: 1, endIndex: 5 } } },
+      { insertText: { location: { index: 1 }, text: "2+2=4" } },
+    ]);
   });
 
   it("skips conversion while Diff overlay is active", () => {

@@ -122,7 +122,6 @@ export function mathNodeTransaction(
 ) {
   if (isDiffOverlayActive(state)) return null;
   const replacements = [];
-  const googleDocsTextInsertions = [];
 
   state.doc.descendants((node, pos) => {
     if (!MATH_BLOCK_TYPES.has(node.type.name) || !blockTouchesRanges(pos, node, changedRanges)) {
@@ -153,10 +152,6 @@ export function mathNodeTransaction(
     if (calculatedAsciiMath?.startsWith(replacement.asciiMath)) {
       const calculatedSuffix = calculatedAsciiMath.slice(replacement.asciiMath.length);
       if (calculatedSuffix) {
-        googleDocsTextInsertions.push({
-          position: replacement.to,
-          text: calculatedSuffix,
-        });
         tr.setMeta("selectCalculatedSuffix", {
           pos: replacement.from,
           expression: replacement.asciiMath,
@@ -172,9 +167,6 @@ export function mathNodeTransaction(
     tr = tr.replaceWith(replacement.from, replacement.to, mathNode);
   }
   tr.setMeta("mathNodeConversion", true);
-  if (googleDocsTextInsertions.length) {
-    tr.setMeta("googleDocsTextInsertions", googleDocsTextInsertions);
-  }
   return tr;
 }
 
