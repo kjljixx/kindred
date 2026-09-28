@@ -1,4 +1,7 @@
 - Build frontend with `npm run build`
+- Keep the generated `src/kindred/static/dist/` files after building. The HTTPS
+  development site serves these files, so restoring or deleting them leaves the
+  running site on an older frontend. Include the built files with frontend changes.
 
 ## Google Docs sync architecture
 

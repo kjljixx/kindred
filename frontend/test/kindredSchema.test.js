@@ -5,6 +5,7 @@ import {
   canonicalizeTextHtml,
   docToPlainText,
   htmlToDoc,
+  prettyPrintHtml,
   projectDocument,
 } from "../src/kindredSchema.js";
 import { alignTwoWay } from "../src/docAlign.js";
@@ -18,6 +19,17 @@ describe("significant whitespace", () => {
   it("preserves trailing whitespace through HTML and document conversion", () => {
     const html = canonicalizeTextHtml("<p>Hello </p>");
     expect(docToPlainText(htmlToDoc(html))).toBe("Hello ");
+  });
+
+  it("preserves whitespace-only inline text while removing block formatting whitespace", () => {
+    expect(canonicalizeTextHtml("<p><em>This</em><strong> </strong><em>can</em></p>"))
+      .toBe("<p><em>This</em><strong> </strong><em>can</em></p>");
+    expect(prettyPrintHtml("<p>First</p> \n <p>Second</p>"))
+      .toBe("<p>First</p>\n<p>Second</p>");
+    expect(prettyPrintHtml('<p data-note="a > b">First</p> \n <p>Second</p>'))
+      .toBe('<p data-note="a > b">First</p>\n<p>Second</p>');
+    expect(prettyPrintHtml("<p><span> </span><em>Next</em></p>"))
+      .toBe("<p><span> </span><em>Next</em></p>");
   });
 
   it("preserves boundaries when projecting selected document blocks", () => {

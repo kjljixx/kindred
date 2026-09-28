@@ -360,9 +360,27 @@ const KindredTable = Table.extend({
  * Never injects \n before closing tags (that would sit inside paragraph text).
  */
 export function prettyPrintHtml(html) {
-  const compact = String(html || "")
-    .replace(/>\s+</g, "><")
-    .trim();
+  const raw = String(html || "").trim();
+  if (!raw) return "";
+  const root = new DOMParser().parseFromString(raw, "text/html").body;
+  const blockTags = new Set([
+    "P", "H1", "H2", "H3", "H4", "H5", "H6", "UL", "OL", "LI",
+    "BLOCKQUOTE", "PRE", "HR", "DIV", "TABLE", "TR", "TD", "TH",
+  ]);
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const separators = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (
+      /^\s+$/.test(node.nodeValue)
+      && node.previousSibling?.nodeType === Node.ELEMENT_NODE
+      && node.nextSibling?.nodeType === Node.ELEMENT_NODE
+      && blockTags.has(node.previousSibling.tagName)
+      && blockTags.has(node.nextSibling.tagName)
+    ) separators.push(node);
+  }
+  separators.forEach((node) => node.remove());
+  const compact = root.innerHTML.trim();
   if (!compact) return "";
   return compact
     .replace(

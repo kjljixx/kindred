@@ -103,6 +103,34 @@ describe("Google Docs editor transaction events", () => {
 });
 
 describe("Google Docs pull", () => {
+  it("preserves a separately styled space between text runs", () => {
+    const html = googleDocumentToKindredHtml({
+      body: {
+        content: [{
+          startIndex: 1,
+          endIndex: 10,
+          paragraph: {
+            paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+            elements: [
+              { startIndex: 1, endIndex: 5, textRun: { content: "This", textStyle: { italic: true } } },
+              { startIndex: 5, endIndex: 6, textRun: { content: " ", textStyle: { bold: true } } },
+              { startIndex: 6, endIndex: 10, textRun: { content: "can\n", textStyle: { italic: true } } },
+            ],
+          },
+        }],
+      },
+    });
+
+    expect(html).toContain("<strong> </strong>");
+    const element = document.createElement("div");
+    document.body.append(element);
+    const editor = createKindredEditor({ element, content: "<p>Before</p>" });
+    setHtml(editor, html, { source: "google-docs-pull" });
+    expect(editor.state.doc.textContent).toBe("This can");
+    editor.destroy();
+    element.remove();
+  });
+
   it("preserves a permission response status for authentication handling", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: false,
