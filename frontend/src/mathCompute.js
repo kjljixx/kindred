@@ -27,7 +27,7 @@ export function isMathLiveEqualsInput(event) {
   return event?.inputType === "insertText" && event.data === "=";
 }
 
-/** Return a numeric result for a formula ending in "=", or null. */
+/** Return the numeric result for a formula ending in "=", or null. */
 export function calculateTrailingEquals(asciiMath) {
   const source = String(asciiMath || "").trim();
   if (!source.endsWith("=")) return null;
@@ -46,7 +46,7 @@ export function calculateTrailingEquals(asciiMath) {
     if (numericValue == null) return null;
     const formattedValue = formatCalculationResult(numericValue);
     if (formattedValue == null) return null;
-    return `${expressionSource}=${formattedValue}`;
+    return formattedValue;
   } catch {
     return null;
   }

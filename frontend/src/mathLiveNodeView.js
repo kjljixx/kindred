@@ -125,13 +125,12 @@ export function createMathLiveNodeView({ node, view, getPos }) {
 
   const persist = (event) => {
     let nextAsciiMath = field.getValue("ascii-math");
-    const calculatedAsciiMath = isMathLiveEqualsInput(event)
+    const calculatedResult = isMathLiveEqualsInput(event)
       ? calculateTrailingEquals(nextAsciiMath)
       : null;
-    if (calculatedAsciiMath && calculatedAsciiMath !== nextAsciiMath) {
-      const calculatedSuffix = calculatedAsciiMath.slice(nextAsciiMath.length);
-      selectCalculatedSuffix(field, nextAsciiMath, calculatedSuffix);
-      nextAsciiMath = calculatedAsciiMath;
+    if (calculatedResult != null) {
+      selectCalculatedSuffix(field, nextAsciiMath, calculatedResult);
+      nextAsciiMath += calculatedResult;
     }
     if (nextAsciiMath === lastAsciiMath) return;
     const pos = getPos();

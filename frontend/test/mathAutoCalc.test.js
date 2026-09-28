@@ -60,16 +60,17 @@ describe("userInsertedMathDelimiter", () => {
   });
 });
 describe("calculateTrailingEquals", () => {
-  it("uses Compute Engine to append a numeric result", () => {
-    expect(calculateTrailingEquals("2+2=")).toBe("2+2=4");
-    expect(calculateTrailingEquals("1/3=")).toBe("1/3=0.333333");
-    expect(calculateTrailingEquals("|-4|=")).toBe("|-4|=4");
+  it("uses Compute Engine to return a numeric result", () => {
+    expect(calculateTrailingEquals("2+2=")).toBe("4");
+    expect(calculateTrailingEquals("1/3=")).toBe("0.333333");
+    expect(calculateTrailingEquals("|-4|=")).toBe("4");
+    expect(calculateTrailingEquals(" 2+2=")).toBe("4");
   });
 
   it("uses readable scientific notation for very small and large results", () => {
-    expect(calculateTrailingEquals("1/10000000=")).toBe("1/10000000=1*10^-7");
-    expect(calculateTrailingEquals("10^30=")).toBe("10^30=1*10^30");
-    expect(calculateTrailingEquals("1/30000000=")).toBe("1/30000000=3.333333*10^-8");
+    expect(calculateTrailingEquals("1/10000000=")).toBe("1*10^-7");
+    expect(calculateTrailingEquals("10^30=")).toBe("1*10^30");
+    expect(calculateTrailingEquals("1/30000000=")).toBe("3.333333*10^-8");
   });
 
   it("leaves symbolic expressions and equations alone", () => {
