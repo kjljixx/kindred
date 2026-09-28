@@ -199,7 +199,7 @@ export function googleDocsTransactionsFromEditorEvent({
 }
 
 function isGoogleDocsPlainTextContent(content) {
-  return nodeChildren(content).every((node) => ["text", "mathLive"].includes(nodeType(node)));
+  return nodeChildren(content).every((node) => ["text", "mathLive", "hardBreak"].includes(nodeType(node)));
 }
 
 /**

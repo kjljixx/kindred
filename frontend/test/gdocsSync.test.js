@@ -598,6 +598,29 @@ describe("Google Docs text push", () => {
     editorElement.remove();
   });
 
+  it("pushes an inline paste containing hard breaks and formatted text", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const editor = createKindredEditor({ element: editorElement, content: "<p>before after</p>" });
+    editor.commands.setTextSelection(8);
+    const before = editor.state.doc;
+    let transaction = null;
+    editor.on("transaction", ({ transaction: nextTransaction }) => {
+      if (nextTransaction.docChanged) transaction = nextTransaction;
+    });
+
+    editor.view.pasteHTML("<strong>First<br><br>Second</strong>");
+
+    const requests = transactionToGoogleDocsBatchUpdateRequests(transaction, before);
+    expect(requests[0].insertText).toEqual({
+      location: { index: 8 },
+      text: "First\n\nSecond",
+    });
+    expect(requests.some((request) => request.updateTextStyle?.textStyle.bold)).toBe(true);
+    editor.destroy();
+    editorElement.remove();
+  });
+
   it("preserves formatting in rich HTML pasted as multiple paragraphs", () => {
     const editorElement = document.createElement("div");
     document.body.append(editorElement);
