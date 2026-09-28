@@ -6,9 +6,45 @@ import { TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { calculateTrailingEquals, isMathLiveEqualsInput } from "./mathCompute.js";
 
+function parenthesizedLatex(source, start) {
+  if (!source.startsWith("\\left(", start)) return null;
+  let depth = 1;
+  const bodyStart = start + "\\left(".length;
+  for (let i = bodyStart; i < source.length;) {
+    if (source.startsWith("\\left(", i)) {
+      depth += 1;
+      i += "\\left(".length;
+    } else if (source.startsWith("\\right)", i)) {
+      depth -= 1;
+      if (!depth) return { body: source.slice(bodyStart, i), end: i + "\\right)".length };
+      i += "\\right)".length;
+    } else {
+      i += 1;
+    }
+  }
+  return null;
+}
+
+function restoreIndexedRoots(source) {
+  let result = "";
+  let cursor = 0;
+  const root = /\broot(?=\\left\()/g;
+  for (let match = root.exec(source); match; match = root.exec(source)) {
+    const index = parenthesizedLatex(source, root.lastIndex);
+    const radicand = index && parenthesizedLatex(source, index.end);
+    if (!radicand) continue;
+    result += source.slice(cursor, match.index);
+    result += `\\sqrt[${restoreIndexedRoots(index.body)}]{${restoreIndexedRoots(radicand.body)}}`;
+    cursor = radicand.end;
+    root.lastIndex = cursor;
+  }
+  return result + source.slice(cursor);
+}
+
 /** MathLive-native ASCII→LaTeX so getValue("ascii-math") roundtrips (asciimath2tex uses \\lvert). */
 function asciiMathForMathLive(source) {
-  return convertAsciiMathToLatex(String(source || "").trim()).replace(/\*/g, "\\cdot ");
+  return restoreIndexedRoots(convertAsciiMathToLatex(String(source || "").trim()))
+    .replace(/\*/g, "\\cdot ");
 }
 
 export function selectCalculatedSuffix(field, expression, calculation) {

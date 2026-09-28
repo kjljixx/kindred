@@ -23,6 +23,22 @@ describe("mathLive node storage", () => {
 });
 
 describe("mathLive node editing", () => {
+  it.each([
+    ["root(3)(x)", "\\sqrt[3]{x}"],
+    ["root(4)(x)", "\\sqrt[4]{x}"],
+    ["root(3)(8)=2", "\\sqrt[3]{8}=2"],
+    ["root(3)(x+root(4)(y))", "\\sqrt[3]{x+\\sqrt[4]{y}}"],
+    ["root(3)(abs(x))", "\\sqrt[3]{\\left|x\\right|}"],
+  ])("restores indexed roots in %s", (asciiMath, expected) => {
+    const nodeView = createMathLiveNodeView({
+      node: { attrs: { asciiMath }, nodeSize: 1 },
+      view: {},
+      getPos: () => 1,
+    });
+    expect(nodeView.dom.querySelector("math-field").value).toBe(expected);
+    nodeView.destroy();
+  });
+
   it.each(["sqrt(2*2", "sqrt(2*2)"])("renders multiplication in %s as a dot", (asciiMath) => {
     const nodeView = createMathLiveNodeView({
       node: { attrs: { asciiMath }, nodeSize: 1 },
