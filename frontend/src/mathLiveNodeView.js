@@ -8,7 +8,7 @@ import { calculateTrailingEquals, isMathLiveEqualsInput } from "./mathCompute.js
 
 /** MathLive-native ASCII→LaTeX so getValue("ascii-math") roundtrips (asciimath2tex uses \\lvert). */
 function asciiMathForMathLive(source) {
-  return convertAsciiMathToLatex(String(source || "").trim());
+  return convertAsciiMathToLatex(String(source || "").trim()).replace(/\*/g, "\\cdot ");
 }
 
 export function selectCalculatedSuffix(field, expression, calculation) {

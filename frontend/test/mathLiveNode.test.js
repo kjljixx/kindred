@@ -23,6 +23,20 @@ describe("mathLive node storage", () => {
 });
 
 describe("mathLive node editing", () => {
+  it.each(["sqrt(2*2", "sqrt(2*2)"])("renders multiplication in %s as a dot", (asciiMath) => {
+    const nodeView = createMathLiveNodeView({
+      node: { attrs: { asciiMath }, nodeSize: 1 },
+      view: {},
+      getPos: () => 1,
+    });
+    const field = nodeView.dom.querySelector("math-field");
+
+    expect(field.value).toContain("\\cdot");
+    expect(field.value).not.toContain("*");
+    expect(field.getAttribute("aria-label")).toBe(`Formula: ${asciiMath}`);
+    nodeView.destroy();
+  });
+
   it("selects an automatically calculated result", () => {
     const transactions = [];
     const nodeView = createMathLiveNodeView({
