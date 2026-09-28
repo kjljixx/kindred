@@ -146,21 +146,18 @@ export function mathNodeTransaction(
   let tr = state.tr;
   for (const replacement of replacements.reverse()) {
     const marks = tr.doc.resolve(replacement.from).marks();
-    const calculatedAsciiMath = calculateAfterEquals
+    const calculatedResult = calculateAfterEquals
       ? calculateTrailingEquals(replacement.asciiMath)
       : null;
-    if (calculatedAsciiMath?.startsWith(replacement.asciiMath)) {
-      const calculatedSuffix = calculatedAsciiMath.slice(replacement.asciiMath.length);
-      if (calculatedSuffix) {
-        tr.setMeta("selectCalculatedSuffix", {
-          pos: replacement.from,
-          expression: replacement.asciiMath,
-          calculation: calculatedSuffix,
-        });
-      }
+    if (calculatedResult != null) {
+      tr.setMeta("selectCalculatedSuffix", {
+        pos: replacement.from,
+        expression: replacement.asciiMath,
+        calculation: calculatedResult,
+      });
     }
     const mathNode = tr.doc.type.schema.nodes.mathLive.create(
-      { asciiMath: calculatedAsciiMath || replacement.asciiMath },
+      { asciiMath: replacement.asciiMath + (calculatedResult ?? "") },
       null,
       marks,
     );

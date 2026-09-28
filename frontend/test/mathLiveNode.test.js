@@ -103,7 +103,11 @@ describe("mathLive node editing", () => {
     nodeView.destroy();
   });
 
-  it("selects an automatically calculated result", () => {
+  it.each([
+    ["2+2=", "4"],
+    [" 2+2=", "4"],
+    [" sum  _(i=0)^2i=", "3"],
+  ])("selects an automatically calculated result for %s", (input, result) => {
     const transactions = [];
     const nodeView = createMathLiveNodeView({
       node: {
@@ -125,15 +129,15 @@ describe("mathLive node editing", () => {
       getPos: () => 1,
     });
     const field = nodeView.dom.querySelector("math-field");
-    field.value = "2+2=";
-    field.getValue = () => "2+2=";
+    field.value = input;
+    field.getValue = () => input;
     let position = 4;
     let selection = null;
     Object.defineProperties(field, {
       position: {
         get: () => position,
         set: (nextPosition) => {
-          position = nextPosition === -1 && field.value.includes("4") ? 5 : 4;
+          position = nextPosition === -1 && field.value.endsWith(result) ? 5 : 4;
         },
       },
       selection: {
@@ -154,6 +158,7 @@ describe("mathLive node editing", () => {
       ranges: [[4, 5]],
       direction: "forward",
     });
+    expect(field.value).toContain(`=${result}`);
     expect(transactions).toHaveLength(1);
     nodeView.destroy();
   });
