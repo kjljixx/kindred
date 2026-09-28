@@ -137,6 +137,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
     const pos = getPos();
     if (typeof pos !== "number") return;
     if (!String(nextAsciiMath).trim()) {
+      field.blur();
       const tr = view.state.tr.delete(pos, pos + currentNode.nodeSize);
       view.dispatch(
         tr.setSelection(TextSelection.create(tr.doc, pos)).setMeta("mathNodeEditing", pos),

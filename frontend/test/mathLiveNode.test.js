@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { Schema } from "@tiptap/pm/model";
+import { EditorState } from "@tiptap/pm/state";
 import { blockToHtml, htmlToDoc, htmlToPlainText } from "../src/kindredSchema.js";
 import { createMathLiveNodeView } from "../src/mathLiveNodeView.js";
 import { renderMathForExport } from "../src/mathRender.js";
@@ -23,6 +25,54 @@ describe("mathLive node storage", () => {
 });
 
 describe("mathLive node editing", () => {
+  it("blurs an emptied MathLive field before removing its node", () => {
+    const schema = new Schema({
+      nodes: {
+        doc: { content: "paragraph+" },
+        paragraph: { content: "inline*", group: "block" },
+        text: { group: "inline" },
+        mathLive: {
+          group: "inline",
+          inline: true,
+          atom: true,
+          attrs: { asciiMath: { default: "" } },
+        },
+      },
+    });
+    const state = EditorState.create({
+      doc: schema.node("doc", null, [
+        schema.node("paragraph", null, [
+          schema.node("mathLive", { asciiMath: "2+2=4" }),
+        ]),
+      ]),
+    });
+    const events = [];
+    const nodeView = createMathLiveNodeView({
+      node: {
+        attrs: { asciiMath: "2+2=4" },
+        nodeSize: 1,
+      },
+      view: {
+        state,
+        dispatch: () => events.push("delete"),
+        focus: () => events.push("editor focus"),
+      },
+      getPos: () => 1,
+    });
+    const field = nodeView.dom.querySelector("math-field");
+    field.getValue = () => "";
+    field.blur = () => events.push("field blur");
+
+    field.dispatchEvent(new InputEvent("input", {
+      inputType: "deleteContentBackward",
+      data: null,
+      bubbles: true,
+    }));
+
+    expect(events).toEqual(["field blur", "delete", "editor focus"]);
+    nodeView.destroy();
+  });
+
   it.each([
     ["root(3)(x)", "\\sqrt[3]{x}"],
     ["root(4)(x)", "\\sqrt[4]{x}"],
