@@ -33,6 +33,7 @@ import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, 
 import { listDiffsFromAlignOps, resolveListConflictHtml, resolveAllListConflicts } from "./listAlign.js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { createChatMarkdownStream, renderChatAnchor } from "./chatStreamMarkdown.js";
 import {
   buildProseMirrorToGoogleDocsPositionMap,
   fetchGoogleDocumentRevision,
@@ -1215,7 +1216,14 @@ import {
   }
 
   function renderMarkdown(text) {
-    return DOMPurify.sanitize(marked.parse(text || "", { breaks: true }));
+    const benchmark = window.__kindredChatBenchmark;
+    const started = benchmark ? performance.now() : 0;
+    const parsed = marked.parse(text || "", { breaks: true });
+    if (benchmark) benchmark("markdownParse", performance.now() - started);
+    const sanitizeStarted = benchmark ? performance.now() : 0;
+    const sanitized = DOMPurify.sanitize(parsed);
+    if (benchmark) benchmark("markdownSanitize", performance.now() - sanitizeStarted);
+    return sanitized;
   }
 
   function formatDraftTime(ts) {
@@ -2953,6 +2961,8 @@ import {
   }
 
   function renderChatThread({ stickBottom = false } = {}) {
+    const benchmark = window.__kindredChatBenchmark;
+    const renderStarted = benchmark ? performance.now() : 0;
     const chat = activeChat();
     if (!chat) {
       feedbackEl.innerHTML = `<p class="muted">Select or create a chat.</p>`;
@@ -3007,7 +3017,9 @@ import {
               .join("") +
         `</div>`;
     }
+    if (benchmark) benchmark("threadRender", performance.now() - renderStarted);
     requestAnimationFrame(() => {
+      const layoutStarted = benchmark ? performance.now() : 0;
       if (stickBottom || wasAtBottom) {
         feedbackEl.scrollTop = feedbackEl.scrollHeight;
       } else {
@@ -3015,6 +3027,7 @@ import {
       }
       bindComposerScrollWatch(feedbackEl);
       syncComposerSeparators();
+      if (benchmark) benchmark("scrollAndLayout", performance.now() - layoutStarted);
       const edit = feedbackEl.querySelector(".chat-message-edit");
       if (edit) {
         edit.focus();
@@ -3256,6 +3269,8 @@ import {
   }
 
   function renderCoachReply(content, msgIndex) {
+    const benchmark = window.__kindredChatBenchmark;
+    const anchorStarted = benchmark ? performance.now() : 0;
     const anchored = String(content || "")
       .replace(/<mention\b[\s\S]*?<\/mention>/gi, (token) => {
         const anchor = parseXmlTextAnchor(token, "mention");
@@ -3277,6 +3292,7 @@ import {
           ? renderVerifiedTextAnchor(anchor, "suggest", msgIndex, token)
           : token;
       });
+    if (benchmark) benchmark("anchorProcessing", performance.now() - anchorStarted);
     return renderMarkdown(anchored).replace(/\[{1,2}mention:(\d+):(\d+)\]{1,2}/g, (_, start, end) =>
       `<span class="chat-mention">` +
       `<button type="button" class="btn btn-tertiary" data-chat-action="mention" data-preview="current" data-start="${start}" data-end="${end}">${escapeHtml(currentText.slice(Number(start), Number(end)))}</button>` +
@@ -4218,6 +4234,8 @@ import {
       buffer = lines.pop() || "";
       for (const line of lines) {
         if (!line.trim()) continue;
+        const benchmark = window.__kindredChatBenchmark;
+        const eventStarted = benchmark ? performance.now() : 0;
         let event;
         try {
           event = JSON.parse(line);
@@ -4233,6 +4251,7 @@ import {
         } else if (event.type === "error") {
           throw new Error(event.detail || "Chat failed");
         }
+        if (benchmark) benchmark("eventProcessing", performance.now() - eventStarted);
       }
     }
     if (!doneEvent) {
@@ -4302,6 +4321,78 @@ import {
     chatBusy = true;
     syncChatComposer();
     setStatus("replying...");
+    let streamingReply = null;
+    let useStandardRenderer = false;
+    let pendingRender = null;
+    let pendingScroll = null;
+    const renderPendingReply = () => {
+      pendingRender = null;
+      if (isViewingThisChat()) renderChatThread({ stickBottom: true });
+    };
+    const scheduleReplyRender = () => {
+      if (pendingRender === null && isViewingThisChat()) {
+        pendingRender = requestAnimationFrame(renderPendingReply);
+      }
+    };
+    const flushReplyRender = () => {
+      if (pendingRender !== null) cancelAnimationFrame(pendingRender);
+      renderPendingReply();
+    };
+    const showTextDelta = (pendingReply, delta) => {
+      if (useStandardRenderer || /\[{1,2}(?:mention|suggest|replaced):/i.test(pendingReply.content.slice(-delta.length - 32))) {
+        useStandardRenderer = true;
+        streamingReply = null;
+        scheduleReplyRender();
+        return;
+      }
+      if (!isViewingThisChat()) {
+        streamingReply = null;
+        return;
+      }
+      const body = feedbackEl.querySelector(".chat-msg.assistant:last-child .chat-msg-body");
+      if (!body) {
+        scheduleReplyRender();
+        return;
+      }
+      const started = window.__kindredChatBenchmark ? performance.now() : 0;
+      try {
+        if (!streamingReply || streamingReply.body !== body) {
+          if (/\[{1,2}(?:mention|suggest|replaced):/i.test(pendingReply.content)) {
+            useStandardRenderer = true;
+            scheduleReplyRender();
+            return;
+          }
+          body.textContent = "";
+          streamingReply = {
+            body,
+            parser: createChatMarkdownStream(body, {
+              parseAnchor: (token, kind) => {
+                const anchor = parseXmlTextAnchor(token, kind);
+                return anchor && (!kind.includes("suggestion") || typeof anchor.replacement === "string")
+                  ? anchor : null;
+              },
+              renderAnchor: (anchor) => renderChatAnchor(anchor, chat.messages.length - 1, resolveTextAnchor),
+            }),
+          };
+          streamingReply.parser.write(pendingReply.content);
+        } else {
+          streamingReply.parser.write(delta);
+        }
+      } catch (error) {
+        console.warn("Chat streaming Markdown fell back to the standard renderer", error);
+        useStandardRenderer = true;
+        streamingReply = null;
+        scheduleReplyRender();
+        return;
+      }
+      if (pendingScroll === null) {
+        pendingScroll = requestAnimationFrame(() => {
+          pendingScroll = null;
+          if (isViewingThisChat()) feedbackEl.scrollTop = feedbackEl.scrollHeight;
+        });
+      }
+      window.__kindredChatBenchmark?.("streamingMarkdown", performance.now() - started);
+    };
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -4327,11 +4418,13 @@ import {
         res,
         (delta) => {
           pendingReply.content += delta;
-          if (isViewingThisChat()) renderChatThread({ stickBottom: true });
+          showTextDelta(pendingReply, delta);
         },
         (thinkingDelta) => {
           pendingReply.thinking = (pendingReply.thinking || "") + thinkingDelta;
-          if (isViewingThisChat()) renderChatThread({ stickBottom: true });
+          useStandardRenderer = true;
+          streamingReply = null;
+          scheduleReplyRender();
         }
       );
       const reply = String(data.reply || "");
@@ -4347,12 +4440,16 @@ import {
       setStatus("");
 
       if (isViewingThisChat()) {
-        renderChatThread({ stickBottom: true });
+        flushReplyRender();
       } else if (paneMode === "chat" && chatView === "list") {
         renderChatList();
       }
       await persistChatsNow();
     } catch (err) {
+      if (pendingRender !== null) {
+        cancelAnimationFrame(pendingRender);
+        pendingRender = null;
+      }
       chat.messages.pop();
       if (!isRetrying) chat.messages.pop();
       if (isViewingThisChat()) {
@@ -4361,6 +4458,8 @@ import {
       }
       await persistChatsNow();
     } finally {
+      if (pendingRender !== null) cancelAnimationFrame(pendingRender);
+      if (pendingScroll !== null) cancelAnimationFrame(pendingScroll);
       chatBusy = false;
       syncChatComposer();
     }
