@@ -10,6 +10,17 @@ export default defineConfig({
   },
   plugins: [
     {
+      name: "markdown-wasm-url",
+      transform(source, id) {
+        if (!id.replaceAll("\\", "/").endsWith("/markdown-wasm/dist/markdown.es.js")) return;
+        // The package's ESM loader assumes /markdown.wasm; use Vite's asset URL instead.
+        const filename = 'W="markdown.wasm"';
+        if (!source.includes(filename)) throw new Error("markdown-wasm loader changed");
+        return 'import wasmUrl from "markdown-wasm/dist/markdown.wasm?url";\n'
+          + source.replace(filename, "W=wasmUrl");
+      },
+    },
+    {
       name: "stylesheet-before-entry-module",
       transformIndexHtml: {
         order: "post",
@@ -41,7 +52,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ["pandoc-wasm", "docshift"],
+    exclude: ["pandoc-wasm", "docshift", "markdown-wasm"],
   },
   server: {
     proxy: {

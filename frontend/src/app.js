@@ -31,7 +31,7 @@ import { warmPopularGoogleFonts } from "./fontCatalog.js";
 import { alignTwoWay } from "./docAlign.js";
 import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, isStructuralBlock, isTableBlock } from "./kindredSchema.js";
 import { listDiffsFromAlignOps, resolveListConflictHtml, resolveAllListConflicts } from "./listAlign.js";
-import { marked } from "marked";
+import * as markdownWasm from "markdown-wasm";
 import DOMPurify from "dompurify";
 import { createChatMarkdownStream, refreshChatAnchors, renderChatAnchor } from "./chatStreamMarkdown.js";
 import {
@@ -196,6 +196,7 @@ import {
   let renderedChatId = null;
   let renderedDraftId = null;
   let chatNeedsFullDraftRender = false;
+  let markdownState = "loading";
   let editingChatMessage = null;
   let rendering = false;
   let converting = false;
@@ -213,6 +214,25 @@ import {
   /** @type {{ destroy: Function, getState: Function, applyState: Function } | null} */
   let toolbarController = null;
   let commits = [];
+  const markdownStarted = performance.now();
+  const markdownTimeout = setTimeout(() => finishMarkdownInitialization(
+    "error", new Error("markdown-wasm initialization timed out")
+  ), 5000);
+  function finishMarkdownInitialization(state, error = null) {
+    if (markdownState !== "loading" && !(markdownState === "error" && state === "ready")) return;
+    markdownState = state;
+    clearTimeout(markdownTimeout);
+    if (error) console.error("kindred: markdown-wasm failed to initialize", error);
+    else console.info(`kindred: markdown-wasm ready in ${(performance.now() - markdownStarted).toFixed(0)} ms`);
+    if (paneMode === "chat" && chatView === "thread" && !feedbackEl.hidden) {
+      renderChatThread({ stickBottom: true });
+      syncChatComposer();
+    }
+  }
+  void markdownWasm.ready.then(
+    () => finishMarkdownInitialization("ready"),
+    (error) => finishMarkdownInitialization("error", error),
+  );
   let activeCommitIndex = -1;
   let viewingOid = null;
   let headOid = null;
@@ -1233,7 +1253,13 @@ import {
   }
 
   function renderMarkdown(text) {
-    return DOMPurify.sanitize(marked.parse(text || "", { breaks: true }));
+    const input = text || "";
+    try {
+      return DOMPurify.sanitize(markdownWasm.parse(input));
+    } catch (error) {
+      console.error("kindred: failed to render chat Markdown", error);
+      return `<pre class="chat-markdown-error">${escapeHtml(input)}</pre>`;
+    }
   }
 
   function formatDraftTime(ts) {
@@ -2854,6 +2880,7 @@ import {
 
   function canUseComposer() {
     if (!activeDraftId || chatView !== "thread" || !activeChatId) return false;
+    if (markdownState === "error") return false;
     if (chatBusy || converting || gitBusy || isViewingHistory()) return false;
     return true;
   }
@@ -2972,6 +2999,12 @@ import {
 
   function renderChatThread({ stickBottom = false } = {}) {
     const chat = activeChat();
+    if (chat && markdownState !== "ready") {
+      feedbackEl.innerHTML = markdownState === "loading"
+        ? `<p class="muted">Loading chat renderer...</p>`
+        : `<p class="muted">Chat renderer unavailable. Refresh the page to retry.</p>`;
+      return;
+    }
     renderedChatId = chat?.id || null;
     renderedDraftId = activeDraftId;
     if (!chat) {

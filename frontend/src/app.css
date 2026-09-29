@@ -2271,7 +2271,8 @@ button.pane-title {
   padding: 0;
 }
 
-.chat-msg.assistant .chat-msg-body strong {
+.chat-msg.assistant .chat-msg-body strong,
+.chat-msg.assistant .chat-msg-body b {
   color: var(--color-text-bright);
   font-weight: var(--font-weight-3);
 }

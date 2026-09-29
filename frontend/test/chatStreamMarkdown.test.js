@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { createChatMarkdownStream, refreshChatAnchors, renderChatAnchor, UnsupportedAnchorContext } from "../src/chatStreamMarkdown.js";
 
@@ -146,9 +145,9 @@ describe("streaming chat Markdown", () => {
       token: suggestion,
     };
     const container = document.createElement("div");
-    container.innerHTML = DOMPurify.sanitize(marked.parse(
-      `Try ${renderChatAnchor(info, 3, () => null).outerHTML} now.`,
-    ));
+    container.innerHTML = DOMPurify.sanitize(
+      `<p>Try ${renderChatAnchor(info, 3, () => null).outerHTML} now.</p>`,
+    );
     const paragraph = container.querySelector("p");
 
     expect(container.querySelectorAll("[data-chat-anchor-info]")).toHaveLength(1);
