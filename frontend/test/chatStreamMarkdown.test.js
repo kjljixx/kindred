@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createChatMarkdownStream, renderChatAnchor, UnsupportedAnchorContext } from "../src/chatStreamMarkdown.js";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+import { createChatMarkdownStream, refreshChatAnchors, renderChatAnchor, UnsupportedAnchorContext } from "../src/chatStreamMarkdown.js";
 
 const suggestion = '<suggestion start="0" end="4"><original>text</original><prefix></prefix><suffix></suffix><replacement>**clear**</replacement></suggestion>';
 const mention = '<mention start="0" end="4"><original>text</original><prefix></prefix><suffix></suffix></mention>';
@@ -135,6 +137,39 @@ describe("streaming chat Markdown", () => {
 
     expect(node.querySelector("button")).toBeNull();
     expect(node.textContent).toBe("textclearer");
+  });
+
+  it("refreshes saved-message anchors without reparsing Markdown or replacing the paragraph", () => {
+    const info = {
+      anchor: { original: "text", prefix: "", suffix: "", replacement: "clearer" },
+      kind: "suggestion",
+      token: suggestion,
+    };
+    const container = document.createElement("div");
+    container.innerHTML = DOMPurify.sanitize(marked.parse(
+      `Try ${renderChatAnchor(info, 3, () => null).outerHTML} now.`,
+    ));
+    const paragraph = container.querySelector("p");
+
+    expect(container.querySelectorAll("[data-chat-anchor-info]")).toHaveLength(1);
+    expect(refreshChatAnchors(container, () => ({ start: 7, end: 11, original: "text" })))
+      .toEqual({ scanned: 1, changed: 1 });
+    expect(container.querySelector('[data-chat-action="suggest"]')?.dataset.start).toBe("7");
+    expect(container.querySelector('[data-chat-action="suggest"]')?.dataset.msgIndex).toBe("3");
+    const unchanged = container.querySelector(".chat-suggestion");
+    expect(refreshChatAnchors(container, () => ({ start: 7, end: 11, original: "text" })))
+      .toEqual({ scanned: 1, changed: 0 });
+    expect(container.querySelector(".chat-suggestion")).toBe(unchanged);
+    expect(refreshChatAnchors(container, () => ({ start: 9, end: 13, original: "text" })))
+      .toEqual({ scanned: 1, changed: 1 });
+    expect(container.querySelector('[data-chat-action="suggest"]')?.dataset.start).toBe("9");
+    expect(refreshChatAnchors(container, () => null)).toEqual({ scanned: 1, changed: 1 });
+    expect(container.querySelector('[data-chat-action="suggest"]')).toBeNull();
+    expect(container.querySelector(".chat-suggestion-replaced")?.textContent).toBe("textclearer");
+    const unmatched = container.querySelector(".chat-suggestion");
+    expect(refreshChatAnchors(container, () => null)).toEqual({ scanned: 1, changed: 0 });
+    expect(container.querySelector(".chat-suggestion")).toBe(unmatched);
+    expect(container.querySelector("p")).toBe(paragraph);
   });
 
   it("streams many mixed Markdown and XML anchors without replacing earlier nodes", () => {

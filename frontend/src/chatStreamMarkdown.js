@@ -12,6 +12,8 @@ export function renderChatAnchor({ anchor, kind, token }, msgIndex, resolveAncho
   const suggestion = kind === "suggestion";
   const wrapper = document.createElement("span");
   wrapper.className = suggestion ? "chat-suggestion" : "chat-mention";
+  wrapper.dataset.chatAnchorInfo = encodeURIComponent(JSON.stringify({ anchor, kind, token }));
+  wrapper.dataset.msgIndex = String(msgIndex);
   if (!location) {
     wrapper.classList.add("suggestion-static");
     if (suggestion) wrapper.classList.add("chat-suggestion-replaced");
@@ -27,6 +29,8 @@ export function renderChatAnchor({ anchor, kind, token }, msgIndex, resolveAncho
     }
     return wrapper;
   }
+  wrapper.dataset.anchorStart = String(location.start);
+  wrapper.dataset.anchorEnd = String(location.end);
   const button = (action, label, extraClass = "") => {
     const element = document.createElement("button");
     element.type = "button";
@@ -50,6 +54,24 @@ export function renderChatAnchor({ anchor, kind, token }, msgIndex, resolveAncho
     wrapper.append(replacement);
   }
   return wrapper;
+}
+
+export function refreshChatAnchors(container, resolveAnchor) {
+  const wrappers = container.querySelectorAll("[data-chat-anchor-info]");
+  let changed = 0;
+  for (const wrapper of wrappers) {
+    const info = JSON.parse(decodeURIComponent(wrapper.dataset.chatAnchorInfo));
+    const location = resolveAnchor(info.anchor);
+    if (location
+      ? wrapper.dataset.anchorStart === String(location.start)
+        && wrapper.dataset.anchorEnd === String(location.end)
+      : !wrapper.hasAttribute("data-anchor-start")) {
+      continue;
+    }
+    wrapper.replaceWith(renderChatAnchor(info, Number(wrapper.dataset.msgIndex), () => location));
+    changed++;
+  }
+  return { scanned: wrappers.length, changed };
 }
 
 export function createChatMarkdownStream(container, { parseAnchor, renderAnchor } = {}) {

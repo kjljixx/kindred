@@ -33,7 +33,7 @@ import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, 
 import { listDiffsFromAlignOps, resolveListConflictHtml, resolveAllListConflicts } from "./listAlign.js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { createChatMarkdownStream, renderChatAnchor } from "./chatStreamMarkdown.js";
+import { createChatMarkdownStream, refreshChatAnchors, renderChatAnchor } from "./chatStreamMarkdown.js";
 import {
   buildProseMirrorToGoogleDocsPositionMap,
   fetchGoogleDocumentRevision,
@@ -193,6 +193,9 @@ import {
   let chatBusy = false;
   let composerDraft = "";
   let renamingChatId = null;
+  let renderedChatId = null;
+  let renderedDraftId = null;
+  let chatNeedsFullDraftRender = false;
   let editingChatMessage = null;
   let rendering = false;
   let converting = false;
@@ -666,8 +669,22 @@ import {
       updateCommitBtn();
       syncOverlayFromState();
       syncHeaderTitle();
+      const draftIdAtUpdate = activeDraftId;
       void ensureDraftForText(currentText).then(() => {
-        syncRightPane();
+        if (
+          activeDraftId === draftIdAtUpdate &&
+          renderedDraftId === activeDraftId &&
+          renderedChatId &&
+          renderedChatId === activeChatId &&
+          paneMode === "chat" &&
+          chatView === "thread" &&
+          !feedbackEl.hidden &&
+          !chatNeedsFullDraftRender
+        ) {
+          refreshChatAnchors(feedbackEl, resolveTextAnchor);
+        } else {
+          syncRightPane();
+        }
         updateMeta();
         updateCommitBtn();
       });
@@ -2955,11 +2972,16 @@ import {
 
   function renderChatThread({ stickBottom = false } = {}) {
     const chat = activeChat();
+    renderedChatId = chat?.id || null;
+    renderedDraftId = activeDraftId;
     if (!chat) {
       feedbackEl.innerHTML = `<p class="muted">Select or create a chat.</p>`;
       return;
     }
     const messages = chat.messages || [];
+    chatNeedsFullDraftRender = messages.some((message) =>
+      /\[{1,2}(?:mention|suggest):\d+:\d+/.test(message.content || "")
+    );
     const scrollTop = feedbackEl.scrollTop;
     const wasAtBottom = scrollAreaAtBottom(feedbackEl);
     if (!messages.length) {
@@ -3227,33 +3249,11 @@ import {
   }
 
   function renderVerifiedTextAnchor(anchor, action, msgIndex, token) {
-    const location = resolveTextAnchor(anchor);
-    if (!location) {
-      if (action === "suggest") {
-        return '<span class="chat-suggestion chat-suggestion-replaced">' +
-          '<span class="suggestion-static suggestion-current">' + escapeHtml(anchor.original || "") + '</span>' +
-          '<span class="suggestion-static suggestion-replacement">' + escapeHtml(anchor.replacement || "") + '</span>' +
-          '</span>';
-      }
-      return '<span class="chat-mention suggestion-static">' + escapeHtml(anchor.original || "") + '</span>';
-    }
-    const attributes =
-      'data-start="' + location.start + '" data-end="' + location.end +
-      '" data-anchor="' + encodeURIComponent(JSON.stringify(anchor)) +
-      '" data-suggestion-token="' + encodeURIComponent(token) + '"';
-    if (action === "mention") {
-      return '<span class="chat-mention"><button type="button" class="btn btn-tertiary" ' +
-        'data-chat-action="mention" data-preview="current" ' + attributes + '>' +
-        escapeHtml(location.original) + '</button></span>';
-    }
-    return '<span class="chat-suggestion">' +
-      '<button type="button" class="btn btn-tertiary suggestion-current" ' +
-      'data-chat-action="current" data-preview="current" ' + attributes + '>' +
-      escapeHtml(location.original) + '</button>' +
-      '<button type="button" class="btn btn-tertiary" data-chat-action="suggest" ' +
-      'data-preview="replacement" data-msg-index="' + msgIndex + '" ' +
-      'data-replacement="' + escapeHtml(anchor.replacement) + '" ' + attributes + '>' +
-      escapeHtml(anchor.replacement) + '</button></span>';
+    return renderChatAnchor({
+      anchor,
+      kind: action === "suggest" ? "suggestion" : "mention",
+      token,
+    }, msgIndex, resolveTextAnchor).outerHTML;
   }
 
   function renderCoachReply(content, msgIndex) {
