@@ -308,6 +308,7 @@ body {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+  padding-top: var(--space-2);
   min-width: 0;
   flex: 1 1 auto;
 }
@@ -317,6 +318,7 @@ body {
   align-items: center;
   gap: var(--space-4);
   margin-left: auto;
+  padding-top: var(--space-2);
   flex-shrink: 0;
 }
 
