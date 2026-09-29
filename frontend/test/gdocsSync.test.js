@@ -3,6 +3,7 @@ import { EditorState, Plugin } from "@tiptap/pm/state";
 import { overlayKey } from "../src/editorKeys.js";
 import {
   buildProseMirrorToGoogleDocsPositionMap,
+  fetchGoogleDocumentRevision,
   googleDocumentToKindredHtml,
   googleDocumentIdFromUrl,
   googleDocsTransactionsFromEditorEvent,
@@ -14,6 +15,32 @@ import {
   transactionsToGoogleDocsBatchUpdatePhases,
 } from "../src/gdocsSync.js";
 import { bindToolbar, createKindredEditor, setHtml } from "../src/tiptapEditor.js";
+
+describe("Google Docs revision polling", () => {
+  it("sends tab activity and preserves skipped-check responses", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ checked: false, revisionId: null }),
+    });
+    try {
+      const result = await fetchGoogleDocumentRevision("document-1", {
+        tabId: "tab-1",
+        background: true,
+        idleSeconds: 42,
+      });
+      const query = new URL(fetchMock.mock.calls[0][0], "https://kindred.test").searchParams;
+      expect(Object.fromEntries(query)).toEqual({
+        documentId: "document-1",
+        tabId: "tab-1",
+        background: "true",
+        idleSeconds: "42",
+      });
+      expect(result).toEqual({ checked: false, revisionId: null });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+});
 
 describe("Google Docs links", () => {
   it("extracts a document ID from pasted editor and sharing links", () => {

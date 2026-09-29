@@ -111,9 +111,15 @@ def get_http_client() -> httpx.AsyncClient:
 
 
 WRITE_RATE_WINDOW_S = 60.0
+READ_RATE_WINDOW_S = 60.0
+READ_LIMIT_PER_USER_PER_MINUTE = 300
+REVISION_TAB_EXPIRY_S = 3600.0
 
 _write_times: deque[float] = deque()
 _write_slot_lock = asyncio.Lock()
+_read_times: dict[str, deque[float]] = {}
+_revision_tabs: dict[tuple[str, str, str], tuple[float, float]] = {}
+_read_slot_lock = asyncio.Lock()
 
 
 def earliest_write_time(
@@ -142,6 +148,56 @@ async def acquire_write_slot() -> float:
     while _write_times[0] <= cutoff:
       _write_times.popleft()
     return sent_at - arrived
+
+
+def earliest_read_time(times: Iterable[float], now: float) -> float:
+  earliest = now
+  for covered, sent_at in enumerate(
+    sorted((t for t in times if now - READ_RATE_WINDOW_S < t <= now), reverse=True),
+    start=1,
+  ):
+    earliest = max(
+      earliest,
+      sent_at + covered * covered * READ_RATE_WINDOW_S
+      / (READ_LIMIT_PER_USER_PER_MINUTE * READ_LIMIT_PER_USER_PER_MINUTE),
+    )
+  return earliest
+
+
+def revision_extra_delay(background: bool, idle_seconds: float) -> float:
+  idle_delay = 5.0 if idle_seconds >= 300 else 3.0 if idle_seconds >= 120 else 1.0 if idle_seconds >= 30 else 0.0
+  return max(5.0 if background else 0.0, idle_delay)
+
+
+async def reserve_revision_read(
+  session_id: str, document_id: str, tab_id: str, background: bool, idle_seconds: float
+) -> bool:
+  now = time.perf_counter()
+  key = (session_id, document_id, tab_id)
+  extra_delay = revision_extra_delay(background, idle_seconds)
+  async with _read_slot_lock:
+    for stale_key, (_, seen_at) in list(_revision_tabs.items()):
+      if seen_at < now - REVISION_TAB_EXPIRY_S:
+        del _revision_tabs[stale_key]
+    previous = _revision_tabs.get(key)
+    if previous:
+      base_due, _ = previous
+      next_due = base_due + extra_delay
+      if now < next_due:
+        _revision_tabs[key] = (base_due, now)
+        return False
+    times = _read_times.setdefault(session_id, deque())
+    while times and times[0] <= now - READ_RATE_WINDOW_S:
+      times.popleft()
+    if earliest_read_time(times, now) > now:
+      if previous:
+        _revision_tabs[key] = (previous[0], now)
+      return False
+    times.append(now)
+    _revision_tabs[key] = (earliest_read_time(times, now), now)
+    logger.debug("google revision read reserved: background=%s idle_seconds=%.0f recent_reads=%d",
+                 background, idle_seconds, len(times))
+    return True
 
 
 class SelectionOffsets(BaseModel):
@@ -407,10 +463,16 @@ async def api_google_docs_document(
 
 @app.get("/api/google-docs/revision")
 async def api_google_docs_revision(
-  request: Request, documentId: str = GOOGLE_DOCS_DOCUMENT_ID
-) -> dict[str, str | None]:
+  request: Request, documentId: str = GOOGLE_DOCS_DOCUMENT_ID,
+  tabId: str = "", background: bool = False, idleSeconds: float = 0.0,
+) -> dict[str, str | bool | None]:
   try:
-    return {"revisionId": await fetch_google_revision(require_google_session(request), documentId)}
+    session_id = require_google_session(request)
+    if not tabId or len(tabId) > 100 or idleSeconds < 0 or idleSeconds > 86400:
+      raise HTTPException(status_code=422, detail="Invalid revision polling metadata")
+    if not await reserve_revision_read(session_id, documentId, tabId, background, idleSeconds):
+      return {"checked": False, "revisionId": None}
+    return {"checked": True, "revisionId": await fetch_google_revision(session_id, documentId)}
   except HTTPException:
     raise
   except Exception as exc:

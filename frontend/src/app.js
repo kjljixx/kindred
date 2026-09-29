@@ -257,10 +257,13 @@ import {
   const pendingGoogleDocsTransactions = [];
   let googleDocsSyncInProgress = false;
   let googleDocsPollTimer = null;
+  let googleDocsPollingStarted = false;
   let googleDocsTransactionId = 0;
   let googleDocsSyncGeneration = 0;
   let googleDocsSyncErrorMessage = null;
   const GOOGLE_DOCS_POLL_INTERVAL_MS = 200;
+  const googleDocsTabId = crypto.randomUUID();
+  let lastGoogleDocsActivity = Date.now();
 
   function reportGoogleDocsSync(event, detail, verbose = false) {
     window.dispatchEvent(new CustomEvent("kindred:google-docs-sync", {
@@ -286,6 +289,7 @@ import {
     googleDocsSyncGeneration += 1;
     googleDocsSync = syncState;
     pendingGoogleDocsTransactions.length = 0;
+    lastGoogleDocsActivity = Date.now();
   }
 
   function isCurrentGoogleDocsSync(syncState, generation) {
@@ -333,11 +337,18 @@ import {
     const generation = googleDocsSyncGeneration;
     try {
       assertGoogleDocsCompatibilityConfig(syncState);
-      const remoteRevisionId = await fetchGoogleDocumentRevision(syncState.documentId);
+      const poll = await fetchGoogleDocumentRevision(syncState.documentId, {
+        tabId: googleDocsTabId,
+        background: document.hidden,
+        idleSeconds: Math.min(86400, Math.max(0, (Date.now() - lastGoogleDocsActivity) / 1000)),
+      });
       if (!isCurrentGoogleDocsSync(syncState, generation)) return;
+      if (!poll.checked) return;
+      const remoteRevisionId = poll.revisionId;
       clearGoogleDocsSyncError();
       const localChanged = pendingGoogleDocsTransactions.length > 0;
       const remoteChanged = remoteRevisionId !== syncState.revisionId;
+      if (remoteChanged) lastGoogleDocsActivity = Date.now();
       reportGoogleDocsSync("revision-poll", {
         ...googleDocsSyncState(),
         remoteRevisionId,
@@ -363,14 +374,22 @@ import {
       setGoogleDocsSyncError(err);
     } finally {
       googleDocsSyncInProgress = false;
+      scheduleGoogleDocsPoll();
     }
   }
 
-  function startGoogleDocsPolling() {
-    if (googleDocsPollTimer != null) return;
-    googleDocsPollTimer = window.setInterval(() => {
+  function scheduleGoogleDocsPoll() {
+    if (!googleDocsPollingStarted || googleDocsSyncInProgress) return;
+    if (googleDocsPollTimer != null) window.clearTimeout(googleDocsPollTimer);
+    googleDocsPollTimer = window.setTimeout(() => {
+      googleDocsPollTimer = null;
       void syncGoogleDocs();
     }, GOOGLE_DOCS_POLL_INTERVAL_MS);
+  }
+
+  function startGoogleDocsPolling() {
+    googleDocsPollingStarted = true;
+    scheduleGoogleDocsPoll();
   }
 
   async function refreshGoogleDocsTarget() {
@@ -647,6 +666,7 @@ import {
           before,
           detail,
         });
+        lastGoogleDocsActivity = Date.now();
         queuedTransaction = true;
         reportGoogleDocsSync("queued", {
           ...detail,
@@ -4829,6 +4849,12 @@ import {
       await refreshDraftList();
       await applyBrowserRoute();
       startGoogleDocsPolling();
+      document.addEventListener("visibilitychange", () => {
+        if (googleDocsPollTimer != null) window.clearTimeout(googleDocsPollTimer);
+        googleDocsPollTimer = null;
+        if (document.hidden) scheduleGoogleDocsPoll();
+        else void syncGoogleDocs();
+      });
       updateMeta();
       setStatus("");
       warmPopularFontsAfterIdle();
@@ -4839,6 +4865,7 @@ import {
     }
   })();
   window.addEventListener("beforeunload", () => {
-    if (googleDocsPollTimer != null) window.clearInterval(googleDocsPollTimer);
+    googleDocsPollingStarted = false;
+    if (googleDocsPollTimer != null) window.clearTimeout(googleDocsPollTimer);
   }, { once: true });
 })();

@@ -150,11 +150,17 @@ export async function pullGoogleDocument(documentId) {
   };
 }
 
-export async function fetchGoogleDocumentRevision(documentId) {
-  const response = await fetch(`/api/google-docs/revision?documentId=${encodeURIComponent(documentId)}`);
+export async function fetchGoogleDocumentRevision(documentId, { tabId, background, idleSeconds }) {
+  const query = new URLSearchParams({
+    documentId,
+    tabId,
+    background: String(background),
+    idleSeconds: String(idleSeconds),
+  });
+  const response = await fetch(`/api/google-docs/revision?${query}`);
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.detail || "Google Docs revision check failed");
-  return payload.revisionId;
+  return payload;
 }
 
 export function needsGoogleDocsAuthentication(error) {
