@@ -425,6 +425,7 @@ button.pane-title {
   color: var(--color-text-muted);
   margin: var(--space-2) var(--space-5);
   font-size: var(--font-size-3);
+  text-align: center;
 }
 
 .chat-thread-empty {
@@ -2524,6 +2525,7 @@ button.pane-title {
   color: var(--color-text-muted);
   margin: var(--space-2) var(--space-5);
   font-size: var(--font-size-3);
+  text-align: center;
 }
 
 .merge-conflict-btn {
