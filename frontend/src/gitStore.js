@@ -392,6 +392,25 @@ const VOLUME = "kindred";
     return { from, to: Math.max(from, to) };
   }
 
+  function normalizeChatComments(comments) {
+    return (Array.isArray(comments) ? comments : [])
+      .filter((c) => c && typeof c.quote === "string" && Number.isInteger(c.start) && Number.isInteger(c.end))
+      .map((c) => ({
+        id: String(c.id || ""),
+        quote: c.quote,
+        note: String(c.note || ""),
+        start: c.start,
+        end: c.end,
+        replyIndex: Number.isInteger(c.replyIndex) ? c.replyIndex : null,
+      }));
+  }
+
+  function normalizeSentComments(comments) {
+    return (Array.isArray(comments) ? comments : [])
+      .filter((c) => c && typeof c.quote === "string")
+      .map((c) => ({ quote: c.quote, note: String(c.note || "") }));
+  }
+
   function normalizeChatMessage(msg) {
     if (!msg || typeof msg !== "object") return null;
     const role = String(msg.role || "").trim();
@@ -405,14 +424,19 @@ const VOLUME = "kindred";
       if (typeof msg.thinkingCollapsed === "boolean") {
         out.thinkingCollapsed = msg.thinkingCollapsed;
       }
+      const comments = normalizeChatComments(msg.comments);
+      if (comments.length) out.comments = comments;
       return out;
     }
-    return {
+    const out = {
       role,
       content,
       draftText: String(msg.draftText ?? ""),
       selection: normalizeSelection(msg.selection),
     };
+    const sentComments = normalizeSentComments(msg.sentComments);
+    if (sentComments.length) out.sentComments = sentComments;
+    return out;
   }
 
   function normalizeChatStack(stack) {

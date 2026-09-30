@@ -99,6 +99,7 @@
   --color-text-body: var(--neutral-300);
   --color-accent: var(--primary-600);
   --color-accent-soft: var(--primary-300);
+  --color-comment: hsl(218, 40%, 48%);
   --color-on-accent: var(--neutral-0);
 
   /* Shadows */
@@ -2304,6 +2305,7 @@ button.pane-title {
 
 .chat-msg.user {
   align-self: stretch;
+  margin-left: var(--space-6);
 }
 
 .chat-msg.user .chat-msg-body {
@@ -2397,9 +2399,9 @@ button.pane-title {
 
 .chat-msg.user.is-editing .chat-msg-body { box-shadow: inset 0 0 0 1px var(--color-accent); }
 .chat-mention { display: inline-flex; max-width: 100%; margin: 0 var(--space-1); padding: var(--space-1); border-radius: var(--radius-3); background: var(--color-bg-raised); }
-.chat-mention .btn { min-width: 0; max-width: 100%; padding: var(--space-1) var(--space-2); overflow-wrap: anywhere; white-space: normal; color: hsl(from var(--primary-400) h s 75%); text-align: left; }
-.chat-mention .btn:hover { color: var(--primary-300); }
-.chat-mention.suggestion-static { color: hsl(from var(--primary-400) h 25% 60%); }
+.chat-mention .btn { min-width: 0; max-width: 100%; padding: var(--space-1) var(--space-2); overflow-wrap: anywhere; white-space: normal; color: hsl(32, 100%, 60%); text-align: left; }
+.chat-mention .btn:hover { color: hsl(32, 100%, 70%); }
+.chat-mention.suggestion-static { color: hsl(32, 25%, 60%); }
 .chat-suggestion { display: inline-flex; max-width: 100%; flex-wrap: wrap; align-items: stretch; gap: var(--space-3); margin: 0 var(--space-1); padding: var(--space-1); border-radius: var(--radius-3); background: var(--color-bg-raised); color: var(--color-text-muted); }
 .chat-suggestion .btn { flex: 0 1 auto; min-width: 0; max-width: 100%; padding: var(--space-1) var(--space-2); overflow-wrap: anywhere; white-space: normal; text-align: left; }
 .chat-suggestion .suggestion-current { color: hsl(32, 100%, 60%); }
@@ -2420,6 +2422,63 @@ button.pane-title {
   padding: var(--space-4) var(--space-5) var(--space-6);
   border-top: none;
   background: var(--color-bg);
+}
+
+.chat-mention.has-comment,
+.chat-suggestion.has-comment {
+  box-shadow: inset 0 0 0 2px var(--color-comment);
+}
+
+::highlight(chat-comment) {
+  text-decoration: underline;
+  text-decoration-color: var(--color-comment);
+  text-decoration-thickness: 2px;
+}
+
+.chat-msg.assistant .chat-msg-body .is-split {
+  margin-bottom: 0;
+}
+
+.chat-msg.assistant .chat-msg-body .is-split-tail {
+  margin-top: 0;
+}
+
+.chat-msg-comments:empty {
+  display: none;
+}
+
+.chat-comment {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: var(--space-1) 0 var(--space-3);
+  padding: var(--space-4) var(--space-4);
+  border-left: 2px solid var(--color-comment);
+  border-radius: 0 var(--radius-2) var(--radius-2) 0;
+  background: var(--color-bg-raised);
+  color: var(--color-text);
+  font-family: var(--font-content);
+  font-size: var(--font-size-2);
+  line-height: var(--line-height-3);
+}
+
+.chat-comment-note {
+  flex: 1;
+  color: var(--color-text);
+  min-width: 0;
+  outline: none;
+  white-space: pre-wrap;
+}
+
+.chat-comment-note:empty::before {
+  content: "Comment";
+  color: var(--color-text-subtle);
+}
+
+.chat-comment-strip {
+  margin-bottom: var(--space-3);
+  font-size: var(--font-size-1);
+  color: var(--color-text-muted);
 }
 
 .chat-composer.is-separated {

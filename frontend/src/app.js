@@ -137,6 +137,7 @@ import {
   const gitNewBranchBtn = document.getElementById("git-new-branch");
   const chatComposer = document.getElementById("chat-composer");
   const chatInput = document.getElementById("chat-input");
+  const chatCommentStrip = document.getElementById("chat-comment-strip");
   const chatSend = document.getElementById("chat-send");
   const statusEl = document.getElementById("status");
   const metaEl = document.getElementById("meta");
@@ -2978,7 +2979,10 @@ import {
       resizeTextarea(chatInput);
     }
     chatInput.disabled = false; //the input text box itself should always be enabled.
-    chatSend.disabled = !enabled || !(chatInput.value || "").trim();
+    const pendingCount = pendingChatComments(activeChat()).length;
+    chatSend.disabled = !enabled || !((chatInput.value || "").trim() || pendingCount);
+    chatCommentStrip.hidden = !pendingCount;
+    chatCommentStrip.textContent = `${pendingCount} comment${pendingCount === 1 ? "" : "s"}`;
     chatComposer.setAttribute("aria-busy", chatBusy ? "true" : "false");
     requestAnimationFrame(() => syncComposerSeparators());
   }
@@ -3107,11 +3111,13 @@ import {
                 return (
                   `<div class="chat-msg ${role}" data-msg-index="${index}">` +
                   `<div class="chat-msg-body">${body}</div>` +
+                  renderChatComments(m) +
                   `</div>`
                 );
               })
               .join("") +
         `</div>`;
+      placeInlineComments();
     }
     requestAnimationFrame(() => {
       if (stickBottom || wasAtBottom) {
@@ -3124,6 +3130,283 @@ import {
         .forEach((el) => el.setAttribute("contenteditable", "false"));
       bindComposerScrollWatch(feedbackEl);
       syncComposerSeparators();
+      highlightCommentAnchors();
+    });
+  }
+
+  function renderChatComments(message) {
+    if (message.role === "user") return "";
+    const boxes = (message.comments || [])
+      .map((c) =>
+        c.replyIndex === null
+          ? `<div class="chat-comment" contenteditable="false" data-comment-id="${escapeHtml(c.id)}">` +
+            `<div class="chat-comment-note" contenteditable="plaintext-only" role="textbox" aria-label="Comment">${escapeHtml(c.note)}</div></div>`
+          : `<div class="chat-comment is-delivered" contenteditable="false" data-comment-id="${escapeHtml(c.id)}"><span>${escapeHtml(c.note)}</span>` +
+            `</div>`
+      )
+      .join("");
+    return `<div class="chat-msg-comments" contenteditable="false">${boxes}</div>`;
+  }
+
+  function pendingChatComments(chat) {
+    return (chat?.messages || []).flatMap((m) => (m.comments || []).filter((c) => c.replyIndex === null));
+  }
+
+  const COMMENT_BLOCKS = "p, li, h1, h2, h3, pre, blockquote";
+
+  function textNodes(root) {
+    return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) =>
+        node.parentElement.closest(".chat-comment, .chat-thinking") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    });
+  }
+
+  function plainText(root) {
+    const walker = textNodes(root);
+    let text = "";
+    while (walker.nextNode()) text += walker.currentNode.data;
+    return text;
+  }
+
+  function textOffset(body, container, offset) {
+    const point = document.createRange();
+    point.setStart(container, offset);
+    const walker = textNodes(body);
+    let total = 0;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node === container) return total + offset;
+      if (point.comparePoint(node, node.length) > 0) break;
+      total += node.length;
+    }
+    return total;
+  }
+
+  function bodyTextRange(body, start, end) {
+    const range = document.createRange();
+    const walker = textNodes(body);
+    let offset = 0;
+    let started = false;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const nodeEnd = offset + node.length;
+      if (!started && start < nodeEnd) {
+        range.setStart(node, start - offset);
+        started = true;
+      }
+      if (started && end <= nodeEnd) {
+        range.setEnd(node, end - offset);
+        return range;
+      }
+      offset = nodeEnd;
+    }
+    return null;
+  }
+
+  const sentenceSegmenter = new Intl.Segmenter(undefined, { granularity: "sentence" });
+
+  function sentenceAt(body, offset) {
+    const textLength = plainText(body).length;
+    if (!textLength) return null;
+    const point = Math.min(offset, textLength - 1);
+    const probe = bodyTextRange(body, point, point + 1);
+    if (!probe) return null;
+    const block = probe.startContainer.parentElement.closest(COMMENT_BLOCKS);
+    const scope = block && body.contains(block) ? block : body;
+    const scopeStart = textOffset(body, scope, 0);
+    for (const { index, segment } of sentenceSegmenter.segment(plainText(scope))) {
+      if (point - scopeStart >= index + segment.length) continue;
+      const start = scopeStart + index + segment.length - segment.trimStart().length;
+      const end = scopeStart + index + segment.trimEnd().length;
+      return end > start ? { start, end } : null;
+    }
+    return null;
+  }
+
+  function splitBlockAfter(block, container, offset) {
+    const rest = document.createRange();
+    rest.setStart(container, offset);
+    rest.setEnd(block, block.childNodes.length);
+    if (!rest.toString().trim()) return null;
+    const tail = block.cloneNode(false);
+    tail.append(rest.extractContents());
+    block.classList.add("is-split");
+    tail.classList.add("is-split-tail");
+    return tail;
+  }
+
+  function placeInlineComments() {
+    activeChat()?.messages?.forEach((m, index) => {
+      const message = feedbackEl.querySelector(`.chat-msg[data-msg-index="${index}"]`);
+      const body = message?.querySelector(".chat-msg-body");
+      const lastPlaced = new Map();
+      [...(m.comments || [])]
+        .sort((a, b) => a.end - b.end)
+        .forEach((c) => {
+          const box = message.querySelector(`.chat-comment[data-comment-id="${c.id}"]`);
+          const range = body && bodyTextRange(body, c.start, c.end);
+          const block = range?.endContainer.parentElement.closest(COMMENT_BLOCKS);
+          if (!box || !block || !body.contains(block)) return;
+          if (block.matches("li")) {
+            block.append(box);
+            return;
+          }
+          const tail = splitBlockAfter(block, range.endContainer, range.endOffset);
+          block.classList.add("is-split");
+          (lastPlaced.get(block) || block).after(box);
+          if (tail) box.after(tail);
+          lastPlaced.set(block, box);
+        });
+    });
+  }
+
+  function chipOf(node) {
+    return (node.nodeType === 1 ? node : node.parentElement)?.closest(".chat-mention, .chat-suggestion");
+  }
+
+  function chipTextBounds(body, chip) {
+    const start = textOffset(body, chip, 0);
+    return { start, end: start + plainText(chip).length };
+  }
+
+  function highlightCommentAnchors() {
+    if (!CSS.highlights) return;
+    const ranges = [];
+    activeChat()?.messages?.forEach((m, index) => {
+      const body = feedbackEl.querySelector(`.chat-msg[data-msg-index="${index}"] .chat-msg-body`);
+      (m.comments || []).forEach((c) => {
+        const range = body && bodyTextRange(body, c.start, c.end);
+        if (!range) return;
+        const chip = chipOf(range.startContainer);
+        const chipBounds = chip && chipTextBounds(body, chip);
+        if (chipBounds?.start === c.start && chipBounds.end === c.end) chip.classList.add("has-comment");
+        else ranges.push(range);
+      });
+    });
+    CSS.highlights.set("chat-comment", new Highlight(...ranges));
+  }
+
+  function startChatComment(firstChars) {
+    const chat = activeChat();
+    const message = selectedChatMessage();
+    if (!chat || chatBusy || !message?.classList.contains("assistant")) return;
+    const body = message.querySelector(".chat-msg-body");
+    const selected = window.getSelection().getRangeAt(0);
+    const outside = (node) => !body.contains(node) || node.parentElement.closest(".chat-comment, .chat-thinking");
+    if (outside(selected.startContainer) || outside(selected.endContainer)) return;
+    const selectedStart = textOffset(body, selected.startContainer, selected.startOffset);
+    const selectedEnd = textOffset(body, selected.endContainer, selected.endOffset);
+    const text = plainText(body);
+    const chipStart = chipOf(selected.startContainer);
+    let anchor;
+    if (chipStart && (selected.collapsed || chipStart === chipOf(selected.endContainer))) {
+      anchor = chipTextBounds(body, chipStart);
+    } else if (selected.collapsed) {
+      anchor = sentenceAt(body, selectedStart);
+    } else {
+      const chosen = text.slice(selectedStart, selectedEnd);
+      const start = selectedStart + chosen.length - chosen.trimStart().length;
+      anchor = { start, end: selectedStart + chosen.trimEnd().length };
+    }
+    if (!anchor || anchor.end <= anchor.start) return;
+    const quote = text.slice(anchor.start, anchor.end);
+    const comment = {
+      id: crypto.randomUUID(),
+      quote,
+      note: firstChars,
+      start: anchor.start,
+      end: anchor.end,
+      replyIndex: null,
+    };
+    const target = chat.messages[Number(message.dataset.msgIndex)];
+    target.comments = [...(target.comments || []), comment];
+    renderChatThread();
+    syncChatComposer();
+    const note = feedbackEl.querySelector(`[data-comment-id="${comment.id}"] .chat-comment-note`);
+    note.focus();
+    window.getSelection().selectAllChildren(note);
+    window.getSelection().collapseToEnd();
+  }
+
+  function selectedCommentNote() {
+    const anchorNode = window.getSelection()?.anchorNode;
+    const element = anchorNode?.nodeType === 1 ? anchorNode : anchorNode?.parentElement;
+    const note = element?.closest(".chat-comment-note");
+    return note && feedbackEl.contains(note) ? note : null;
+  }
+
+  function caretAtNoteEdge(note, atEnd) {
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || !selection.isCollapsed || !note.contains(selection.anchorNode)) return false;
+    const rest = document.createRange();
+    rest.selectNodeContents(note);
+    if (atEnd) rest.setStart(selection.anchorNode, selection.anchorOffset);
+    else rest.setEnd(selection.anchorNode, selection.anchorOffset);
+    return rest.toString() === "";
+  }
+
+  function moveCaretOutOfComment(note, forward) {
+    const box = note.closest(".chat-comment");
+    const thread = feedbackEl.querySelector(".chat-thread");
+    const walker = document.createTreeWalker(thread, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) =>
+        node.data.trim() && !node.parentElement.closest(".chat-comment, [contenteditable='false']")
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_REJECT,
+    });
+    let target = null;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const following = box.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING;
+      if (forward && following) {
+        target = node;
+        break;
+      }
+      if (!forward && !following) target = node;
+    }
+    if (!target) {
+      if (forward) chatInput.focus();
+      return;
+    }
+    thread.focus();
+    const range = document.createRange();
+    range.setStart(target, forward ? 0 : target.length);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function discardEmptyChatComments() {
+    const anchorNode = window.getSelection()?.anchorNode;
+    const focused = (anchorNode?.nodeType === 1 ? anchorNode : anchorNode?.parentElement)?.closest(".chat-comment-note");
+    const empty = [...feedbackEl.querySelectorAll(".chat-comment-note")].filter(
+      (note) => note !== focused && !note.textContent.trim()
+    );
+    if (!empty.length) return;
+    empty.forEach((note) => removeChatComment(note.closest("[data-comment-id]").dataset.commentId));
+    renderChatThread();
+    syncChatComposer();
+  }
+
+  function cancelChatComment(id) {
+    const messages = activeChat()?.messages || [];
+    const msgIndex = messages.findIndex((m) => m.comments?.some((c) => c.id === id));
+    const anchorEnd = messages[msgIndex]?.comments.find((c) => c.id === id).end;
+    removeChatComment(id);
+    renderChatThread();
+    syncChatComposer();
+    const body = feedbackEl.querySelector(`.chat-msg[data-msg-index="${msgIndex}"] .chat-msg-body`);
+    const anchor = body && bodyTextRange(body, anchorEnd - 1, anchorEnd);
+    feedbackEl.querySelector(".chat-thread").focus();
+    if (!anchor) return;
+    anchor.collapse(false);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(anchor);
+  }
+
+  function removeChatComment(id) {
+    const chat = activeChat();
+    chat?.messages.forEach((m) => {
+      if (m.comments?.some((c) => c.id === id)) m.comments = m.comments.filter((c) => c.id !== id);
     });
   }
 
@@ -4364,10 +4647,20 @@ import {
     return doneEvent;
   }
 
+  function apiContent(text, sentComments = []) {
+    if (!sentComments.length) return text;
+    const lines = sentComments.map((c) => `- On "${c.quote}": ${c.note}`);
+    return [text, `Comments on your earlier replies:\n${lines.join("\n")}`].filter(Boolean).join("\n\n");
+  }
+
   function apiMessagesFromChat(messages) {
     return (messages || [])
       .filter((m) => m && (m.role === "user" || m.role === "assistant"))
-      .map((m) => ({ role: m.role, content: m.content || "" }));
+      .map((m) => ({ role: m.role, content: apiContent(m.content || "", m.sentComments) }));
+  }
+
+  function forEachChatComment(chat, callback) {
+    chat.messages.forEach((m) => (m.comments || []).forEach(callback));
   }
 
   async function sendChat({ retryUserIndex = null, overrideText = null } = {}) {
@@ -4382,9 +4675,11 @@ import {
     const isRetrying = Number.isInteger(retryUserIndex);
     const source = isRetrying ? chat.messages?.[retryUserIndex] : null;
     if (isRetrying && (!source || source.role !== "user")) return;
-    const text = String(
+    const typedText = String(
       isRetrying ? (overrideText ?? source.content) : (chatInput?.value || composerDraft || "")
     ).trim();
+    const commentsOnly = !typedText && !isRetrying && pendingChatComments(chat).length > 0;
+    const text = commentsOnly ? "Please respond to the comments" : typedText;
     if (!text) return;
 
     pullFromEditor();
@@ -4392,18 +4687,31 @@ import {
     const selection = caretSelectionOffsets();
 
     let priorMessages = [];
+    let sentComments = [];
     if (isRetrying) {
       priorMessages = chat.messages.slice(0, retryUserIndex);
       chat.messages = [
         ...priorMessages,
-        { role: "user", content: text },
+        { role: "user", content: text, ...(source.sentComments && { sentComments: source.sentComments }) },
         { role: "assistant", content: "" },
       ];
+      sentComments = source.sentComments || [];
+      forEachChatComment(chat, (c) => {
+        if (c.replyIndex > retryUserIndex + 1) c.replyIndex = null;
+      });
     } else {
       priorMessages = chat.messages;
-      const userMsg = { role: "user", content: text };
-      chat.messages.push(userMsg, { role: "assistant", content: "" });
+      const pending = pendingChatComments(chat);
+      sentComments = pending.map(({ quote, note }) => ({ quote, note }));
+      chat.messages.push(
+        { role: "user", content: text, ...(sentComments.length && { sentComments }) },
+        { role: "assistant", content: "" }
+      );
+      pending.forEach((c) => {
+        c.replyIndex = chat.messages.length - 1;
+      });
     }
+    const replyIndex = chat.messages.length - 1;
 
     if (
       !chat.messages.some((m) => m.role === "user" && m.content !== text) &&
@@ -4491,7 +4799,7 @@ import {
         body: JSON.stringify({
           model: DEFAULT_MODEL,
           messages: apiMessagesFromChat(priorMessages),
-          message: text,
+          message: apiContent(text, sentComments),
           draft_text: draftText,
           selection,
           conflict_context: mergeConflictContext(),
@@ -4538,7 +4846,12 @@ import {
       await persistChatsNow();
     } catch (err) {
       chat.messages.pop();
-      if (!isRetrying) chat.messages.pop();
+      if (!isRetrying) {
+        chat.messages.pop();
+        forEachChatComment(chat, (c) => {
+          if (c.replyIndex === replyIndex) c.replyIndex = null;
+        });
+      }
       if (isViewingThisChat()) {
         renderChatThread({ stickBottom: true });
         setStatus(String(err.message || err), "danger");
@@ -4828,20 +5141,41 @@ import {
   }
 
   feedbackEl.addEventListener("beforeinput", (e) => {
-    if (!e.target.closest(".chat-thread")) return;
+    if (!e.target.closest(".chat-thread") || e.target.closest(".chat-comment-note")) return;
     const message = editableChatMessage();
     const isEdit =
       EDITING_INPUT_TYPES.has(e.inputType) ||
       (e.inputType.startsWith("delete") && e.inputType !== "deleteByDrag");
     if (!message || !isEdit) {
       e.preventDefault();
+      if (e.inputType === "insertText" && e.data) startChatComment(e.data);
       return;
     }
     beginChatEdit(message);
   });
 
+  feedbackEl.addEventListener("input", (e) => {
+    const note = e.target.closest(".chat-comment-note");
+    if (!note) return;
+    const id = note.closest("[data-comment-id]").dataset.commentId;
+    forEachChatComment(activeChat(), (c) => {
+      if (c.id === id) c.note = note.textContent;
+    });
+  });
+
+  feedbackEl.addEventListener("focusout", (e) => {
+    const note = e.target.closest(".chat-comment-note");
+    if (!note?.isConnected) return;
+    if (!note.textContent.trim()) {
+      removeChatComment(note.closest("[data-comment-id]").dataset.commentId);
+      renderChatThread();
+      syncChatComposer();
+    }
+    void persistChatsNow();
+  });
+
   feedbackEl.addEventListener("paste", (e) => {
-    if (!e.target.closest(".chat-thread")) return;
+    if (!e.target.closest(".chat-thread") || e.target.closest(".chat-comment-note")) return;
     e.preventDefault();
     if (!editableChatMessage()) return;
     document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
@@ -4853,6 +5187,25 @@ import {
 
   feedbackEl.addEventListener("keydown", (e) => {
     if (!e.target.closest(".chat-thread") || e.target.closest("button")) return;
+    const commentNote = selectedCommentNote();
+    if (commentNote) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancelChatComment(commentNote.closest("[data-comment-id]").dataset.commentId);
+      } else if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        chatInput.focus();
+        syncChatComposer();
+      } else if (!e.shiftKey && !e.isComposing) {
+        const forward = e.key === "ArrowDown" || e.key === "ArrowRight";
+        const backward = e.key === "ArrowUp" || e.key === "ArrowLeft";
+        if ((forward || backward) && caretAtNoteEdge(commentNote, forward)) {
+          e.preventDefault();
+          moveCaretOutOfComment(commentNote, forward);
+        }
+      }
+      return;
+    }
     const thinking = e.key === "Tab" ? selectedThinking() : null;
     const chip = e.key === "Enter" && !e.shiftKey ? selectedChip() : null;
     if (thinking) {
@@ -4877,6 +5230,7 @@ import {
 
   document.addEventListener("selectionchange", () => {
     syncCaretHighlights();
+    discardEmptyChatComments();
     if (!editingChatMessage) return;
     const message = selectedChatMessage();
     if (Number(message?.dataset.msgIndex) !== editingChatMessage.msgIndex) cancelChatEdit();
