@@ -222,7 +222,11 @@ body {
   transform: translateX(-50%);
 }
 
-#divider:hover,
+#divider:hover {
+  background: var(--color-accent-soft);
+  transition: background 0s 100ms;
+}
+
 #divider.dragging,
 #divider:focus-visible {
   background: var(--color-accent-soft);
