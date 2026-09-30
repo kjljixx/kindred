@@ -1,3 +1,4 @@
+import { initScrollbars } from "./scrollbars.js";
 import {
   createKindredEditor,
   bindToolbar,
@@ -119,6 +120,7 @@ import {
   }
 
   const appRoot = document.getElementById("app");
+  initScrollbars();
   const editor = document.getElementById("editor");
   const toolbarEl = document.getElementById("editor-toolbar");
   const feedbackEl = document.getElementById("feedback");

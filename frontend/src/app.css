@@ -419,14 +419,17 @@ button.pane-title {
   color: var(--btn-tertiary-fg-hover);
 }
 
+.scroll-host:has(> .draft-list) {
+  padding: var(--space-2);
+  margin-top: var(--space-1);
+}
+
 .draft-list {
   flex: 1;
   overflow: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding: var(--space-2);
-  margin-top: var(--space-1);
   min-height: 0;
 }
 
@@ -738,11 +741,14 @@ button.pane-title {
   color: var(--btn-tertiary-fg);
 }
 
+.scroll-host:has(> .editor) {
+  padding: var(--space-4);
+  padding-left: var(--editor-padding-left, var(--space-6));
+}
+
 .editor {
   flex: 1;
   overflow: auto;
-  padding: var(--space-4);
-  padding-left: var(--editor-padding-left, var(--space-6));
   font-family: var(--font-content);
   font-size: var(--font-size-3);
   line-height: var(--line-height-3);
@@ -2046,12 +2052,12 @@ button.pane-title {
     touch-action: manipulation;
   }
 
-  .editor {
+  .scroll-host:has(> .editor) {
     padding: var(--space-4) var(--space-5);
   }
 
-  .feedback:has(.chat-thread),
-  .feedback:has(> .muted) {
+  .scroll-host:has(> .feedback:has(.chat-thread)),
+  .scroll-host:has(> .feedback:has(> .muted)) {
     padding: var(--space-4) var(--space-5) var(--space-6);
   }
 
@@ -2088,11 +2094,14 @@ button.pane-title {
   white-space: nowrap;
 }
 
+.scroll-host:has(> .feedback) {
+  margin-top: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+}
+
 .feedback {
   flex: 1;
   overflow: auto;
-  margin-top: var(--space-4);
-  padding: var(--space-4) var(--space-5);
   line-height: var(--line-height-3);
   color: var(--color-text-body);
   min-height: 0;
@@ -2211,9 +2220,13 @@ button.pane-title {
   background: var(--color-bg);
 }
 
+.scroll-host:has(> .feedback:has(.chat-thread)),
+.scroll-host:has(> .feedback:has(> .muted)) {
+  padding: var(--space-4) var(--space-5) var(--space-6);
+}
+
 .feedback:has(.chat-thread),
 .feedback:has(> .muted) {
-  padding: var(--space-4) var(--space-5) var(--space-6);
   font-size: var(--font-size-2);
   line-height: var(--line-height-3);
 }
@@ -2535,11 +2548,14 @@ button.pane-title {
   cursor: default;
 }
 
+.scroll-host:has(> .git-pane) {
+  padding: var(--space-4) 0 var(--space-6);
+}
+
 .git-pane {
   flex: 1;
   overflow: auto;
   min-height: 0;
-  padding: var(--space-4) 0 var(--space-6);
 }
 
 .git-pane.is-busy {
@@ -2893,4 +2909,26 @@ button.pane-title {
   .merge-conflict-btn[data-conflict-state="preview"] {
     box-shadow: 0 0 0 2px var(--color-bg-raised);
   }
+}
+
+.os-scrollbar.os-theme-kindred {
+  --os-size: 10px;
+  --os-padding-perpendicular: 2px;
+  --os-padding-axis: 2px;
+  --os-track-border-radius: 5px;
+  --os-handle-bg: var(--neutral-600);
+  --os-handle-bg-hover: var(--neutral-500);
+  --os-handle-bg-active: var(--neutral-400);
+  --os-handle-border-radius: 5px;
+}
+
+.scroll-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scroll-host:has(> [hidden]) {
+  display: none;
 }
