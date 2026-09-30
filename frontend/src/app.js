@@ -146,6 +146,11 @@ import {
   const exportBtn = document.getElementById("export-btn");
   const exportMenuBtn = document.getElementById("export-menu-btn");
   const exportMenu = document.getElementById("export-menu");
+  const transferControls = document.getElementById("transfer-controls");
+  const transferMenuBtn = document.getElementById("transfer-menu-btn");
+  const transferMenu = document.getElementById("transfer-menu");
+  const transferFormatsBtn = document.getElementById("transfer-formats-btn");
+  const transferExportFormats = document.getElementById("transfer-export-formats");
   const homeBtn = document.getElementById("home-btn");
   const draftHeaderSep = document.getElementById("draft-header-sep");
   const draftHeaderTitleEl = document.getElementById("draft-header-title");
@@ -930,14 +935,38 @@ import {
     exportControls.classList.toggle("is-open", next);
   }
 
+  function setTransferMenuOpen(open) {
+    const next = !!open && !transferControls.hidden &&
+      (!importBtn.disabled || !exportBtn.disabled);
+    transferMenu.hidden = !next;
+    transferMenuBtn.setAttribute("aria-expanded", String(next));
+    if (!next) setTransferFormatsOpen(false);
+  }
+
+  function setTransferFormatsOpen(open) {
+    const next = !!open && !transferMenu.hidden && !exportBtn.disabled;
+    transferExportFormats.hidden = !next;
+    transferFormatsBtn.setAttribute("aria-expanded", String(next));
+  }
+
   function updateExportBtn() {
     const exportDisabled =
       converting || gitBusy || !hasExportableBody() || isViewingHistory();
     importBtn.hidden = !activeDraftId;
     exportControls.hidden = !activeDraftId;
+    transferControls.hidden = !activeDraftId;
     importBtn.disabled = !canOpenImportDialog();
     exportBtn.disabled = exportDisabled;
     exportMenuBtn.disabled = exportDisabled;
+    transferMenu.querySelector('[data-transfer-action="import"]').disabled = importBtn.disabled;
+    transferMenu.querySelector('[data-transfer-action="export"]').disabled = exportDisabled;
+    transferFormatsBtn.disabled = exportDisabled;
+    transferExportFormats.querySelectorAll("button").forEach((item) => {
+      item.disabled = exportDisabled;
+    });
+    if (exportDisabled) setTransferFormatsOpen(false);
+    transferMenuBtn.disabled = importBtn.disabled && exportDisabled;
+    if (transferMenuBtn.disabled || !activeDraftId) setTransferMenuOpen(false);
     if (exportDisabled || !activeDraftId) setExportMenuOpen(false);
   }
 
@@ -995,10 +1024,12 @@ import {
 
   function syncWorkspaceNavigation() {
     if (getLayoutMode() === "wide") {
+      setTransferMenuOpen(false);
       delete appRoot.dataset.workspace;
       delete appRoot.dataset.homeWorkspace;
       return;
     }
+    if (getLayoutMode() !== "narrowDesktop") setTransferMenuOpen(false);
     appRoot.dataset.homeWorkspace = String(!activeDraftId);
     appRoot.dataset.workspace = activeWorkspace;
     workspaceActions.forEach((tab) => {
@@ -1006,9 +1037,16 @@ import {
       const active = workspace === activeWorkspace;
       const home = !activeDraftId;
       tab.hidden = home && workspace === "history";
-      if (workspace === "draft") tab.textContent = home ? "New" : "Draft";
-      if (workspace === "chat") tab.textContent = home ? "Drafts" : "Chat";
-      if (workspace === "history") tab.textContent = "Git";
+      const label = workspace === "draft" ? (home ? "New" : "Draft")
+        : workspace === "chat" ? (home ? "Drafts" : "Chat") : "Git";
+      const labelElement = tab.querySelector(".workspace-tab-label");
+      if (labelElement) {
+        labelElement.textContent = label;
+        tab.setAttribute("aria-label", label);
+        tab.title = label;
+      } else {
+        tab.textContent = label;
+      }
       tab.setAttribute("aria-current", active ? "page" : "false");
       if (tab.getAttribute("role") === "tab") tab.setAttribute("aria-selected", active ? "true" : "false");
       tab.classList.toggle("active", active);
@@ -1676,6 +1714,8 @@ import {
     commitBtn.hidden = true;
     importBtn.hidden = true;
     exportControls.hidden = true;
+    transferControls.hidden = true;
+    setTransferMenuOpen(false);
     setExportMenuOpen(false);
     renderDraftList();
     syncPaneModeTabs();
@@ -3898,6 +3938,9 @@ import {
     item.dataset.format = format.id;
     item.textContent = format.label;
     exportMenu.appendChild(item);
+
+    const transferItem = item.cloneNode(true);
+    transferExportFormats.appendChild(transferItem);
   }
 
   exportBtn.addEventListener("click", () => {
@@ -3916,13 +3959,56 @@ import {
     void exportDraft(item.dataset.format);
   });
 
+  transferMenuBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setTransferMenuOpen(transferMenu.hidden);
+    if (!transferMenu.hidden) {
+      transferMenu.querySelector("button:not(:disabled)")?.focus();
+    }
+  });
+
+  transferFormatsBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setTransferFormatsOpen(transferExportFormats.hidden);
+    if (!transferExportFormats.hidden) {
+      transferExportFormats.querySelector("button:not(:disabled)")?.focus();
+    }
+  });
+
+  transferMenu.addEventListener("click", (e) => {
+    const format = e.target.closest("button[data-format]");
+    if (format && !format.disabled && transferExportFormats.contains(format)) {
+      setTransferMenuOpen(false);
+      void exportDraft(format.dataset.format);
+      return;
+    }
+    const item = e.target.closest("button[data-transfer-action]");
+    if (!item || item.disabled) return;
+    setTransferMenuOpen(false);
+    if (item.dataset.transferAction === "import") openImportDialog();
+    else void exportDraft();
+  });
+
   document.addEventListener("click", (e) => {
+    if (!transferMenu.hidden && !transferControls.contains(e.target)) {
+      setTransferMenuOpen(false);
+    }
     if (exportMenu.hidden) return;
     if (exportControls.contains(e.target)) return;
     setExportMenuOpen(false);
   });
 
   document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !transferExportFormats.hidden) {
+      e.stopPropagation();
+      setTransferFormatsOpen(false);
+      transferFormatsBtn.focus();
+      return;
+    }
+    if (e.key === "Escape" && !transferMenu.hidden) {
+      setTransferMenuOpen(false);
+      transferMenuBtn.focus();
+    }
     if (e.key === "Escape" && !exportMenu.hidden) {
       setExportMenuOpen(false);
     }

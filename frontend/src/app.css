@@ -164,6 +164,11 @@ body {
   display: none;
 }
 
+.brand-narrow,
+.workspace-tab-icon {
+  display: none;
+}
+
 #panes {
   display: flex;
   align-items: stretch;
@@ -544,6 +549,7 @@ button.pane-title {
 #commit-btn[hidden],
 #import-btn[hidden],
 #export-controls[hidden],
+#transfer-controls[hidden],
 #pane-mode-cluster[hidden],
 #git-pane[hidden] {
   display: none !important;
@@ -582,7 +588,8 @@ button.pane-title {
 }
 
 #import-btn svg,
-#export-btn svg {
+#export-btn svg,
+#transfer-menu-btn svg {
   display: block;
   width: 1.6rem;
   height: 1.6rem;
@@ -638,6 +645,46 @@ button.pane-title {
 .export-menu button:focus-visible {
   background: var(--btn-secondary-bg);
   outline: none;
+}
+
+.export-menu button:disabled {
+  opacity: var(--opacity-2);
+  cursor: default;
+}
+
+.transfer-controls {
+  display: none;
+  position: relative;
+  align-items: center;
+}
+
+#transfer-menu {
+  overflow: visible;
+}
+
+.transfer-export-row {
+  display: flex;
+  position: relative;
+}
+
+.transfer-export-row > button:first-child {
+  flex: 1;
+}
+
+.transfer-export-row > #transfer-formats-btn {
+  width: auto;
+  padding-inline: var(--space-4);
+}
+
+#transfer-formats-btn svg {
+  display: block;
+  transform: rotate(-90deg);
+}
+
+#transfer-export-formats {
+  top: 0;
+  right: auto;
+  left: calc(100% + var(--space-2));
 }
 
 .tab {
@@ -1873,6 +1920,43 @@ button.pane-title {
 }
 
 @media (max-width: 770px) and (hover: hover) and (pointer: fine) {
+  #import-btn,
+  #export-controls {
+    display: none !important;
+  }
+
+  .transfer-controls:not([hidden]) {
+    display: inline-flex;
+  }
+
+  #app:not([data-home-workspace="true"]) .brand-full {
+    display: none;
+  }
+
+  #app:not([data-home-workspace="true"]) .brand-narrow {
+    display: inline;
+  }
+
+  #narrow-workspace-nav .workspace-tab-label {
+    display: none;
+  }
+
+  #narrow-workspace-nav .tab {
+    padding: var(--btn-pad-y) var(--btn-pad-y);
+  }
+
+  #narrow-workspace-nav .workspace-tab-icon {
+    display: block;
+    width: 1.6rem;
+    height: 1.6rem;
+    fill: currentColor;
+  }
+
+  #app[data-home-workspace="true"] #narrow-workspace-nav .tab .workspace-chat-icon,
+  #app:not([data-home-workspace="true"]) #narrow-workspace-nav .tab .workspace-drafts-icon {
+    display: none;
+  }
+
   #tablet-workspace-nav,
   #mobile-workspace-nav,
   #pane-mode-cluster {
@@ -1889,6 +1973,7 @@ button.pane-title {
 
   #narrow-workspace-nav {
     display: block;
+    padding-top: var(--space-2);
   }
 
   #app[data-home-workspace="true"] #narrow-workspace-nav [data-workspace-action="history"] {
