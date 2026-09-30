@@ -32,8 +32,8 @@ export function renderChatAnchor({ anchor, kind, token }, msgIndex, resolveAncho
   wrapper.dataset.anchorStart = String(location.start);
   wrapper.dataset.anchorEnd = String(location.end);
   const button = (action, label, extraClass = "") => {
-    const element = document.createElement("button");
-    element.type = "button";
+    const element = document.createElement("span");
+    element.setAttribute("role", "button");
     element.className = `btn btn-tertiary ${extraClass}`.trim();
     element.dataset.chatAction = action;
     element.dataset.preview = action === "suggest" ? "replacement" : "current";
