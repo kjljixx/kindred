@@ -730,6 +730,7 @@ import {
           !chatNeedsFullDraftRender
         ) {
           refreshChatAnchors(feedbackEl, resolveTextAnchor);
+          highlightCommentAnchors();
         } else {
           syncRightPane();
         }
@@ -3270,6 +3271,7 @@ import {
   }
 
   function highlightCommentAnchors() {
+    feedbackEl.querySelectorAll(".has-comment").forEach((el) => el.classList.remove("has-comment"));
     if (!CSS.highlights) return;
     const ranges = [];
     activeChat()?.messages?.forEach((m, index) => {
