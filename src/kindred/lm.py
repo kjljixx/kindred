@@ -3,7 +3,6 @@ from __future__ import annotations
 from cmath import log
 import json
 import os
-import re
 import sys
 import threading
 from datetime import datetime, timezone
@@ -25,10 +24,6 @@ LITELLM_OPENROUTER_FREE_MODEL = "openrouter/openrouter/free"
 END_SENTINEL = "END"
 _HUMAN_PROMPT_LOCK = threading.Lock()
 _RESPONSE_LOG_LOCK = threading.Lock()
-_REASONING_MODEL_RE = re.compile(
-  r"(?:^|/)(?:gpt-5|o1|o3|o4)(?:[-./]|$)",
-  re.IGNORECASE,
-)
 DEFAULT_REASONING_EFFORT: dict[str, str] = {"effort": "medium", "summary": "auto"}
 RESPONSE_LOG_PATH = Path(
   os.getenv("KINDRED_RESPONSE_LOG", "kindred_responses.log")
@@ -46,26 +41,18 @@ def litellm_model(model: str) -> str:
   return model
 
 
-def is_reasoning_model(model: str) -> bool:
-  """True for OpenAI-style reasoning model ids (gpt-5*, o1*, o3*, o4*)."""
-  return bool(_REASONING_MODEL_RE.search(model.strip()))
-
-
 def resolve_reasoning_effort(
-  model: str,
   reasoning_effort: str | dict[str, Any] | None = None,
-) -> str | dict[str, Any] | None:
+) -> str | dict[str, Any]:
   """
   Return the reasoning_effort to send to LiteLLM.
 
-  Explicit values win. Otherwise reasoning models get a default that requests
-  a summary (requires an OpenAI-verified org for ``summary``).
+  Every model is assumed to think. Explicit values win; otherwise request a
+  summary (requires an OpenAI-verified org for ``summary``).
   """
   if reasoning_effort is not None:
     return reasoning_effort
-  if is_reasoning_model(model):
-    return dict(DEFAULT_REASONING_EFFORT)
-  return None
+  return dict(DEFAULT_REASONING_EFFORT)
 
 
 @observe(as_type="task", name="kindred.complete_chat")
@@ -108,7 +95,7 @@ def complete_chat(
   if temperature is not None:
     kwargs["temperature"] = temperature
 
-  resolved = resolve_reasoning_effort(model, reasoning_effort)
+  resolved = resolve_reasoning_effort(reasoning_effort)
   request_summary: str | None = None
   if resolved is not None:
     if isinstance(resolved, dict):
@@ -284,7 +271,7 @@ def reflect_chat(
   if temperature is not None:
     kwargs["temperature"] = temperature
 
-  resolved = resolve_reasoning_effort(model, reasoning_effort)
+  resolved = resolve_reasoning_effort(reasoning_effort)
   request_summary: str | None = None
   if resolved is not None:
     if isinstance(resolved, dict):
@@ -355,7 +342,7 @@ def reflect_chat_stream(
   if temperature is not None:
     kwargs["temperature"] = temperature
 
-  resolved = resolve_reasoning_effort(model, reasoning_effort)
+  resolved = resolve_reasoning_effort(reasoning_effort)
   request_summary: str | None = None
   if resolved is not None:
     if isinstance(resolved, dict):
