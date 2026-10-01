@@ -2716,6 +2716,11 @@ button.pane-title {
   position: absolute;
 }
 
+.draft-item > *,
+.git-row > * {
+  z-index: 1;
+}
+
 .draft-item::before,
 .git-row::before {
   inset: calc(var(--space-1) * -1) 0;
