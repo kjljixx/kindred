@@ -112,7 +112,6 @@ export function createMathLiveNodeView({ node, view, getPos }) {
   let currentNode = node;
   let lastAsciiMath = node.attrs.asciiMath;
   let documentSelectionDrag = false;
-  let handledMoveOut = false;
 
   const exitToDocument = (direction) => {
     const pos = getPos();
@@ -154,34 +153,17 @@ export function createMathLiveNodeView({ node, view, getPos }) {
   };
 
   const moveOut = (event) => {
-    handledMoveOut = true;
     event.preventDefault();
     exitToDocument(event.detail?.direction);
   };
 
-  const moveWithinFormulaOrExit = (event) => {
+  const exitAfterSelectedAutocalcResult = (event) => {
     if (event.shiftKey) return;
-    if (event.key === "ArrowRight" && field.dataset.autocalcResultSelected === "true") {
-      delete field.dataset.autocalcResultSelected;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      exitToDocument("forward");
-      return;
-    }
-    if (!field.selectionIsCollapsed) return;
-    const forward = event.key === "ArrowRight";
-    const backward = event.key === "ArrowLeft";
-    if (!forward && !backward) return;
+    if (event.key !== "ArrowRight" || field.dataset.autocalcResultSelected !== "true") return;
+    delete field.dataset.autocalcResultSelected;
     event.preventDefault();
     event.stopImmediatePropagation();
-    const command = forward ? "moveToNextChar" : "moveToPreviousChar";
-    handledMoveOut = false;
-    field.executeCommand(command);
-    if (handledMoveOut) return;
-
-    const positionAfterOneMove = field.position;
-    field.executeCommand(command);
-    if (!handledMoveOut) field.position = positionAfterOneMove;
+    exitToDocument("forward");
   };
 
   const clearDocumentSelection = () => {
@@ -224,7 +206,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
   field.addEventListener("blur", onBlur);
   field.addEventListener("copy", copySelectionAsAsciiMath);
   field.addEventListener("selection-change", clearAutocalcSelectionState);
-  field.addEventListener("keydown", moveWithinFormulaOrExit, true);
+  field.addEventListener("keydown", exitAfterSelectedAutocalcResult, true);
 
   const stopEvent = (event) => {
     if (!event.target.closest?.(".kindred-math-node")) return false;
@@ -273,7 +255,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
       field.removeEventListener("blur", onBlur);
       field.removeEventListener("copy", copySelectionAsAsciiMath);
       field.removeEventListener("selection-change", clearAutocalcSelectionState);
-      field.removeEventListener("keydown", moveWithinFormulaOrExit, true);
+      field.removeEventListener("keydown", exitAfterSelectedAutocalcResult, true);
       if (getActiveMathField() === field) setActiveMathField(null);
     },
   };
@@ -337,8 +319,8 @@ export const MathLiveNavigation = Extension.create({
             return true;
           }
           const commands = forward
-            ? ["moveToMathfieldStart", "moveToNextChar"]
-            : ["moveToMathfieldEnd", "moveToPreviousChar"];
+            ? ["moveToMathfieldStart"]
+            : ["moveToMathfieldEnd"];
           if (!focusMathField(view, pos, commands)) return false;
           event.preventDefault();
           return true;
