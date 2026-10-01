@@ -68,6 +68,7 @@
   --accent-success-500: hsl(142, 71%, 45%);
   --accent-danger-300: hsl(0, 93%, 82%);
   --accent-danger-500: hsl(0, 84%, 60%);
+  --accent-warn-300: hsl(32, 100%, 80%);
   --accent-warn-500: hsl(32, 100%, 50%);
 
   --color-success-bg: hsla(142, 71%, 45%, 0.22);
@@ -2088,7 +2089,7 @@ button.pane-title {
 }
 
 .status-warn {
-  color: var(--accent-warn-500);
+  color: var(--accent-warn-300);
 }
 
 .status-danger {
