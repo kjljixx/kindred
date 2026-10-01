@@ -2721,6 +2721,32 @@ button.pane-title {
   z-index: 1;
 }
 
+.draft-item > .draft-item-delete,
+.git-row > .git-row-actions {
+  align-self: stretch;
+  margin: calc(var(--space-1) * -1 - var(--space-4)) calc(var(--space-5) * -1) calc(var(--space-1) * -1 - var(--space-4)) calc(var(--space-4) * -1);
+}
+
+.git-row > .git-row-actions {
+  align-items: stretch;
+}
+
+.draft-item > .draft-item-delete,
+.git-row-actions > * {
+  display: inline-flex;
+  align-items: center;
+}
+
+.draft-item > .draft-item-delete:last-child,
+.git-row-actions > :last-child {
+  border-right: var(--space-5) solid transparent;
+}
+
+.draft-item > .draft-item-delete,
+.git-row-actions > :first-child {
+  border-left: var(--space-4) solid transparent;
+}
+
 .draft-item::before,
 .git-row::before {
   inset: calc(var(--space-1) * -1) 0;
