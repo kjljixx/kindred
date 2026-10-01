@@ -202,6 +202,27 @@ describe("Google Docs pull", () => {
     editorElement.remove();
   });
 
+  it("preserves leading paragraph spaces", () => {
+    const html = googleDocumentToKindredHtml({
+      body: {
+        content: [{
+          startIndex: 1,
+          endIndex: 12,
+          paragraph: {
+            paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+            elements: [{
+              startIndex: 1,
+              endIndex: 12,
+              textRun: { content: "  a  b\n", textStyle: {} },
+            }],
+          },
+        }],
+      },
+    });
+
+    expect(html).toMatch(/^<p>&nbsp; a/);
+  });
+
   it("preserves trailing paragraph spaces used by Google Docs positions", () => {
     const html = googleDocumentToKindredHtml({
       body: {

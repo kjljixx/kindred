@@ -123,9 +123,15 @@ export function googleDocumentToKindredHtml(document) {
   });
   source.body.querySelectorAll("p, li, h1, h2, h3, h4, h5, h6").forEach((block) => {
     const walker = source.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+    let firstText = null;
     let finalText = null;
-    while (walker.nextNode()) finalText = walker.currentNode;
-    if (finalText) finalText.data = finalText.data.replace(/ +$/, (spaces) => "\u00a0".repeat(spaces.length));
+    while (walker.nextNode()) {
+      firstText ??= walker.currentNode;
+      finalText = walker.currentNode;
+    }
+    const toNbsp = (spaces) => "\u00a0".repeat(spaces.length);
+    if (firstText) firstText.data = firstText.data.replace(/^ +/, toNbsp);
+    if (finalText) finalText.data = finalText.data.replace(/ +$/, toNbsp);
   });
   const documentJson = htmlToDoc(DOMPurify.sanitize(source.body.innerHTML));
   return documentJson.content.map((block) => blockToHtml(block)).join("") || "<p></p>";
