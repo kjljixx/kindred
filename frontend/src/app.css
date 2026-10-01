@@ -2699,7 +2699,9 @@ button.pane-title {
 
 .editor-toolbar button,
 .editor-toolbar .toolbar-color,
-.tabs .tab {
+.tabs .tab,
+#import-btn,
+#export-btn {
   position: relative;
 }
 
@@ -2707,7 +2709,9 @@ button.pane-title {
 .git-row::before,
 .editor-toolbar button::before,
 .editor-toolbar .toolbar-color::before,
-.tabs .tab::before {
+.tabs .tab::before,
+#import-btn::before,
+#export-btn::before {
   content: "";
   position: absolute;
 }
@@ -2735,6 +2739,14 @@ button.pane-title {
 
 .tabs .tab::before {
   inset: 0 calc(var(--space-4) / -2);
+}
+
+#import-btn::before {
+  inset: 0 calc(var(--space-3) / -2) 0 0;
+}
+
+#export-btn::before {
+  inset: 0 0 0 calc(var(--space-3) / -2);
 }
 
 .git-row-actions .btn-tertiary.is-active {
