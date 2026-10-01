@@ -2658,6 +2658,10 @@ button.pane-title {
   background: var(--color-bg-raised);
 }
 
+.git-row.active .git-row-title {
+  color: var(--btn-secondary-fg);
+}
+
 .git-row-body {
   flex: 1;
   min-width: 0;
