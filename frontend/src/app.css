@@ -813,6 +813,7 @@ button.pane-title {
 
 .editor-toolbar button:hover {
   background: var(--color-border-strong);
+  color: var(--color-text-bright);
 }
 
 .editor-toolbar button.is-active {
@@ -982,6 +983,7 @@ button.pane-title {
 .editor-toolbar .toolbar-select:hover,
 .editor-toolbar .toolbar-input:hover {
   background: var(--color-bg-raised);
+  color: var(--color-text-bright);
 }
 
 .editor-toolbar .toolbar-select.is-active,
@@ -1114,6 +1116,7 @@ button.pane-title {
 
 .editor-toolbar .toolbar-color:hover {
   background: var(--color-border-strong);
+  color: var(--color-text-bright);
 }
 .editor-toolbar .toolbar-color.is-active {
   background: var(--neutral-600);
