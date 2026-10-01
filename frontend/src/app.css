@@ -2694,6 +2694,46 @@ button.pane-title {
   pointer-events: auto;
 }
 
+.editor-toolbar button,
+.editor-toolbar .toolbar-color,
+.tabs .tab {
+  position: relative;
+}
+
+.draft-item::before,
+.git-row::before,
+.editor-toolbar button::before,
+.editor-toolbar .toolbar-color::before,
+.tabs .tab::before {
+  content: "";
+  position: absolute;
+}
+
+.draft-item::before,
+.git-row::before {
+  inset: calc(var(--space-1) * -1) 0;
+}
+
+.editor-toolbar button::before,
+.editor-toolbar .toolbar-color::before {
+  inset: calc(-1px - var(--space-1) / 2);
+}
+
+.editor-toolbar .toolbar-sep + :is(button, .toolbar-color)::before,
+.editor-toolbar .toolbar-sep + .align-picker > [data-align-trigger]::before {
+  left: calc(-1px - var(--space-1) * 2 - 0.5px);
+}
+
+.editor-toolbar :is(button, .toolbar-color):has(+ .toolbar-sep, + [hidden] + .toolbar-sep)::before,
+.editor-toolbar #highlight-container:has(+ .toolbar-sep) > .toolbar-color::before,
+.editor-toolbar .table-tools:has(+ .toolbar-sep) > button:last-child::before {
+  right: calc(-1px - var(--space-1) * 2 - 0.5px);
+}
+
+.tabs .tab::before {
+  inset: 0 calc(var(--space-4) / -2);
+}
+
 .git-row-actions .btn-tertiary.is-active {
   color: var(--btn-tertiary-fg-hover);
 }
