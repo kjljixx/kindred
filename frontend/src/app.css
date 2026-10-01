@@ -709,7 +709,7 @@ button.pane-title {
 
 .tabs-primary .tab.btn-secondary {
   background: transparent;
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .tabs-primary .tab.btn-secondary:not(.active):hover:not(:disabled) {
