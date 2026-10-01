@@ -4190,7 +4190,7 @@ import {
       );
       clearTimeout(slowTimer);
       setStatus("exporting...");
-      downloadBlob(blob, `${base}.${format.ext}`);
+      downloadBlob(blob, `${styledDiff ? "Diff of " : ""}${base}.${format.ext}`);
       setStatus("");
     } catch (err) {
       console.error(err);

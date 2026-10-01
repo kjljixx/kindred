@@ -480,14 +480,14 @@ export const EXPORT_FORMATS = [
 ];
 
 import html2pdf from "html2pdf.js";
+import { DEFAULT_FONT_FAMILY } from "./fontCatalog.js";
 
 export async function htmlToPdfBlob(html, options = {}) {
   const { styledDiff = false } = options;
   const container = document.createElement("div");
   container.innerHTML = html;
-  if (!styledDiff) {
-    container.style.color = "#000000";
-  }
+  container.style.fontFamily = DEFAULT_FONT_FAMILY;
+  container.style.color = "#000000";
   const style = document.createElement("style");
   style.textContent = `
     mark { color: inherit; }
