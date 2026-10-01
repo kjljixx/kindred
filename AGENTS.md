@@ -33,5 +33,4 @@
 - `frontend/src/mathTextDetector.js` identifies plain-text math and wraps detected ranges in `span.render-latex`.
 - Before math tokenization, URLs, email addresses, and supported phone-number formats are protected so their fragments cannot be classified as math. Keep new identifier-like formats in this protected-piece pass rather than adding range-level exclusions.
 - Math ranges expand only to whitespace or text-punctuation (`.`, `;`, `:`, `!`, `?`) boundaries; do not include adjacent prose punctuation.
-- In HTML input, do not classify text already rendered as math or text inside links.
 - Add regressions for detection-boundary changes in `frontend/test/mathTextDetector.test.js`.

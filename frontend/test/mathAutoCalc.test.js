@@ -103,6 +103,7 @@ describe("mathNodeTransaction", () => {
       doc: { content: "paragraph+" },
       paragraph: { content: "inline*", group: "block" },
       text: { group: "inline" },
+      hardBreak: { group: "inline", inline: true },
       mathLive: {
         group: "inline",
         inline: true,
@@ -110,6 +111,52 @@ describe("mathNodeTransaction", () => {
         attrs: { asciiMath: { default: "" } },
       },
     },
+  });
+
+  function paragraphOf(...content) {
+    return mathSchema.nodes.paragraph.create(null, content);
+  }
+
+  function stateOf(...paragraphs) {
+    return EditorState.create({
+      doc: mathSchema.nodes.doc.create(null, paragraphs),
+    });
+  }
+
+  it("treats a hard break after a word as completing it", () => {
+    const state = stateOf(
+      paragraphOf(mathSchema.text("x"), mathSchema.nodes.hardBreak.create(), mathSchema.text("hello")),
+    );
+
+    expect(mathNodeTransaction(state).doc.firstChild.firstChild).toMatchObject({
+      type: { name: "mathLive" },
+      attrs: { asciiMath: "x" },
+    });
+  });
+
+  it("treats a following paragraph as completing the last word", () => {
+    const state = stateOf(
+      paragraphOf(mathSchema.text("x")),
+      paragraphOf(mathSchema.text("hello")),
+    );
+
+    expect(mathNodeTransaction(state).doc.firstChild.firstChild).toMatchObject({
+      type: { name: "mathLive" },
+      attrs: { asciiMath: "x" },
+    });
+  });
+
+  it("keeps the last word of the last paragraph unfinished", () => {
+    expect(mathNodeTransaction(stateOf(paragraphOf(mathSchema.text("x"))))).toBeNull();
+  });
+
+  it("recognizes inserting a hard break or splitting a paragraph as a delimiter", () => {
+    const state = stateOf(paragraphOf(mathSchema.text("x")));
+
+    expect(userInsertedMathDelimiter([
+      state.tr.insert(2, mathSchema.nodes.hardBreak.create()),
+    ])).toBe(true);
+    expect(userInsertedMathDelimiter([state.tr.split(2)])).toBe(true);
   });
 
   function stateWithOverlay(doc, overlay) {

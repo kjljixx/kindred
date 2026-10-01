@@ -24,11 +24,15 @@ function isDiffOverlayActive(state) {
   return !!(overlay?.showDiffs && !overlay.conflicts);
 }
 
-function collectLinearText(node, blockPos) {
+function collectLinearText(node, blockPos, doc) {
   const segments = [];
   let linearText = "";
 
   node.descendants((child, pos) => {
+    if (child.type.name === "hardBreak") {
+      linearText += " ";
+      return;
+    }
     if (child.type.name === "mathLive") {
       const start = linearText.length;
       linearText += child.attrs.asciiMath;
@@ -52,6 +56,9 @@ function collectLinearText(node, blockPos) {
       mathNode: null,
     });
   });
+
+  const $blockPos = doc.resolve(blockPos);
+  if ($blockPos.parent.maybeChild($blockPos.index() + 1)) linearText += " ";
 
   return { linearText, segments };
 }
@@ -127,7 +134,7 @@ export function mathNodeTransaction(
     if (!MATH_BLOCK_TYPES.has(node.type.name) || !blockTouchesRanges(pos, node, changedRanges)) {
       return;
     }
-    const { linearText, segments } = collectLinearText(node, pos);
+    const { linearText, segments } = collectLinearText(node, pos, state.doc);
     for (const range of rangesRequiringMathNode(
       linearText,
       segments,
@@ -174,7 +181,7 @@ export function normalizeMathNodes(editor) {
 
   editor.state.doc.descendants((node, pos) => {
     if (!MATH_BLOCK_TYPES.has(node.type.name)) return;
-    const { linearText, segments } = collectLinearText(node, pos);
+    const { linearText, segments } = collectLinearText(node, pos, editor.state.doc);
     const ranges = rangesRequiringMathNode(linearText, segments);
     const potentialRanges = ranges.filter(
       (range) => range.confidence === "potential",
@@ -274,7 +281,8 @@ export function userInsertedMathDelimiter(transactions) {
       const insertedText = step.slice.content.textBetween(
         0,
         step.slice.content.size,
-        "",
+        "\n",
+        "\n",
       );
       if (/[\s()^_=+\-*/<>]/u.test(insertedText)) return true;
     }
@@ -329,7 +337,7 @@ export const MathText = Extension.create({
           ) {
             return;
           }
-          const { linearText, segments } = collectLinearText(node, pos);
+          const { linearText, segments } = collectLinearText(node, pos, newState.doc);
           const ranges = rangesRequiringMathNode(
             linearText,
             segments,

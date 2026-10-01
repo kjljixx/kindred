@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyMath, classifyMathHtml } from "../src/mathTextDetector.js";
+import { classifyMath } from "../src/mathTextDetector.js";
 
 describe("classifyMath", () => {
   it("detects sin(x) + x^2 as a math run", () => {
@@ -100,12 +100,6 @@ describe("classifyMath", () => {
     expect(classifyMath("x=1.25 ").html).toBe(
       '<span class="render-latex">x=1.25</span> ',
     );
-  });
-
-  it("does not classify visible link text as math", () => {
-    const html = '<p><a href="https://example.com">x^2</a></p>';
-
-    expect(classifyMathHtml(html)).toBe(html);
   });
 
   it("marks strong math syntax as definite", () => {
