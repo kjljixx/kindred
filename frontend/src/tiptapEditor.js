@@ -8,7 +8,8 @@ import {
   projectDocument,
   kindredContentExtensions,
   prettyPrintHtml,
-  blockToHtml
+  blockToHtml,
+  htmlToDoc
 } from "./kindredSchema.js";
 import { bindLongPress } from "./longPress.js";
 import {
@@ -18,8 +19,8 @@ import {
   mountFontFamilyPicker,
 } from "./fontCatalog.js";
 import { SelectionUnits } from "./selectionUnits.js";
-import { diffTable, parseTableConflicts } from "./tableDaff.js";
-import { parseListConflicts } from "./listAlign.js";
+import { diffTable, parseTableConflicts, resolveAllTableConflicts } from "./tableDaff.js";
+import { parseListConflicts, resolveAllListConflicts } from "./listAlign.js";
 import {
   debugEnabled,
   debugEvent,
@@ -993,6 +994,157 @@ export function resolveConflictInEditor(editor, index, html, { googleHtml } = {}
 
   const googleTextEnd = pos + (editor.state.doc.content.size - sizeBefore) + 1;
   return replaceRange(editor, pos, googleTextEnd, html);
+}
+
+const isAlignConflictNode = (node) =>
+  node.type.name === "paragraph" && Boolean(node.attrs.alignOurs || node.attrs.alignTheirs);
+
+const isTableConflictNode = (node) =>
+  node.type.name === "table" &&
+  (parseTableConflicts(node.attrs.tableConflicts)?.conflicts.length > 0 ||
+    node.attrs.tableOurs != null ||
+    node.attrs.tableTheirs != null ||
+    Boolean(node.attrs.tableLabelOurs || node.attrs.tableLabelTheirs));
+
+const isListConflictNode = (node) =>
+  (node.type.name === "bulletList" || node.type.name === "orderedList") &&
+  (parseListConflicts(node.attrs.listConflicts)?.conflicts.length > 0 ||
+    node.attrs.listOurs != null ||
+    node.attrs.listTheirs != null ||
+    Boolean(node.attrs.listLabelOurs || node.attrs.listLabelTheirs));
+
+function docHasUnresolvedConflicts(doc) {
+  let found = false;
+  doc.descendants((node) => {
+    if (
+      node.type.name === "conflictParagraph" ||
+      isAlignConflictNode(node) ||
+      isTableConflictNode(node) ||
+      isListConflictNode(node)
+    ) {
+      found = true;
+    }
+    return !found;
+  });
+  return found;
+}
+
+function textConflictOperation(doc, pos, segment) {
+  const deletedBlock = segment.oursState === "deleted" || segment.theirsState === "deleted";
+  let from = pos;
+  let to = pos + 1;
+  let replacement = segment.theirs;
+  if (deletedBlock) {
+    const $pos = doc.resolve(pos);
+    if ($pos.parent.type.name === "paragraph") {
+      from = $pos.before();
+      to = $pos.after();
+    }
+    if (segment.theirsState === "deleted" || !segment.theirs.trim()) replacement = "";
+  }
+  return {
+    from,
+    apply: (chain) =>
+      replacement
+        ? chain.insertContentAt({ from, to }, replacement, { updateSelection: false })
+        : chain.deleteRange({ from, to }),
+  };
+}
+
+function alignConflictOperation(node, pos) {
+  return {
+    from: pos,
+    apply: (chain) =>
+      chain.command(({ tr }) => {
+        tr.setNodeMarkup(pos, undefined, {
+          ...node.attrs,
+          textAlign: node.attrs.alignTheirs || "left",
+          alignOurs: null,
+          alignTheirs: null,
+          alignLabelOurs: null,
+          alignLabelTheirs: null,
+        });
+        return true;
+      }),
+  };
+}
+
+function blockConflictOperation(node, pos, schema, chosenHtml) {
+  const from = pos;
+  const to = pos + node.nodeSize;
+  const chosenJson = chosenHtml?.trim() ? htmlToDoc(chosenHtml).content?.[0] : null;
+  if (chosenHtml?.trim() && !chosenJson) {
+    throw new Error(`conflict block at ${pos} resolved to html with no block node`);
+  }
+  return {
+    from,
+    apply: (chain) =>
+      chain.command(({ tr }) => {
+        if (chosenJson) tr.replaceWith(from, to, schema.nodeFromJSON(chosenJson));
+        else tr.delete(from, to);
+        return true;
+      }),
+  };
+}
+
+/**
+ * Resolves every conflict node in the editor to its "theirs" side in one transaction,
+ * leaving the rest of the document untouched. `markedHtml` is the conflict-marked HTML
+ * the editor's conflict anchors were generated from. Throws if any conflict is left over.
+ */
+export function resolveAllConflictsToTheirs(editor, markedHtml) {
+  const conflicts = (parseConflictSegments(markedHtml) || []).filter(
+    (segment) => segment.type === "conflict",
+  );
+  const { doc, schema } = editor.state;
+  const operations = [];
+  doc.descendants((node, pos) => {
+    if (node.type.name === "conflictParagraph") {
+      const segment = conflicts[node.attrs.conflictIndex];
+      if (!segment) {
+        throw new Error(
+          `no conflict segment for editor anchor ${node.attrs.conflictIndex} (${conflicts.length} segments)`,
+        );
+      }
+      operations.push(textConflictOperation(doc, pos, segment));
+      return false;
+    }
+    if (isAlignConflictNode(node)) {
+      operations.push(alignConflictOperation(node, pos));
+      return true;
+    }
+    if (isTableConflictNode(node)) {
+      const granular = parseTableConflicts(node.attrs.tableConflicts)?.conflicts.length > 0;
+      const chosenHtml = granular
+        ? resolveAllTableConflicts(blockToHtml(node), "theirs")
+        : node.attrs.tableTheirs;
+      operations.push(blockConflictOperation(node, pos, schema, chosenHtml));
+      return false;
+    }
+    if (isListConflictNode(node)) {
+      const granular = parseListConflicts(node.attrs.listConflicts)?.conflicts.length > 0;
+      const chosenHtml = granular
+        ? resolveAllListConflicts(blockToHtml(node), "theirs")
+        : node.attrs.listTheirs;
+      operations.push(blockConflictOperation(node, pos, schema, chosenHtml));
+      return false;
+    }
+    return true;
+  });
+
+  debugEvent("editor", "resolveAllConflictsToTheirs", {
+    segmentCount: conflicts.length,
+    operationCount: operations.length,
+  });
+
+  const chain = editor.chain().setMeta("skipGoogleDocsSync", "review-conflict-resolution");
+  operations.sort((a, b) => b.from - a.from).forEach((operation) => operation.apply(chain));
+  chain.command(({ tr }) => !docHasUnresolvedConflicts(tr.doc));
+  if (!chain.run()) {
+    throw new Error(
+      `could not resolve all conflicts to theirs (${operations.length} operations for ${conflicts.length} segments)`,
+    );
+  }
 }
 
 /**

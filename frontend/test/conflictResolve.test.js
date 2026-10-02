@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { transactionToGoogleDocsBatchUpdateRequests } from "../src/gdocsSync.js";
-import { createKindredEditor, resolveConflictInEditor } from "../src/tiptapEditor.js";
+import {
+  conflictDisplayHtml,
+  createKindredEditor,
+  resolveAllConflictsToTheirs,
+  resolveConflictInEditor,
+} from "../src/tiptapEditor.js";
 
 describe("resolveConflictInEditor", () => {
   let editor;
@@ -71,5 +76,89 @@ describe("resolveConflictInEditor", () => {
     createEditor("<p>plain</p>");
 
     expect(resolveConflictInEditor(editor, 0, "X")).toBe(false);
+  });
+
+  describe("resolveAllConflictsToTheirs", () => {
+    const textMarker = ({ ours, theirs, oursState = "", theirsState = "" }) =>
+      `<span data-kindred-text-conflict data-kindred-label-ours="HEAD" data-kindred-label-theirs="dirty"` +
+      ` data-kindred-ours="${ours}" data-kindred-theirs="${theirs}"` +
+      ` data-kindred-ours-state="${oursState}" data-kindred-theirs-state="${theirsState}"></span>`;
+
+    const createMarkedEditor = (markedHtml) => createEditor(conflictDisplayHtml(markedHtml));
+
+    it("replaces text conflicts with theirs and keeps the caret on its text", () => {
+      const marked = `<p>start ${textMarker({ ours: "OURS", theirs: "THEIRS" })} end</p>`;
+      createMarkedEditor(marked);
+      editor.commands.setTextSelection(3);
+
+      resolveAllConflictsToTheirs(editor, marked);
+
+      expect(editor.getHTML()).toBe("<p>start THEIRS end</p>");
+      expect(editor.state.selection.from).toBe(3);
+    });
+
+    it("removes a block deleted on the theirs side", () => {
+      const marked =
+        `<p>A</p><p>${textMarker({ ours: "&lt;p>B&lt;/p>", theirs: "", theirsState: "deleted" })}</p><p>C</p>`;
+      createMarkedEditor(marked);
+
+      resolveAllConflictsToTheirs(editor, marked);
+
+      expect(editor.getHTML()).toBe("<p>A</p><p>C</p>");
+    });
+
+    it("inserts a block that only exists on the theirs side", () => {
+      const marked =
+        `<p>A</p><p>${textMarker({ ours: "", theirs: "&lt;p>B&lt;/p>", oursState: "deleted" })}</p><p>C</p>`;
+      createMarkedEditor(marked);
+
+      resolveAllConflictsToTheirs(editor, marked);
+
+      expect(editor.getHTML()).toBe("<p>A</p><p>B</p><p>C</p>");
+    });
+
+    it("applies the theirs alignment", () => {
+      const marked = `<p data-kindred-align-ours="left" data-kindred-align-theirs="center">x</p>`;
+      createMarkedEditor(marked);
+
+      resolveAllConflictsToTheirs(editor, marked);
+
+      expect(editor.getHTML()).toContain("text-align: center");
+      expect(editor.getHTML()).not.toContain("data-kindred-align");
+    });
+
+    it("replaces a conflicting table with theirs", () => {
+      const cell = (text) => `<table><tbody><tr><td><p>${text}</p></td></tr></tbody></table>`;
+      const attr = (html) => html.replaceAll("<", "&lt;");
+      const marked =
+        `<table data-kindred-table-ours="${attr(cell("O"))}" data-kindred-table-theirs="${attr(cell("T"))}">` +
+        `<tbody><tr><td><p>O</p></td></tr></tbody></table>`;
+      createMarkedEditor(marked);
+
+      resolveAllConflictsToTheirs(editor, marked);
+
+      expect(editor.getHTML()).toContain("<p>T</p>");
+      expect(editor.getHTML()).not.toContain("data-kindred-table");
+    });
+
+    it("replaces a conflicting list with theirs", () => {
+      const list = (text) => `<ul><li><p>${text}</p></li></ul>`;
+      const attr = (html) => html.replaceAll("<", "&lt;");
+      const marked =
+        `<ul data-kindred-list-ours="${attr(list("O"))}" data-kindred-list-theirs="${attr(list("T"))}">` +
+        `<li><p>O</p></li></ul>`;
+      createMarkedEditor(marked);
+
+      resolveAllConflictsToTheirs(editor, marked);
+
+      expect(editor.getHTML()).toContain("<p>T</p>");
+      expect(editor.getHTML()).not.toContain("data-kindred-list");
+    });
+
+    it("throws when an editor anchor has no matching conflict segment", () => {
+      createEditor(`<p>a <span data-kindred-conflict="0"></span> b</p>`);
+
+      expect(() => resolveAllConflictsToTheirs(editor, "<p>plain</p>")).toThrow(/no conflict segment/);
+    });
   });
 });

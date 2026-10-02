@@ -28,6 +28,7 @@ import {
   normalizeMathNodes,
   captureViewAnchor,
   restoreViewAnchor,
+  resolveAllConflictsToTheirs,
 } from "./tiptapEditor.js";
 import { bindLongPress } from "./longPress.js";
 import { loadColoris, loadHtmlDiff, preloadOptionalAssets } from "./optionalAssets.js";
@@ -2269,9 +2270,18 @@ import {
   async function leaveDirtyReview() {
     if (!dirtyReviewing) return;
     if (unresolvedMergeConflictCount(currentHtml) > 0) {
+      const markedHtml = currentHtml;
       takeAllTheirsConflicts();
       workingDirty = true;
-      applyRevisionToEditor();
+      suppressEditorUpdate = true;
+      try {
+        resolveAllConflictsToTheirs(tipTap, markedHtml);
+      } finally {
+        suppressEditorUpdate = false;
+      }
+      currentText = getPlain(tipTap);
+      void store.hydrateImageElements(activeDraftId, editor, viewingOid);
+      syncOverlayFromState();
     }
     debugEvent("review", "postTakeAllTheirs", { currentHtml });
     dirtyReviewing = false;
