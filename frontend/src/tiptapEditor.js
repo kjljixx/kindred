@@ -3813,6 +3813,34 @@ function restoreSelectionAfterReplacement(editor, previousSelection) {
   editor.view.dispatch(tr);
 }
 
+export function captureViewAnchor(editor, scroller) {
+  if (!editor?.view || !scroller) return null;
+  const { view, state } = editor;
+  const { anchor, head } = state.selection;
+  const box = scroller.getBoundingClientRect();
+  let pos = head;
+  let top = view.coordsAtPos(head).top;
+  if (top < box.top || top > box.bottom) {
+    const hit = view.posAtCoords({ left: box.left + box.width / 2, top: box.top + 1 });
+    if (hit) {
+      pos = hit.pos;
+      top = view.coordsAtPos(pos).top;
+    }
+  }
+  return { oldDoc: state.doc, anchor, head, pos, offset: top - box.top };
+}
+
+export function restoreViewAnchor(editor, scroller, viewAnchor) {
+  if (!editor?.view || !scroller || !viewAnchor) return;
+  const { oldDoc, anchor, head, pos, offset } = viewAnchor;
+  if (editor.state.doc !== oldDoc) {
+    restoreSelectionAfterReplacement(editor, { oldDoc, anchor, head });
+  }
+  const mapped = mapPositionAcrossReplacement(oldDoc, editor.state.doc, pos);
+  const top = editor.view.coordsAtPos(mapped).top - scroller.getBoundingClientRect().top;
+  scroller.scrollTop += top - offset;
+}
+
 export function setHtml(editor, html, {
   emitUpdate = false,
   source = "unknown",

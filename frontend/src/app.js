@@ -26,6 +26,8 @@ import {
   plainOffsetForPmPos,
   expandMathNodesToText,
   normalizeMathNodes,
+  captureViewAnchor,
+  restoreViewAnchor,
 } from "./tiptapEditor.js";
 import { bindLongPress } from "./longPress.js";
 import { loadColoris, loadHtmlDiff, preloadOptionalAssets } from "./optionalAssets.js";
@@ -907,6 +909,15 @@ import {
   function focusEditorSoon() {
     if (!tipTap || !activeDraftId || isViewingHistory()) return;
     requestAnimationFrame(() => tipTap?.commands.focus());
+  }
+
+  async function withViewAnchor(action) {
+    const viewAnchor = captureViewAnchor(tipTap, editor);
+    await action();
+    const restore = () => restoreViewAnchor(tipTap, editor, viewAnchor);
+    restore();
+    // Tiptap's deferred focus() scrolls the caret into view; restore again after it.
+    requestAnimationFrame(() => requestAnimationFrame(restore));
   }
 
   function editorIsEmpty() {
@@ -2272,7 +2283,11 @@ import {
     await refreshWorkingDirty();
   }
 
-  async function setDirtyEditView(mode) {
+  function setDirtyEditView(mode) {
+    return withViewAnchor(() => applyDirtyEditView(mode));
+  }
+
+  async function applyDirtyEditView(mode) {
     if (mode !== "Text" && mode !== "Diff") return;
     if (mode === "Diff") await loadHtmlDiff();
     const leavingDiff = dirtyViewMode === "Diff" && mode === "Text";
@@ -2317,7 +2332,11 @@ import {
     persistUiStateSoon();
   }
 
-  async function enterDirtyReview() {
+  function enterDirtyReview() {
+    return withViewAnchor(openDirtyReview);
+  }
+
+  async function openDirtyReview() {
     startTrace("review", "enter", { activeDraftId, currentBranchName });
     if (!activeDraftId || !store) {
       debugEvent("review", "skipped", { reason: "missing-draft-or-store" });
@@ -2366,6 +2385,7 @@ import {
     persistActiveDraftSoon();
     renderGitPane();
     focusEditorSoon();
+    persistUiStateSoon();
   }
 
   function replaceConflictAt(index, replacement, blockSide = "") {
