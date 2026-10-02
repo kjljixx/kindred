@@ -958,6 +958,43 @@ function conflictNodePos(doc, index) {
   return found;
 }
 
+function replaceRange(editor, from, to, html, skipGoogleDocsSync, afterReplace) {
+  const chain = editor.chain();
+  if (skipGoogleDocsSync) chain.setMeta("skipGoogleDocsSync", skipGoogleDocsSync);
+  if (html) chain.insertContentAt({ from, to }, html);
+  else chain.deleteRange({ from, to });
+  if (afterReplace) chain.command(afterReplace);
+  return chain.run();
+}
+
+/**
+ * Replaces conflict anchor `index` with `html`. `googleHtml` is what Google Docs currently
+ * holds at the anchor; omit it when Google should not be updated.
+ */
+export function resolveConflictInEditor(editor, index, html, { googleHtml } = {}) {
+  const pos = conflictNodePos(editor.state.doc, index);
+  if (pos == null) return false;
+  const googleKnown = googleHtml != null;
+  const renumberLaterConflicts = ({ tr }) => {
+    tr.doc.descendants((node, nodePos) => {
+      if (node.type.name === "conflictParagraph" && node.attrs.conflictIndex > index) {
+        tr.setNodeMarkup(nodePos, undefined, { conflictIndex: node.attrs.conflictIndex - 1 });
+      }
+    });
+    return true;
+  };
+
+  const sizeBefore = editor.state.doc.content.size;
+  const anchorReplacement = googleKnown ? googleHtml : html;
+  if (!replaceRange(editor, pos, pos + 1, anchorReplacement, googleKnown ? "conflict-anchor-to-google-text" : "conflict-resolution", renumberLaterConflicts)) {
+    return false;
+  }
+  if (!googleKnown || html === googleHtml) return true;
+
+  const googleTextEnd = pos + (editor.state.doc.content.size - sizeBefore) + 1;
+  return replaceRange(editor, pos, googleTextEnd, html);
+}
+
 /**
  * Map canonical plain-text offsets (docToPlainText) ↔ ProseMirror positions.
  * Returns { plainToPm, plainLen } where plainToPm[i] is PM pos for plain offset i.

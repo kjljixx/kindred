@@ -20,6 +20,7 @@ import {
   isFormatOnlyConflict,
   stripHtml,
   mergeCleanEditsIntoMarked,
+  resolveConflictInEditor,
   stripKindredProtocol,
   plainOffsetsToPmRange,
   plainOffsetForPmPos,
@@ -270,6 +271,8 @@ import {
   let googleDocsSyncGeneration = 0;
   let googleDocsSyncErrorMessage = null;
   const GOOGLE_DOCS_POLL_INTERVAL_MS = 200;
+  const GOOGLE_DOCS_PAUSED_STATUS = "google doc changed; sync resumes after review";
+  let googleDocsSyncPaused = false;
   const googleDocsTabId = crypto.randomUUID();
   let lastGoogleDocsActivity = Date.now();
 
@@ -298,6 +301,7 @@ import {
     googleDocsSync = syncState;
     pendingGoogleDocsTransactions.length = 0;
     lastGoogleDocsActivity = Date.now();
+    setGoogleDocsSyncPaused(false);
   }
 
   function isCurrentGoogleDocsSync(syncState, generation) {
@@ -338,6 +342,12 @@ import {
     });
   }
 
+  function setGoogleDocsSyncPaused(paused) {
+    if (googleDocsSyncPaused === paused) return;
+    googleDocsSyncPaused = paused;
+    refreshStatusLeft();
+  }
+
   async function syncGoogleDocs() {
     if (!googleDocsSync || googleDocsSyncInProgress || converting) return;
     googleDocsSyncInProgress = true;
@@ -363,6 +373,9 @@ import {
         localChanged,
         remoteChanged,
       }, true);
+      const reviewing = dirtyReviewing || pendingMerge;
+      setGoogleDocsSyncPaused(Boolean(remoteChanged && reviewing));
+      if (googleDocsSyncPaused) return;
       if (!localChanged && remoteChanged) {
         await pullGoogleDocument({ clearPendingTransactions: false, syncState, generation });
         return;
@@ -1260,6 +1273,9 @@ import {
     const statusParts = [];
     if (isViewingHistory()) {
       statusParts.push(statusSpan("viewing old commit", "status-warn"));
+    }
+    if (googleDocsSyncPaused) {
+      statusParts.push(statusSpan(GOOGLE_DOCS_PAUSED_STATUS, "status-warn"));
     }
     if (statusMessage) {
       const cls =
@@ -2353,6 +2369,8 @@ import {
   }
 
   function replaceConflictAt(index, replacement, blockSide = "") {
+    let resolvedInEditor = false;
+    let googleHtml;
     if (blockSide) {
       currentHtml = resolveBlockStateConflicts(currentHtml, blockSide, index);
     } else {
@@ -2365,8 +2383,10 @@ import {
           parts.push(seg.text);
           continue;
         }
-        if (conflictI === index) parts.push(replacement);
-        else {
+        if (conflictI === index) {
+          parts.push(replacement);
+          if (dirtyReviewing) googleHtml = seg.theirs;
+        } else {
           parts.push(
             formatConflictMarkers(
               seg.oursLabel,
@@ -2381,9 +2401,10 @@ import {
         conflictI++;
       }
       currentHtml = parts.join("");
+      resolvedInEditor = resolveConflictInEditor(tipTap, index, replacement, { googleHtml });
     }
     workingDirty = true;
-    applyRevisionToEditor();
+    if (!resolvedInEditor) applyRevisionToEditor();
     syncDirtyBodyFromCurrent();
     syncMergeStatus();
     refreshStatusLeft();
