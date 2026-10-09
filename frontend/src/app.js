@@ -473,6 +473,20 @@ import { escapeHtml } from "./htmlEscape.js";
           currentHtml,
           parts
         );
+        debugEvent("diff", "format-hunks", {
+          count: formatHunks.length,
+          hunks: JSON.stringify(
+            formatHunks.map(({ from, to, oldHtml, differing }) => ({
+              from,
+              to,
+              currentText: currentText.slice(from, to),
+              differing,
+              oldHtml,
+            })),
+            null,
+            2,
+          ),
+        });
         debugEvent("diff", "overlay-input", {
           viewing,
           basePlain,

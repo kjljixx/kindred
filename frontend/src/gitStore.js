@@ -1284,6 +1284,7 @@ const VOLUME = "kindred";
    * Exclusive valued marks: one value per char; both-sides clash → format conflict.
    * Add a type here (normalize + wrapHtml + parseFromStyle) for new valued styles.
    */
+  const DEFAULT_FONT_SIZE = "12pt";
   const EXCLUSIVE_MARKS = {
     color: {
       normalize(value) {
@@ -1320,10 +1321,10 @@ const VOLUME = "kindred";
       normalize(value) {
         const raw = String(value || "").trim().toLowerCase();
         if (!raw) return null;
-        if (/^\d+(\.\d+)?$/.test(raw)) return `${raw}pt`;
-        const m = /^(\d+(\.\d+)?)(px|pt|em|rem|%)$/.exec(raw);
-        if (m) return `${m[1]}${m[3]}`;
-        return raw.replace(/\s+/g, "");
+        const size = /^\d+(\.\d+)?$/.test(raw) ? `${raw}pt` : raw;
+        const m = /^(\d+(\.\d+)?)(px|pt|em|rem|%)$/.exec(size);
+        const normalized = m ? `${m[1]}${m[3]}` : size.replace(/\s+/g, "");
+        return normalized === DEFAULT_FONT_SIZE ? null : normalized;
       },
       wrapHtml(inner, value) {
         const size = String(value || "").replace(/"/g, "");
@@ -1994,6 +1995,21 @@ const VOLUME = "kindred";
     return false;
   }
 
+  function differingMarks(bI, cI, baseMaps, curMaps) {
+    const differing = {};
+    for (const type of ORTHOGONAL_MARK_TYPES) {
+      const base = baseMaps.ortho[type][bI];
+      const current = curMaps.ortho[type][cI];
+      if (base !== current) differing[type] = { base, current };
+    }
+    for (const type of EXCLUSIVE_MARK_TYPES) {
+      const base = baseMaps.exclusive[type][bI];
+      const current = curMaps.exclusive[type][cI];
+      if (base !== current) differing[type] = { base, current };
+    }
+    return differing;
+  }
+
   /**
    * After a plain DIFF (0=eq, 1=ins, -1=del), find equal-text runs whose marks
    * differ. Offsets are in current-plain (same as overlay getText).
@@ -2051,6 +2067,12 @@ const VOLUME = "kindred";
                   baseDoc.marks,
                   bPos + i,
                   bPos + j
+                ),
+                differing: differingMarks(
+                  bPos + i,
+                  cPos + i,
+                  baseMaps,
+                  curMaps
                 ),
               });
             }
