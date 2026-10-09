@@ -238,14 +238,6 @@ function materializeEmbeddedImages(html) {
  * @param {string} s
  * @returns {string}
  */
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 /**
  * @param {Uint8Array} bytes
  * @returns {boolean}
@@ -370,73 +362,7 @@ export async function importFileToHtml(file, filename) {
   return html;
 }
 
-/**
- * TipTap stores alignment as `style="text-align: ..."` on blocks.
- * Pandoc's HTML reader drops those (Para has no Attr), so we collect
- * alignments here and re-apply them on the DOCX after convert.
- * @param {string} html
- * @returns {string[]} OOXML jc values: left|center|right|both
- */
-function extractParagraphAlignments(html) {
-  const doc = new DOMParser().parseFromString(
-    `<div id="kindred-export-root">${html || ""}</div>`,
-    "text/html",
-  );
-  const root = doc.getElementById("kindred-export-root");
-  if (!root) return [];
-  const out = [];
-  for (const el of root.children) {
-    const style = el.getAttribute("style") || "";
-    const m = /(?:^|;)\s*text-align\s*:\s*([a-z]+)/i.exec(style);
-    const raw = (m ? m[1] : "left").toLowerCase();
-    if (raw === "justify") out.push("both");
-    else if (raw === "center" || raw === "right" || raw === "left") out.push(raw);
-    else out.push("left");
-  }
-  return out;
-}
-
 const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-
-/**
- * @param {Blob} docxBlob
- * @param {string[]} alignments
- * @returns {Promise<Blob>}
- */
-async function patchDocxParagraphAlignments(docxBlob, alignments) {
-  if (!alignments.length || alignments.every((a) => a === "left")) {
-    return docxBlob;
-  }
-  const { unzipSync, zipSync, strToU8, strFromU8 } = await import("fflate");
-  const files = unzipSync(new Uint8Array(await docxBlob.arrayBuffer()));
-  const path = "word/document.xml";
-  if (!files[path]) return docxBlob;
-  const xml = strFromU8(files[path]);
-  const doc = new DOMParser().parseFromString(xml, "application/xml");
-  const body = doc.getElementsByTagNameNS(W_NS, "body")[0];
-  if (!body) return docxBlob;
-  const paras = [...body.children].filter((el) => el.localName === "p");
-  for (let i = 0; i < paras.length && i < alignments.length; i++) {
-    const align = alignments[i];
-    if (!align || align === "left") continue;
-    const p = paras[i];
-    let pPr = [...p.children].find((c) => c.localName === "pPr");
-    if (!pPr) {
-      pPr = doc.createElementNS(W_NS, "w:pPr");
-      p.insertBefore(pPr, p.firstChild);
-    }
-    let jc = [...pPr.children].find((c) => c.localName === "jc");
-    if (!jc) {
-      jc = doc.createElementNS(W_NS, "w:jc");
-      pPr.appendChild(jc);
-    }
-    jc.setAttribute("w:val", align);
-  }
-  files[path] = strToU8(new XMLSerializer().serializeToString(doc));
-  return new Blob([zipSync(files)], {
-    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  });
-}
 
 /** @typedef {{ id: string, label: string, ext: string, pandoc: string, mime: string }} ExportFormat */
 
@@ -481,6 +407,7 @@ export const EXPORT_FORMATS = [
 
 import html2pdf from "html2pdf.js";
 import { DEFAULT_FONT_FAMILY } from "./fontCatalog.js";
+import { escapeHtml } from "./htmlEscape.js";
 
 export async function htmlToPdfBlob(html, options = {}) {
   const { styledDiff = false } = options;

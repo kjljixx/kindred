@@ -69,8 +69,6 @@ function latinCatalog() {
   return { top, rest };
 }
 
-export const TOP_FONTS = PINNED_TOP;
-
 export function warmPopularGoogleFonts() {
   for (const name of latinCatalog().top) loadGoogleFont(name);
 }

@@ -21,7 +21,6 @@ import {
   stripHtml,
   mergeCleanEditsIntoMarked,
   resolveConflictInEditor,
-  stripKindredProtocol,
   plainOffsetsToPmRange,
   plainOffsetForPmPos,
   expandMathNodesToText,
@@ -34,7 +33,7 @@ import { bindLongPress } from "./longPress.js";
 import { loadColoris, loadHtmlDiff, preloadOptionalAssets } from "./optionalAssets.js";
 import { warmPopularGoogleFonts } from "./fontCatalog.js";
 import { alignTwoWay } from "./docAlign.js";
-import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, isStructuralBlock, isTableBlock } from "./kindredSchema.js";
+import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, isStructuralBlock, isTableBlock, stripKindredProtocol } from "./kindredSchema.js";
 import { listDiffsFromAlignOps, resolveListConflictHtml, resolveAllListConflicts } from "./listAlign.js";
 import * as markdownWasm from "markdown-wasm";
 import DOMPurify from "dompurify";
@@ -65,6 +64,7 @@ import {
   resolveAllTableConflicts,
   resolveTableConflictHtml,
 } from "./tableDaff.js";
+import { escapeHtml } from "./htmlEscape.js";
 
 (() => {
   const DIFF_EQUAL = 0;
@@ -1332,14 +1332,6 @@ import {
     else {
       metaEl.textContent = "";
     }
-  }
-
-  function escapeHtml(s) {
-    return s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
   }
 
   function renderMarkdown(text) {
@@ -2680,10 +2672,6 @@ import {
     updateCommitBtn();
     persistActiveDraftSoon();
     focusEditorSoon();
-  }
-
-  function getCurrentText() {
-    return currentText;
   }
 
   function protectLt(s) {

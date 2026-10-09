@@ -13,19 +13,15 @@ import {
   createListReviewConflict,
   mergeListWithAlign,
 } from "./listAlign.js";
+import { escapeHtml } from "./htmlEscape.js";
 
 function formatConflict(labelOurs, oursStr, labelTheirs, theirsStr, deletedSide = "") {
-  const esc = (value) =>
-    String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/"/g, "&quot;")
-      .replace(/</g, "&lt;");
   return (
     `<span data-kindred-text-conflict` +
-    ` data-kindred-label-ours="${esc(labelOurs)}"` +
-    ` data-kindred-label-theirs="${esc(labelTheirs)}"` +
-    ` data-kindred-ours="${esc(oursStr)}"` +
-    ` data-kindred-theirs="${esc(theirsStr)}"` +
+    ` data-kindred-label-ours="${escapeHtml(labelOurs)}"` +
+    ` data-kindred-label-theirs="${escapeHtml(labelTheirs)}"` +
+    ` data-kindred-ours="${escapeHtml(oursStr)}"` +
+    ` data-kindred-theirs="${escapeHtml(theirsStr)}"` +
     (deletedSide ? ` data-kindred-${deletedSide}-state="deleted"` : "") +
     `></span>`
   );
@@ -36,12 +32,6 @@ function wrapPara(innerHtml) {
 }
 
 function formatTableConflict(oursNode, theirsNode, labelOurs, labelTheirs) {
-  const esc = (value) =>
-    String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/"/g, "&quot;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
 
   const oursHtml = oursNode ? blockToHtml(oursNode) : "";
   const theirsHtml = theirsNode ? blockToHtml(theirsNode) : "";
@@ -50,21 +40,15 @@ function formatTableConflict(oursNode, theirsNode, labelOurs, labelTheirs) {
 
   let html = blockToHtml(displayNode);
   const attrs =
-    ` data-kindred-table-ours="${esc(oursHtml)}"` +
-    ` data-kindred-table-theirs="${esc(theirsHtml)}"` +
-    ` data-kindred-table-label-ours="${esc(labelOurs)}"` +
-    ` data-kindred-table-label-theirs="${esc(labelTheirs)}"`;
+    ` data-kindred-table-ours="${escapeHtml(oursHtml)}"` +
+    ` data-kindred-table-theirs="${escapeHtml(theirsHtml)}"` +
+    ` data-kindred-table-label-ours="${escapeHtml(labelOurs)}"` +
+    ` data-kindred-table-label-theirs="${escapeHtml(labelTheirs)}"`;
 
   return html.replace(/<table\b/i, `<table${attrs}`);
 }
 
 function formatListConflict(oursNode, theirsNode, labelOurs, labelTheirs) {
-  const esc = (value) =>
-    String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/"/g, "&quot;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
 
   const oursHtml = oursNode ? blockToHtml(oursNode) : "";
   const theirsHtml = theirsNode ? blockToHtml(theirsNode) : "";
@@ -74,10 +58,10 @@ function formatListConflict(oursNode, theirsNode, labelOurs, labelTheirs) {
   let html = blockToHtml(displayNode);
   const tag = displayNode.type === "orderedList" ? "ol" : "ul";
   const attrs =
-    ` data-kindred-list-ours="${esc(oursHtml)}"` +
-    ` data-kindred-list-theirs="${esc(theirsHtml)}"` +
-    ` data-kindred-list-label-ours="${esc(labelOurs)}"` +
-    ` data-kindred-list-label-theirs="${esc(labelTheirs)}"`;
+    ` data-kindred-list-ours="${escapeHtml(oursHtml)}"` +
+    ` data-kindred-list-theirs="${escapeHtml(theirsHtml)}"` +
+    ` data-kindred-list-label-ours="${escapeHtml(labelOurs)}"` +
+    ` data-kindred-list-label-theirs="${escapeHtml(labelTheirs)}"`;
 
   return html.replace(new RegExp(`<${tag}\\b`, "i"), `<${tag}${attrs}`);
 }

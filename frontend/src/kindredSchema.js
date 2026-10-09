@@ -705,10 +705,6 @@ export function htmlToPlainText(html) {
   return docToPlainText(doc);
 }
 
-function isEmptyParagraphNode(node) {
-  return node?.type === "paragraph" && !docToPlainText(node);
-}
-
 /** Family key for block LCS (lists/tables plug in here later). */
 export function blockFamily(node) {
   if (!node) return "";
@@ -788,4 +784,60 @@ function docToHtml(doc) {
 export function blockToHtml(node) {
   if (!node) return "<p></p>";
   return docToHtml({ type: "doc", content: [cloneJson(node)] });
+}
+
+/**
+ * Strip Kindred merge protocol from HTML (import / non-merge loads).
+ * Replaces text-conflict nodes with theirs-free ours HTML; drops align protocol attrs.
+ */
+export function stripKindredProtocol(html) {
+  const raw = String(html || "");
+  if (!raw) return "";
+  if (!raw.includes("data-kindred-")) return raw;
+  const doc = new DOMParser().parseFromString(
+    `<div id="__kindred_root">${raw}</div>`,
+    "text/html"
+  );
+  const root = doc.getElementById("__kindred_root");
+  if (!root) return raw;
+  root.querySelectorAll("[data-kindred-text-conflict]").forEach((el) => {
+    const ours = el.getAttribute("data-kindred-ours") || "";
+    if (!ours) {
+      el.remove();
+      return;
+    }
+    const wrap = doc.createElement("div");
+    wrap.innerHTML = ours;
+    const frag = doc.createDocumentFragment();
+    while (wrap.firstChild) frag.appendChild(wrap.firstChild);
+    el.replaceWith(frag);
+  });
+  root.querySelectorAll("[data-kindred-conflict]").forEach((el) => {
+    el.remove();
+  });
+  root.querySelectorAll("[data-kindred-align-ours]").forEach((el) => {
+    el.removeAttribute("data-kindred-align-ours");
+    el.removeAttribute("data-kindred-align-theirs");
+    el.removeAttribute("data-kindred-align-label-ours");
+    el.removeAttribute("data-kindred-align-label-theirs");
+  });
+  root.querySelectorAll("[data-kindred-table-ours]").forEach((el) => {
+    el.removeAttribute("data-kindred-table-ours");
+    el.removeAttribute("data-kindred-table-theirs");
+    el.removeAttribute("data-kindred-table-label-ours");
+    el.removeAttribute("data-kindred-table-label-theirs");
+  });
+  root.querySelectorAll("[data-kindred-table-conflicts]").forEach((el) => {
+    el.removeAttribute("data-kindred-table-conflicts");
+  });
+  root.querySelectorAll("[data-kindred-list-ours]").forEach((el) => {
+    el.removeAttribute("data-kindred-list-ours");
+    el.removeAttribute("data-kindred-list-theirs");
+    el.removeAttribute("data-kindred-list-label-ours");
+    el.removeAttribute("data-kindred-list-label-theirs");
+  });
+  root.querySelectorAll("[data-kindred-list-conflicts]").forEach((el) => {
+    el.removeAttribute("data-kindred-list-conflicts");
+  });
+  return root.innerHTML;
 }

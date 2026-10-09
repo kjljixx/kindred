@@ -1,3 +1,4 @@
+import { escapeHtml } from "./htmlEscape.js";
 const mathFunctions = new Set([
   "sin", "cos", "tan", "sec", "csc", "cot", "log", "ln", "sqrt", "lim",
   "max", "min", "det", "gcd", "lcm", "sum", "int"
@@ -185,14 +186,6 @@ function findProtectedPieces(text) {
   }
 
   return pieces;
-}
-
-function escapeHtml(value) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function randomNamespace() {

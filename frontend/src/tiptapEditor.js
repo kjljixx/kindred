@@ -33,6 +33,7 @@ import { MathText, normalizeMathNodes, expandMathNodesToText } from "./mathTextE
 import { createMathLiveNodeView, MathLiveNavigation, getActiveMathField, subscribeMathFocus } from "./mathLiveNodeView.js";
 import { overlayKey } from "./editorKeys.js";
 import { loadColoris } from "./optionalAssets.js";
+import { escapeHtml } from "./htmlEscape.js";
 
 const keptSelectionKey = new PluginKey("keptSelection");
 
@@ -383,14 +384,6 @@ const DIFF_EQUAL = 0;
 const DIFF_INSERT = 1;
 const DIFF_DELETE = -1;
 
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 /** Wrap plain text as TipTap-friendly HTML paragraphs. */
 export function plainToHtml(text) {
@@ -817,62 +810,6 @@ export function unresolvedMergeConflictCount(html) {
     tableConflictCount(html) +
     listConflictCount(html)
   );
-}
-
-/**
- * Strip Kindred merge protocol from HTML (import / non-merge loads).
- * Replaces text-conflict nodes with theirs-free ours HTML; drops align protocol attrs.
- */
-export function stripKindredProtocol(html) {
-  const raw = String(html || "");
-  if (!raw) return "";
-  if (!raw.includes("data-kindred-")) return raw;
-  const doc = new DOMParser().parseFromString(
-    `<div id="__kindred_root">${raw}</div>`,
-    "text/html"
-  );
-  const root = doc.getElementById("__kindred_root");
-  if (!root) return raw;
-  root.querySelectorAll("[data-kindred-text-conflict]").forEach((el) => {
-    const ours = el.getAttribute("data-kindred-ours") || "";
-    if (!ours) {
-      el.remove();
-      return;
-    }
-    const wrap = doc.createElement("div");
-    wrap.innerHTML = ours;
-    const frag = doc.createDocumentFragment();
-    while (wrap.firstChild) frag.appendChild(wrap.firstChild);
-    el.replaceWith(frag);
-  });
-  root.querySelectorAll("[data-kindred-conflict]").forEach((el) => {
-    el.remove();
-  });
-  root.querySelectorAll("[data-kindred-align-ours]").forEach((el) => {
-    el.removeAttribute("data-kindred-align-ours");
-    el.removeAttribute("data-kindred-align-theirs");
-    el.removeAttribute("data-kindred-align-label-ours");
-    el.removeAttribute("data-kindred-align-label-theirs");
-  });
-  root.querySelectorAll("[data-kindred-table-ours]").forEach((el) => {
-    el.removeAttribute("data-kindred-table-ours");
-    el.removeAttribute("data-kindred-table-theirs");
-    el.removeAttribute("data-kindred-table-label-ours");
-    el.removeAttribute("data-kindred-table-label-theirs");
-  });
-  root.querySelectorAll("[data-kindred-table-conflicts]").forEach((el) => {
-    el.removeAttribute("data-kindred-table-conflicts");
-  });
-  root.querySelectorAll("[data-kindred-list-ours]").forEach((el) => {
-    el.removeAttribute("data-kindred-list-ours");
-    el.removeAttribute("data-kindred-list-theirs");
-    el.removeAttribute("data-kindred-list-label-ours");
-    el.removeAttribute("data-kindred-list-label-theirs");
-  });
-  root.querySelectorAll("[data-kindred-list-conflicts]").forEach((el) => {
-    el.removeAttribute("data-kindred-list-conflicts");
-  });
-  return root.innerHTML;
 }
 
 export function joinConflictBoth(ours, theirs) {
@@ -1421,147 +1358,105 @@ function createTablePreviewWidget(tableHtml, side) {
   };
 }
 
+function keepOrRemove(exists) {
+  return exists ? "Keep" : "Remove";
+}
+
+function createChoiceButton(sideClass, { title, html, text = title }) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `merge-conflict-btn merge-conflict-${sideClass}`;
+  btn.title = title;
+  if (html === undefined) btn.textContent = text;
+  else fillConflictBtn(btn, html);
+  return btn;
+}
+
+function createChoiceWidget({
+  className,
+  idDataKey,
+  conflict,
+  pos,
+  onAction,
+  ours,
+  theirs,
+  oursSide = "ours",
+  theirsSide = "theirs",
+}) {
+  return () => {
+    const wrap = document.createElement("span");
+    wrap.className = `merge-conflict ${className}`;
+    wrap.contentEditable = "false";
+    wrap.dataset[idDataKey] = conflict.id;
+    const oursBtn = createChoiceButton("ours", ours);
+    const theirsBtn = createChoiceButton("theirs", theirs);
+    const choose = (side) => (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onAction?.(side, pos, conflict.id);
+    };
+    oursBtn.addEventListener("mousedown", choose(oursSide));
+    theirsBtn.addEventListener("mousedown", choose(theirsSide));
+    wrap.append(oursBtn, theirsBtn);
+    return wrap;
+  };
+}
+
 function createTableCellConflictWidget(
   conflict,
   tablePos,
   onAction,
   conflictMode = "merge"
 ) {
-  return () => {
-    const wrap = document.createElement("span");
-    wrap.className = "merge-conflict merge-table-cell-conflict";
-    wrap.contentEditable = "false";
-    wrap.dataset.tableConflictId = conflict.id;
-    const review = conflictMode === "review";
-
-    const oursBtn = document.createElement("button");
-    oursBtn.type = "button";
-    oursBtn.className = "merge-conflict-btn merge-conflict-ours";
-    oursBtn.title = "Keep Current cell";
-    fillConflictBtn(oursBtn, conflict.oursHtml);
-
-    const theirsBtn = document.createElement("button");
-    theirsBtn.type = "button";
-    theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
-    theirsBtn.title = review ? "Keep Dirty cell" : "Keep Incoming cell";
-    fillConflictBtn(theirsBtn, conflict.theirsHtml);
-
-    const choose = (side) => (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      onAction?.(side, tablePos, conflict.id);
-    };
-    oursBtn.addEventListener("mousedown", choose("ours"));
-    theirsBtn.addEventListener("mousedown", choose("theirs"));
-    wrap.append(oursBtn, theirsBtn);
-    return wrap;
-  };
+  const review = conflictMode === "review";
+  return createChoiceWidget({
+    className: "merge-table-cell-conflict",
+    idDataKey: "tableConflictId",
+    conflict,
+    pos: tablePos,
+    onAction,
+    ours: { title: "Keep Current cell", html: conflict.oursHtml },
+    theirs: {
+      title: review ? "Keep Dirty cell" : "Keep Incoming cell",
+      html: conflict.theirsHtml,
+    },
+  });
 }
 
-function structuralChoiceLabel(noun, exists, otherExists, side, review) {
-  return exists ? "Keep" : "Remove";
+function createStructuralConflictWidget(className, idDataKey, conflict, pos, onAction, oursExists, theirsExists) {
+  return createChoiceWidget({
+    className,
+    idDataKey,
+    conflict,
+    pos,
+    onAction,
+    ours: { title: keepOrRemove(oursExists) },
+    theirs: { title: keepOrRemove(theirsExists) },
+  });
 }
 
-function createTableRowConflictWidget(
-  conflict,
-  tablePos,
-  onAction,
-  conflictMode = "merge"
-) {
-  return () => {
-    const wrap = document.createElement("span");
-    wrap.className = "merge-conflict merge-table-row-conflict";
-    wrap.contentEditable = "false";
-    wrap.dataset.tableConflictId = conflict.id;
-    const review = conflictMode === "review";
-
-    const oursBtn = document.createElement("button");
-    oursBtn.type = "button";
-    oursBtn.className = "merge-conflict-btn merge-conflict-ours";
-    const oursLabel = structuralChoiceLabel(
-      "row",
-      Boolean(conflict.oursHtml),
-      Boolean(conflict.theirsHtml),
-      "ours",
-      review
-    );
-    oursBtn.title = oursLabel;
-    oursBtn.textContent = oursLabel;
-
-    const theirsBtn = document.createElement("button");
-    theirsBtn.type = "button";
-    theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
-    const theirsLabel = structuralChoiceLabel(
-      "row",
-      Boolean(conflict.theirsHtml),
-      Boolean(conflict.oursHtml),
-      "theirs",
-      review
-    );
-    theirsBtn.title = theirsLabel;
-    theirsBtn.textContent = theirsLabel;
-
-    const choose = (side) => (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      onAction?.(side, tablePos, conflict.id);
-    };
-    oursBtn.addEventListener("mousedown", choose("ours"));
-    theirsBtn.addEventListener("mousedown", choose("theirs"));
-    wrap.append(oursBtn, theirsBtn);
-    return wrap;
-  };
+function createTableRowConflictWidget(conflict, tablePos, onAction) {
+  return createStructuralConflictWidget(
+    "merge-table-row-conflict",
+    "tableConflictId",
+    conflict,
+    tablePos,
+    onAction,
+    Boolean(conflict.oursHtml),
+    Boolean(conflict.theirsHtml)
+  );
 }
 
-function createTableColumnConflictWidget(
-  conflict,
-  tablePos,
-  onAction,
-  conflictMode = "merge"
-) {
-  return () => {
-    const wrap = document.createElement("span");
-    wrap.className = "merge-conflict merge-table-column-conflict";
-    wrap.contentEditable = "false";
-    wrap.dataset.tableConflictId = conflict.id;
-    const review = conflictMode === "review";
-
-    const oursBtn = document.createElement("button");
-    oursBtn.type = "button";
-    oursBtn.className = "merge-conflict-btn merge-conflict-ours";
-    const oursLabel = structuralChoiceLabel(
-      "column",
-      conflict.oursExists,
-      conflict.theirsExists,
-      "ours",
-      review
-    );
-    oursBtn.title = oursLabel;
-    oursBtn.textContent = oursLabel;
-
-    const theirsBtn = document.createElement("button");
-    theirsBtn.type = "button";
-    theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
-    const theirsLabel = structuralChoiceLabel(
-      "column",
-      conflict.theirsExists,
-      conflict.oursExists,
-      "theirs",
-      review
-    );
-    theirsBtn.title = theirsLabel;
-    theirsBtn.textContent = theirsLabel;
-
-    const choose = (side) => (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      onAction?.(side, tablePos, conflict.id);
-    };
-    oursBtn.addEventListener("mousedown", choose("ours"));
-    theirsBtn.addEventListener("mousedown", choose("theirs"));
-    wrap.append(oursBtn, theirsBtn);
-    return wrap;
-  };
+function createTableColumnConflictWidget(conflict, tablePos, onAction) {
+  return createStructuralConflictWidget(
+    "merge-table-column-conflict",
+    "tableConflictId",
+    conflict,
+    tablePos,
+    onAction,
+    conflict.oursExists,
+    conflict.theirsExists
+  );
 }
 
 function createTableConflictWidget(attrs, tablePos, onAction, conflictMode = "merge") {
@@ -1569,33 +1464,20 @@ function createTableConflictWidget(attrs, tablePos, onAction, conflictMode = "me
     const wrap = document.createElement("div");
     wrap.className = "merge-conflict merge-table-conflict";
     wrap.contentEditable = "false";
-    const review = conflictMode === "review";
     const oursExists = Boolean(attrs.tableOurs?.trim());
     const theirsExists = Boolean(attrs.tableTheirs?.trim());
 
     const oursBtn = document.createElement("button");
     oursBtn.type = "button";
     oursBtn.className = "merge-conflict-btn merge-conflict-ours";
-    const oursLabel = structuralChoiceLabel(
-      "table",
-      oursExists,
-      theirsExists,
-      "ours",
-      review
-    );
+    const oursLabel = keepOrRemove(oursExists);
     oursBtn.title = oursLabel;
     oursBtn.textContent = oursLabel;
 
     const theirsBtn = document.createElement("button");
     theirsBtn.type = "button";
     theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
-    const theirsLabel = structuralChoiceLabel(
-      "table",
-      theirsExists,
-      oursExists,
-      "theirs",
-      review
-    );
+    const theirsLabel = keepOrRemove(theirsExists);
     theirsBtn.title = theirsLabel;
     theirsBtn.textContent = theirsLabel;
 
@@ -1680,91 +1562,30 @@ function createListConflictWidget(attrs, listPos, onAction, conflictMode = "merg
   };
 }
 
-function createListItemStructuralConflictWidget(
-  conflict,
-  listPos,
-  onAction,
-  conflictMode = "merge"
-) {
-  return () => {
-    const wrap = document.createElement("span");
-    wrap.className = "merge-conflict merge-list-item-conflict";
-    wrap.contentEditable = "false";
-    wrap.dataset.listConflictId = conflict.id;
-    const review = conflictMode === "review";
-
-    const oursBtn = document.createElement("button");
-    oursBtn.type = "button";
-    oursBtn.className = "merge-conflict-btn merge-conflict-ours";
-    const oursLabel = structuralChoiceLabel(
-      "item",
-      Boolean(conflict.oursHtml),
-      Boolean(conflict.theirsHtml),
-      "ours",
-      review
-    );
-    oursBtn.title = oursLabel;
-    oursBtn.textContent = oursLabel;
-
-    const theirsBtn = document.createElement("button");
-    theirsBtn.type = "button";
-    theirsBtn.className = "merge-conflict-btn merge-conflict-theirs";
-    const theirsLabel = structuralChoiceLabel(
-      "item",
-      Boolean(conflict.theirsHtml),
-      Boolean(conflict.oursHtml),
-      "theirs",
-      review
-    );
-    theirsBtn.title = theirsLabel;
-    theirsBtn.textContent = theirsLabel;
-
-    const choose = (side) => (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      onAction?.(side, listPos, conflict.id);
-    };
-    oursBtn.addEventListener("mousedown", choose("ours"));
-    theirsBtn.addEventListener("mousedown", choose("theirs"));
-    wrap.append(oursBtn, theirsBtn);
-    return wrap;
-  };
+function createListItemStructuralConflictWidget(conflict, listPos, onAction) {
+  return createStructuralConflictWidget(
+    "merge-list-item-conflict",
+    "listConflictId",
+    conflict,
+    listPos,
+    onAction,
+    Boolean(conflict.oursHtml),
+    Boolean(conflict.theirsHtml)
+  );
 }
 
-function createListIndentConflictWidget(
-  conflict,
-  listPos,
-  onAction,
-  conflictMode = "merge"
-) {
-  return () => {
-    const wrap = document.createElement("span");
-    wrap.className = "merge-conflict merge-list-indent-conflict";
-    wrap.contentEditable = "false";
-    wrap.dataset.listConflictId = conflict.id;
-
-    const outdentBtn = document.createElement("button");
-    outdentBtn.type = "button";
-    outdentBtn.className = "merge-conflict-btn merge-conflict-ours";
-    outdentBtn.title = "Outdent";
-    outdentBtn.textContent = "Outdent";
-
-    const indentBtn = document.createElement("button");
-    indentBtn.type = "button";
-    indentBtn.className = "merge-conflict-btn merge-conflict-theirs";
-    indentBtn.title = "Indent";
-    indentBtn.textContent = "Indent";
-
-    const choose = (side) => (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      onAction?.(side, listPos, conflict.id);
-    };
-    outdentBtn.addEventListener("mousedown", choose("outdent"));
-    indentBtn.addEventListener("mousedown", choose("indent"));
-    wrap.append(outdentBtn, indentBtn);
-    return wrap;
-  };
+function createListIndentConflictWidget(conflict, listPos, onAction) {
+  return createChoiceWidget({
+    className: "merge-list-indent-conflict",
+    idDataKey: "listConflictId",
+    conflict,
+    pos: listPos,
+    onAction,
+    ours: { title: "Outdent" },
+    theirs: { title: "Indent" },
+    oursSide: "outdent",
+    theirsSide: "indent",
+  });
 }
 
 function listConflictSideClass(conflict) {
@@ -1851,8 +1672,6 @@ function appendAlignConflictDecorations(
     const previewAlign = previewActive ? alignPreview.align : oursAlign;
     const previewSide =
       previewActive && alignPreview.side === "theirs" ? "theirs" : "ours";
-    const sideColor =
-      previewSide === "theirs" ? "var(--blue-text)" : "var(--orange-text)";
     const sideBg =
       previewSide === "theirs" ? "var(--blue-bg)" : "var(--orange-bg)";
     decorations.push(

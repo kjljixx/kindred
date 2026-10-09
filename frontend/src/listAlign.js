@@ -4,6 +4,7 @@ import {
   blockToHtml as defaultBlockToHtml,
   docToPlainText,
 } from "./kindredSchema.js";
+import { escapeHtml } from "./htmlEscape.js";
 
 function children(node) {
   return Array.isArray(node?.content) ? node.content : [];
@@ -221,21 +222,13 @@ function listElementFromHtml(html) {
   return parsed.querySelector("ul, ol");
 }
 
-function escapeAttr(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
 function textConflictMarkup(labelOurs, oursHtml, labelTheirs, theirsHtml) {
   return (
     `<span data-kindred-text-conflict` +
-    ` data-kindred-label-ours="${escapeAttr(labelOurs)}"` +
-    ` data-kindred-label-theirs="${escapeAttr(labelTheirs)}"` +
-    ` data-kindred-ours="${escapeAttr(oursHtml)}"` +
-    ` data-kindred-theirs="${escapeAttr(theirsHtml)}"` +
+    ` data-kindred-label-ours="${escapeHtml(labelOurs)}"` +
+    ` data-kindred-label-theirs="${escapeHtml(labelTheirs)}"` +
+    ` data-kindred-ours="${escapeHtml(oursHtml)}"` +
+    ` data-kindred-theirs="${escapeHtml(theirsHtml)}"` +
     `></span>`
   );
 }
@@ -366,16 +359,6 @@ function indentConflictHtml(item, oursNode, theirsNode) {
     oursDepth: item.oldDepth,
     theirsDepth: item.newDepth,
   };
-}
-
-function chosenIndentHtml(conflict, side) {
-  if (side === "indent") return conflict.indentHtml || "";
-  if (side === "outdent") return conflict.outdentHtml || "";
-  const oursDeeper = conflict.oursDepth > conflict.theirsDepth;
-  if (side === "theirs") {
-    return oursDeeper ? conflict.outdentHtml : conflict.indentHtml;
-  }
-  return oursDeeper ? conflict.indentHtml : conflict.outdentHtml;
 }
 
 function displayDepthForItem(item) {

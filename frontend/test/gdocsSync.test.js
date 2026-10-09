@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Fragment, Slice } from "@tiptap/pm/model";
 import { EditorState, Plugin } from "@tiptap/pm/state";
 import { overlayKey } from "../src/editorKeys.js";
 import {
@@ -523,6 +524,32 @@ describe("Google Docs text push", () => {
 
     expect(transactionToGoogleDocsBatchUpdateRequests(transaction, before)).toEqual([
       { insertText: { location: { index: 2 }, text: "\n" } },
+    ]);
+
+    editor.destroy();
+    editorElement.remove();
+  });
+
+  it("styles text when an open multi-paragraph slice replaces through the document end", () => {
+    const editorElement = document.createElement("div");
+    document.body.append(editorElement);
+    const editor = createKindredEditor({
+      element: editorElement,
+      content: "<p>keep</p><p>old one</p><p>old two</p>",
+    });
+    const before = editor.state.doc;
+    const { schema } = editor.state;
+    const paragraph = (text) => schema.nodes.paragraph.create(null, schema.text(text));
+    const slice = new Slice(Fragment.from([paragraph("new one"), paragraph("new two")]), 1, 1);
+    const transaction = editor.state.tr.replace(9, before.content.size, slice);
+
+    const requests = transactionToGoogleDocsBatchUpdateRequests(transaction, before);
+
+    expect(requests.map((request) => Object.keys(request)[0])).toEqual([
+      "deleteContentRange",
+      "insertText",
+      "updateTextStyle",
+      "updateTextStyle",
     ]);
 
     editor.destroy();

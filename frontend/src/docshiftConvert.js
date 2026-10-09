@@ -21,18 +21,4 @@ export async function htmlToDocxBlob(html) {
   const docxBlob = await toDocx(html);
   return docxBlob;
 }
-
-/**
- * Preload docshift (no-op for docshift as it's pure JS)
- */
-export function preloadDocshift() {
-  // docshift loads synchronously, no preload needed
-}
-
-/**
- * Check if docshift is available
- * @returns {Promise<boolean>}
- */
-export async function ensureDocshift() {
-  return true;
-}
+

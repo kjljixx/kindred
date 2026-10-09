@@ -137,10 +137,6 @@ export function googleDocumentToKindredHtml(document) {
   return documentJson.content.map((block) => blockToHtml(block)).join("") || "<p></p>";
 }
 
-export async function pullGoogleDocumentHtml() {
-  return (await pullGoogleDocument()).html;
-}
- 
 export async function pullGoogleDocument(documentId) {
   const query = documentId ? `?documentId=${encodeURIComponent(documentId)}` : "";
   const response = await fetch(`/api/google-docs/document${query}`);
@@ -505,10 +501,6 @@ function tableInfos(document) {
     });
   });
   return tables;
-}
-
-function tableAtPosition(document, position) {
-  return tableInfos(document).find((table) => position >= table.pos && position <= table.pos + table.node.nodeSize);
 }
 
 function rowIndexAtPosition(table, position) {
@@ -1055,7 +1047,7 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
           nextDoc,
           resultingPositionMap,
           json.from,
-          json.from + step.slice.content.size,
+          json.from + step.slice.size,
         ));
       }
       return finish("replace-paragraphs", [
@@ -1166,7 +1158,7 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
           nextDoc,
           resultingPositionMap,
           json.from,
-          json.from + step.slice.content.size,
+          json.from + step.slice.size,
         ));
       }
       return finish("replace-plain-text", requests);

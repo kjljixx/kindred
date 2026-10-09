@@ -358,10 +358,6 @@ export function diffTable(beforeHtml, afterHtml) {
   return { cells, columns, rows };
 }
 
-export function diffTableCells(beforeHtml, afterHtml) {
-  return diffTable(beforeHtml, afterHtml).cells;
-}
-
 export function parseTableConflicts(value) {
   if (!value) return null;
   try {

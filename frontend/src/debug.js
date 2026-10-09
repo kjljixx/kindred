@@ -38,10 +38,6 @@ export function startTrace(scope, event, data = {}) {
   return activeTrace;
 }
 
-export function currentTrace() {
-  return activeTrace;
-}
-
 export function debugEvent(scope, event, data = {}) {
   if (!scopeEnabled(scope)) return;
   sequence += 1;

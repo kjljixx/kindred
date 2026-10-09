@@ -6,7 +6,9 @@ import {
   htmlToDoc,
   htmlToPlainText,
   projectDocument,
+  stripKindredProtocol,
 } from "./kindredSchema.js";
+import { escapeHtml } from "./htmlEscape.js";
 
 const VOLUME = "kindred";
   const ROOT = "/texts";
@@ -99,62 +101,12 @@ const VOLUME = "kindred";
   function formatConflict(labelOurs, oursStr, labelTheirs, theirsStr) {
     return (
       `<span data-kindred-text-conflict` +
-      ` data-kindred-label-ours="${escapeHtmlAttr(labelOurs)}"` +
-      ` data-kindred-label-theirs="${escapeHtmlAttr(labelTheirs)}"` +
-      ` data-kindred-ours="${escapeHtmlAttr(oursStr)}"` +
-      ` data-kindred-theirs="${escapeHtmlAttr(theirsStr)}"` +
+      ` data-kindred-label-ours="${escapeHtml(labelOurs)}"` +
+      ` data-kindred-label-theirs="${escapeHtml(labelTheirs)}"` +
+      ` data-kindred-ours="${escapeHtml(oursStr)}"` +
+      ` data-kindred-theirs="${escapeHtml(theirsStr)}"` +
       `></span>`
     );
-  }
-
-  /** Drop protocol nodes/attrs from non-merge HTML (import / stray attrs). */
-  function stripKindredProtocol(html) {
-    const raw = String(html || "");
-    if (!raw) return "";
-    if (!raw.includes("data-kindred-")) return raw;
-    const doc = new DOMParser().parseFromString(
-      `<div id="__kindred_root">${raw}</div>`,
-      "text/html"
-    );
-    const root = doc.getElementById("__kindred_root");
-    if (!root) return raw;
-    root.querySelectorAll("[data-kindred-text-conflict]").forEach((el) => {
-      const ours = el.getAttribute("data-kindred-ours") || "";
-      if (!ours) {
-        el.remove();
-        return;
-      }
-      const wrap = doc.createElement("div");
-      wrap.innerHTML = ours;
-      const frag = doc.createDocumentFragment();
-      while (wrap.firstChild) frag.appendChild(wrap.firstChild);
-      el.replaceWith(frag);
-    });
-    root.querySelectorAll("[data-kindred-conflict]").forEach((el) => {
-      el.remove();
-    });
-    root.querySelectorAll("[data-kindred-align-ours]").forEach((el) => {
-      el.removeAttribute("data-kindred-align-ours");
-      el.removeAttribute("data-kindred-align-theirs");
-      el.removeAttribute("data-kindred-align-label-ours");
-      el.removeAttribute("data-kindred-align-label-theirs");
-    });
-    root.querySelectorAll("[data-kindred-table-ours]").forEach((el) => {
-      el.removeAttribute("data-kindred-table-ours");
-      el.removeAttribute("data-kindred-table-theirs");
-      el.removeAttribute("data-kindred-table-label-ours");
-      el.removeAttribute("data-kindred-table-label-theirs");
-    });
-    root.querySelectorAll("[data-kindred-list-ours]").forEach((el) => {
-      el.removeAttribute("data-kindred-list-ours");
-      el.removeAttribute("data-kindred-list-theirs");
-      el.removeAttribute("data-kindred-list-label-ours");
-      el.removeAttribute("data-kindred-list-label-theirs");
-    });
-    root.querySelectorAll("[data-kindred-list-conflicts]").forEach((el) => {
-      el.removeAttribute("data-kindred-list-conflicts");
-    });
-    return root.innerHTML;
   }
 
   function parseTextAlignFromOpenTag(chunk) {
@@ -165,13 +117,6 @@ const VOLUME = "kindred";
     const v = m[1].trim().toLowerCase();
     if (v === "center" || v === "right" || v === "justify" || v === "left") return v;
     return "left";
-  }
-
-  function escapeHtmlAttr(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/"/g, "&quot;")
-      .replace(/</g, "&lt;");
   }
 
   /** Conflict HTML is stored verbatim; otherwise strip protocol and canonicalize. */
@@ -2123,28 +2068,6 @@ const VOLUME = "kindred";
     return hunks;
   }
 
-  function plainAndMarksToHtml(plain, marks) {
-    const text = String(plain ?? "");
-    if (!text) return "<p></p>";
-    const parts = [];
-    const seps = [];
-    const re = /\n\n+/g;
-    let m;
-    while ((m = re.exec(text)) !== null) {
-      seps.push([m.index, m.index + m[0].length]);
-    }
-    seps.push([text.length, text.length]);
-    let prev = 0;
-    for (const [sepStart, sepEnd] of seps) {
-      parts.push(
-        `<p>${renderPlainSlice(text, marks, prev, sepStart) || "<br>"}</p>`
-      );
-      prev = sepEnd;
-      if (sepStart === text.length) break;
-    }
-    return parts.join("\n");
-  }
-
   /** Join replacements separated only by whitespace. */
   function coalesceWhitespaceReps(baseToks, reps) {
     if (reps.length < 2) return reps;
@@ -2472,10 +2395,10 @@ const VOLUME = "kindred";
     let tag = "<p";
     if (meta && meta.conflict) {
       tag += ` style="text-align: ${align}"`;
-      tag += ` data-kindred-align-ours="${escapeHtmlAttr(meta.oursAlign || align)}"`;
-      tag += ` data-kindred-align-theirs="${escapeHtmlAttr(meta.theirsAlign || "")}"`;
-      tag += ` data-kindred-align-label-ours="${escapeHtmlAttr(meta.labelOurs || "")}"`;
-      tag += ` data-kindred-align-label-theirs="${escapeHtmlAttr(meta.labelTheirs || "")}"`;
+      tag += ` data-kindred-align-ours="${escapeHtml(meta.oursAlign || align)}"`;
+      tag += ` data-kindred-align-theirs="${escapeHtml(meta.theirsAlign || "")}"`;
+      tag += ` data-kindred-align-label-ours="${escapeHtml(meta.labelOurs || "")}"`;
+      tag += ` data-kindred-align-label-theirs="${escapeHtml(meta.labelTheirs || "")}"`;
     } else if (align && align !== "left") {
       tag += ` style="text-align: ${align}"`;
     }
@@ -3131,16 +3054,6 @@ const VOLUME = "kindred";
       "dirty",
       { review: true }
     );
-  }
-
-  function pickThreeWay(baseVal, oursVal, theirsVal) {
-    const b = JSON.stringify(baseVal ?? null);
-    const o = JSON.stringify(oursVal ?? null);
-    const t = JSON.stringify(theirsVal ?? null);
-    if (o === t) return oursVal;
-    if (o === b) return theirsVal;
-    if (t === b) return oursVal;
-    return oursVal;
   }
 
   /**
