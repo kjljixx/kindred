@@ -9,9 +9,12 @@ import {
   stripKindredProtocol,
 } from "./kindredSchema.js";
 import { escapeHtml } from "./htmlEscape.js";
+import { normalizeFolderState, removeDraft } from "./draftFolders.js";
 
 const VOLUME = "kindred";
   const ROOT = "/texts";
+  const FOLDERS_PATH = "/folders.json";
+  let folderStateLogged = false;
   const AUTHOR = { name: "kindred", email: "kindred@local" };
   const TEXT_FILE = "text.html";
   const ASSETS_DIR = "assets";
@@ -822,6 +825,28 @@ const VOLUME = "kindred";
       }
     }
     await rmRecursive(dir);
+    const folderState = await readFolderState();
+    const nextFolderState = removeDraft(folderState, id);
+    if (nextFolderState !== folderState) await saveFolderState(nextFolderState);
+    await flush();
+  }
+
+  /** Folder layout lives outside each draft's git repo so moves are never committed or reverted by branch switches. */
+  async function readFolderState() {
+    const state = normalizeFolderState(await readJson(FOLDERS_PATH, null), (message) =>
+      console.warn(`kindred: folders.json repaired: ${message}`)
+    );
+    if (!folderStateLogged) {
+      folderStateLogged = true;
+      console.info(
+        `kindred: loaded ${state.folders.length} folders, ${Object.keys(state.assignments).length} filed drafts`
+      );
+    }
+    return state;
+  }
+
+  async function saveFolderState(state) {
+    await writeJson(FOLDERS_PATH, state);
     await flush();
   }
 
@@ -3233,6 +3258,9 @@ const KindredGitStore = {
   createDraft,
   deleteDraft,
   renameDraft,
+  readFolderState,
+  saveFolderState,
+  newFolderId: newDraftId,
   saveWorkingTree,
   commitWorkingTree,
   listCommits,

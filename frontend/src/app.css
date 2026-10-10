@@ -527,19 +527,124 @@ button.pane-title {
   padding: 0 var(--space-2);
 }
 
-.draft-item > .draft-item-delete {
-  visibility: hidden;
-  pointer-events: none;
+.draft-item-actions {
+  display: none;
+  align-items: stretch;
+  gap: var(--space-2);
 }
 
-.draft-item:hover > .draft-item-delete,
-.draft-item:focus-within > .draft-item-delete {
-  visibility: visible;
-  pointer-events: auto;
+.draft-item:hover > .draft-item-actions,
+.draft-item:focus-within > .draft-item-actions,
+.folder-item:hover > .draft-item-actions,
+.folder-item:focus-within > .draft-item-actions {
+  display: flex;
 }
 
 .draft-item-delete:hover {
   color: var(--accent-danger-300);
+}
+
+.draft-item-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-view-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 0 var(--space-5);
+  flex-shrink: 0;
+}
+
+.draft-list .folder-add {
+  align-self: flex-start;
+  margin: var(--space-1) var(--space-3);
+  padding: var(--space-4) var(--space-5);
+}
+
+.folder-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  margin: 0 var(--space-3) var(--space-1);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.folder-item:hover,
+.folder-item:focus-within {
+  background: var(--color-bg-raised);
+}
+
+.folder-chevron {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  color: var(--color-text-subtle);
+  transform: rotate(-90deg);
+}
+
+.folder-item.open > .folder-chevron {
+  transform: none;
+}
+
+.folder-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2);
+  font-weight: var(--font-weight-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-name-input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--color-accent);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-2);
+  outline: none;
+}
+
+.folder-children {
+  margin-left: calc(10px + var(--space-4));
+  border-left: 1px solid transparent;
+}
+
+.folder-children:hover {
+  border-left-color: var(--neutral-700);
+}
+
+.export-menu.move-menu {
+  position: fixed;
+  right: auto;
+  max-width: 18rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.move-menu .move-menu-item {
+  padding-left: calc(var(--space-5) + var(--depth, 0) * var(--space-5));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.move-menu .move-menu-item[aria-checked="true"] {
+  color: var(--color-accent-soft);
 }
 
 .tabs {
@@ -554,6 +659,7 @@ button.pane-title {
 #chat-back-btn[hidden],
 #new-chat-btn[hidden],
 #draft-list[hidden],
+#draft-view-row[hidden],
 #chat-list[hidden],
 #chat-composer[hidden],
 #commit-btn[hidden],
@@ -2691,15 +2797,13 @@ button.pane-title {
   align-items: center;
   align-self: center;
   gap: var(--space-2);
-  visibility: hidden;
-  pointer-events: none;
+  display: none;
 }
 
 .git-row:hover .git-row-actions,
 .git-row:focus-within .git-row-actions,
 .git-row.active .git-row-actions {
-  visibility: visible;
-  pointer-events: auto;
+  display: flex;
 }
 
 .editor-toolbar button,
@@ -2711,6 +2815,7 @@ button.pane-title {
 }
 
 .draft-item::before,
+.folder-item::before,
 .git-row::before,
 .editor-toolbar button::before,
 .editor-toolbar .toolbar-color::before,
@@ -2722,11 +2827,13 @@ button.pane-title {
 }
 
 .draft-item > *,
+.folder-item > *,
 .git-row > * {
   z-index: 1;
 }
 
-.draft-item > .draft-item-delete,
+.draft-item > .draft-item-actions,
+.folder-item > .draft-item-actions,
 .git-row > .git-row-actions {
   align-self: stretch;
   margin: calc(var(--space-1) * -1 - var(--space-4)) calc(var(--space-5) * -1) calc(var(--space-1) * -1 - var(--space-4)) calc(var(--space-4) * -1);
@@ -2736,23 +2843,24 @@ button.pane-title {
   align-items: stretch;
 }
 
-.draft-item > .draft-item-delete,
+.draft-item-actions > *,
 .git-row-actions > * {
   display: inline-flex;
   align-items: center;
 }
 
-.draft-item > .draft-item-delete:last-child,
+.draft-item-actions > :last-child,
 .git-row-actions > :last-child {
   border-right: var(--space-5) solid transparent;
 }
 
-.draft-item > .draft-item-delete,
+.draft-item-actions > :first-child,
 .git-row-actions > :first-child {
   border-left: var(--space-4) solid transparent;
 }
 
 .draft-item::before,
+.folder-item::before,
 .git-row::before {
   inset: calc(var(--space-1) * -1) 0;
 }
@@ -2961,14 +3069,15 @@ button.pane-title {
   }
 
   .draft-item:hover:not(:focus-within),
+  .folder-item:hover:not(:focus-within),
   .git-row:not(.active):hover:not(:focus-within) {
     background: transparent;
   }
 
-  .draft-item:hover > .draft-item-delete:not(:focus-visible),
+  .draft-item:hover > .draft-item-actions:not(:focus-within),
+  .folder-item:hover > .draft-item-actions:not(:focus-within),
   .git-row:not(.active):hover .git-row-actions:not(:focus-within) {
-    visibility: hidden;
-    pointer-events: none;
+    display: none;
   }
 
   .editor-toolbar button:hover,

@@ -25,12 +25,13 @@ Editor Keyboard Shortcuts
 - Alt+Up/Down: Move the current organizational unit up or down in the text. This is useful for rearranging sentences in a paragraph or rearranging paragraphs in a document. The original caret position moves with the content.
 - Alt+[ and Alt+]: Shift the current selection left or right by one organizational unit. For example, if you have a sentence selected, Alt+[ will select the previous sentence, and Alt+] will select the next sentence. The original caret position moves with the selection.
 - Escape: Collapse the current selection to the position where the selection began. For selections expanded or moved with the shortcuts above, this returns to the tracked original caret position.
-- Ctrl+;: Focus the editor pane and the editor
+- Ctrl+;: Focus the editor pane and the editor (on the home page, focus the empty editor to start a new draft)
 - Ctrl+[: Focus chat pane
 - Ctrl+]: Focus editor pane
 - Ctrl+8: Switch to Text view mode
 - Ctrl+9: Switch to Diff view mode
 - Ctrl+0: Switch to Review view mode
+- Ctrl+8, Ctrl+9, Ctrl+0 on the home page: Switch the draft list to All, Folders, or Unfiled
 - Ctrl+/: Focus chat input box
 
 Editor Features
