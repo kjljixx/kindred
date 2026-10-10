@@ -65,6 +65,20 @@ import {
   resolveTableConflictHtml,
 } from "./tableDaff.js";
 import { escapeHtml } from "./htmlEscape.js";
+import {
+  assignDraft,
+  buildFolderTree,
+  createFolder,
+  deleteFolder,
+  draftFolderPath,
+  emptyFolderState,
+  flattenFolders,
+  hasSubfolders,
+  moveFolder,
+  renameFolder,
+  setFolderCollapsed,
+  unfiledDrafts,
+} from "./draftFolders.js";
 
 (() => {
   const DIFF_EQUAL = 0;
@@ -130,6 +144,8 @@ import { escapeHtml } from "./htmlEscape.js";
   const feedbackEl = document.getElementById("feedback");
   const chatListEl = document.getElementById("chat-list");
   const draftListEl = document.getElementById("draft-list");
+  const draftViewRow = document.getElementById("draft-view-row");
+  const draftViewTabs = document.getElementById("draft-view-tabs");
   const draftsHeading = document.getElementById("drafts-heading");
   const chatBackBtn = document.getElementById("chat-back-btn");
   const chatHeading = document.getElementById("chat-heading");
@@ -260,6 +276,19 @@ import { escapeHtml } from "./htmlEscape.js";
   let workingDirty = false;
   let renamingDraftId = null;
   let renameSource = null; // "header" | "list"
+  const DRAFT_ROW_SELECTOR = ".draft-item, .folder-item";
+  const DRAFT_VIEWS = ["all", "folders", "unfiled"];
+  const DRAFT_VIEW_SHORTCUTS = { "8": "all", "9": "folders", "0": "unfiled" };
+  const draftViewStorageKey = "kindred-draft-view";
+  let draftView = DRAFT_VIEWS.includes(localStorage.getItem(draftViewStorageKey))
+    ? localStorage.getItem(draftViewStorageKey)
+    : "all";
+  let folderState = emptyFolderState();
+  let renamingFolderId = null;
+  /** @type {{ parentId: string | null } | null} */
+  let pendingFolder = null;
+  /** @type {{ el: HTMLElement, anchor: HTMLElement, dismiss: Function } | null} */
+  let moveMenu = null;
   /** @type {{ kind: "commit"|"branch", key: string } | null} */
   let renamingGit = null;
 
@@ -792,7 +821,7 @@ import { escapeHtml } from "./htmlEscape.js";
     "keydown",
     (e) => {
       if (e.key !== "Tab" || e.shiftKey || activeDraftId || draftListEl.hidden) return;
-      const firstDraft = draftListEl.querySelector(".draft-item");
+      const firstDraft = draftListEl.querySelector(DRAFT_ROW_SELECTOR);
       if (!firstDraft) return;
       e.preventDefault();
       e.stopPropagation();
@@ -921,8 +950,8 @@ import { escapeHtml } from "./htmlEscape.js";
     tipTap?.setEditable(editable);
   }
 
-  function focusEditorSoon() {
-    if (!tipTap || !activeDraftId || isViewingHistory()) return;
+  function focusEditorSoon({ allowHome = false } = {}) {
+    if (!tipTap || (!activeDraftId && !allowHome) || isViewingHistory()) return;
     requestAnimationFrame(() => tipTap?.commands.focus());
   }
 
@@ -1433,10 +1462,12 @@ import { escapeHtml } from "./htmlEscape.js";
   async function refreshDraftList() {
     const generation = ++draftListGeneration;
     drafts = await store.listDrafts();
+    const loadedFolderState = await store.readFolderState();
     if (generation !== draftListGeneration) return;
+    folderState = loadedFolderState;
     syncHeaderTitle();
     // Avoid remounting the rename input (focusout would commit after one key).
-    if (!renamingDraftId) renderDraftList();
+    if (!isListRenaming()) renderDraftList();
     void hydrateDraftList(generation, drafts);
   }
 
@@ -1455,7 +1486,11 @@ import { escapeHtml } from "./htmlEscape.js";
     const byId = new Map(hydrated.filter(Boolean).map((draft) => [draft.id, draft]));
     drafts = drafts.map((draft) => byId.get(draft.id) || draft);
     syncHeaderTitle();
-    if (!renamingDraftId) renderDraftList();
+    if (!isListRenaming()) renderDraftList();
+  }
+
+  function isListRenaming() {
+    return !!renamingDraftId || !!renamingFolderId || !!pendingFolder;
   }
 
   function uiStateSnapshot() {
@@ -1737,6 +1772,12 @@ import { escapeHtml } from "./htmlEscape.js";
     }
   }
 
+  function setDraftListHidden(hidden) {
+    draftListEl.hidden = hidden;
+    draftViewRow.hidden = hidden;
+    if (hidden) closeMoveMenu();
+  }
+
   function showHomePane() {
     paneMode = "chat";
     paneModeCluster.hidden = true;
@@ -1748,7 +1789,7 @@ import { escapeHtml } from "./htmlEscape.js";
     if (chatListEl) chatListEl.hidden = true;
     chatComposer.hidden = true;
     gitPane.hidden = true;
-    draftListEl.hidden = false;
+    setDraftListHidden(false);
     commitBtn.hidden = true;
     importBtn.hidden = true;
     exportControls.hidden = true;
@@ -1761,7 +1802,7 @@ import { escapeHtml } from "./htmlEscape.js";
 
   function showGitPane() {
     draftsHeading.hidden = true;
-    draftListEl.hidden = true;
+    setDraftListHidden(true);
     if (chatHeading) chatHeading.hidden = true;
     if (newChatBtn) newChatBtn.hidden = true;
     if (chatBackBtn) chatBackBtn.hidden = true;
@@ -1777,7 +1818,7 @@ import { escapeHtml } from "./htmlEscape.js";
 
   function showChatPane({ stickBottom = false } = {}) {
     draftsHeading.hidden = true;
-    draftListEl.hidden = true;
+    setDraftListHidden(true);
     paneModeCluster.hidden = false;
     gitPane.hidden = true;
     syncPaneModeTabs();
@@ -1805,39 +1846,115 @@ import { escapeHtml } from "./htmlEscape.js";
     else showChatPane({ stickBottom: stickChatBottom });
   }
 
-  function renderDraftList() {
-    if (!drafts.length) {
-      draftListEl.innerHTML =
-        `<p class="draft-list-empty">No drafts yet. Type or paste on the left to create one.</p>`;
-      return;
-    }
-    draftListEl.innerHTML = drafts
-      .map((d) => {
-        const active = d.id === activeDraftId ? " active" : "";
-        const title = escapeHtml(draftTitle(d));
-        const renaming = renamingDraftId === d.id && renameSource === "list";
-        const titleHtml = renaming
-          ? `<input class="draft-item-title-input" data-action="rename-input" value="${title}" aria-label="Draft title" />`
-          : `<span class="draft-item-title">${title}</span>`;
-        return (
-          `<div class="draft-item${active}" role="listitem" tabindex="-1" data-id="${escapeHtml(d.id)}">` +
-          `<div class="draft-item-body" data-action="open">` +
-          titleHtml +
-          `<span class="draft-item-meta">${escapeHtml(formatDraftTime(d.updatedAt))}</span>` +
-          `</div>` +
-          `<button type="button" class="draft-item-delete" data-action="delete" title="Delete draft" aria-label="Delete draft">×</button>` +
-          `</div>`
-        );
-      })
-      .join("");
-    if (renamingDraftId && renameSource === "list") {
-      const input = draftListEl.querySelector(
-        `.draft-item[data-id="${CSS.escape(renamingDraftId)}"] .draft-item-title-input`
+  const FOLDER_CHEVRON_SVG =
+    `<svg class="folder-chevron" viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M 2.5 4.5 L 6 8 L 9.5 4.5" /></svg>`;
+
+  function draftActionButtonHtml(action, label, text, extraClass = "btn btn-tertiary") {
+    const popup = action.startsWith("move") ? ` aria-haspopup="menu"` : "";
+    return `<button type="button" class="${extraClass}" data-action="${action}"${popup} title="${label}" aria-label="${label}">${text}</button>`;
+  }
+
+  function draftRowHtml(d, { showPath = false } = {}) {
+    const active = d.id === activeDraftId ? " active" : "";
+    const title = escapeHtml(draftTitle(d));
+    const renaming = renamingDraftId === d.id && renameSource === "list";
+    const titleHtml = renaming
+      ? `<input class="draft-item-title-input" data-action="rename-input" value="${title}" aria-label="Draft title" />`
+      : `<span class="draft-item-title">${title}</span>`;
+    const path = showPath ? draftFolderPath(folderState, d.id) : "";
+    const pathHtml = path ? ` · ${escapeHtml(path)}` : "";
+    return (
+      `<div class="draft-item${active}" role="listitem" tabindex="-1" data-id="${escapeHtml(d.id)}">` +
+      `<div class="draft-item-body" data-action="open">` +
+      titleHtml +
+      `<span class="draft-item-meta">${escapeHtml(formatDraftTime(d.updatedAt))}${pathHtml}</span>` +
+      `</div>` +
+      `<div class="draft-item-actions">` +
+      draftActionButtonHtml("move", "Move to folder", "Move") +
+      draftActionButtonHtml("delete", "Delete draft", "×", "draft-item-delete") +
+      `</div></div>`
+    );
+  }
+
+  function folderNameInputHtml({ id = "", value = "" } = {}) {
+    const identity = id ? `data-folder-id="${escapeHtml(id)}"` : `data-pending="true"`;
+    return `<input class="folder-name-input" data-action="folder-input" ${identity} value="${escapeHtml(value)}" aria-label="Folder name" />`;
+  }
+
+  function pendingFolderRowHtml() {
+    return `<div class="folder-item" role="listitem">${FOLDER_CHEVRON_SVG}${folderNameInputHtml()}</div>`;
+  }
+
+  function folderRowHtml(node) {
+    const { folder } = node;
+    const open = !folder.collapsed;
+    const nameHtml =
+      renamingFolderId === folder.id
+        ? folderNameInputHtml({ id: folder.id, value: folder.name })
+        : `<span class="folder-name">${escapeHtml(folder.name)}</span>`;
+    return (
+      `<div class="folder-item${open ? " open" : ""}" role="listitem" tabindex="-1" aria-expanded="${open}" data-folder-id="${escapeHtml(folder.id)}">` +
+      FOLDER_CHEVRON_SVG +
+      nameHtml +
+      `<div class="draft-item-actions">` +
+      draftActionButtonHtml("move-folder", "Move folder", "Move") +
+      draftActionButtonHtml("add-subfolder", "New subfolder", "New") +
+      draftActionButtonHtml("delete-folder", "Delete folder", "×", "draft-item-delete") +
+      `</div></div>` +
+      (open ? folderChildrenHtml(node) : "")
+    );
+  }
+
+  function newFolderButtonHtml() {
+    return `<button type="button" class="btn btn-tertiary folder-add" data-action="new-folder">New Folder</button>`;
+  }
+
+  function folderChildrenHtml({ folder, folders, drafts: folderDrafts }) {
+    const pending = pendingFolder?.parentId === folder.id ? pendingFolderRowHtml() : "";
+    const rows = pending + folders.map(folderRowHtml).join("") + folderDrafts.map((d) => draftRowHtml(d)).join("");
+    return rows ? `<div class="folder-children" role="list">${rows}</div>` : "";
+  }
+
+  function draftListEmptyHtml(message) {
+    return `<p class="draft-list-empty">${message}</p>`;
+  }
+
+  function draftListHtml() {
+    if (draftView === "folders") {
+      const adding = pendingFolder && !pendingFolder.parentId;
+      return (
+        buildFolderTree(folderState, drafts).map(folderRowHtml).join("") +
+        (adding ? pendingFolderRowHtml() : newFolderButtonHtml())
       );
-      if (input) {
-        input.focus();
-        input.select();
-      }
+    }
+    if (!drafts.length) return draftListEmptyHtml("No drafts yet. Type or paste on the left to create one.");
+    if (draftView === "unfiled") {
+      const rows = unfiledDrafts(folderState, drafts).map((d) => draftRowHtml(d)).join("");
+      return rows || draftListEmptyHtml("All drafts are in folders.");
+    }
+    return drafts.map((d) => draftRowHtml(d, { showPath: true })).join("");
+  }
+
+  function syncDraftViewControls() {
+    for (const tab of draftViewTabs.querySelectorAll("[data-draft-view]")) {
+      const active = tab.dataset.draftView === draftView;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-selected", String(active));
+    }
+  }
+
+  function renderDraftList() {
+    syncDraftViewControls();
+    draftListEl.innerHTML = draftListHtml();
+    const renameInput =
+      renamingDraftId && renameSource === "list"
+        ? draftListEl.querySelector(
+            `.draft-item[data-id="${CSS.escape(renamingDraftId)}"] .draft-item-title-input`
+          )
+        : draftListEl.querySelector(".folder-name-input");
+    if (renameInput) {
+      renameInput.focus();
+      renameInput.select();
     }
   }
 
@@ -1848,7 +1965,7 @@ import { escapeHtml } from "./htmlEscape.js";
   }
 
   function moveDraftListFocus(item, offset) {
-    const items = [...draftListEl.querySelectorAll(".draft-item")];
+    const items = [...draftListEl.querySelectorAll(DRAFT_ROW_SELECTOR)];
     const index = items.indexOf(item);
     if (index < 0 || !items.length) return false;
     return focusDraftItem(items[(index + offset + items.length) % items.length]);
@@ -1862,6 +1979,173 @@ import { escapeHtml } from "./htmlEscape.js";
     syncHeaderTitle();
     renderDraftList();
     return true;
+  }
+
+  function startFolderRename(item) {
+    if (!item?.dataset.folderId) return false;
+    renamingFolderId = item.dataset.folderId;
+    renderDraftList();
+    return true;
+  }
+
+  function startRowRename(item) {
+    return item.matches(".folder-item") ? startFolderRename(item) : startDraftListRename(item);
+  }
+
+  async function updateFolders(change, summary) {
+    const previous = folderState;
+    try {
+      folderState = change(previous);
+      await store.saveFolderState(folderState);
+      console.info(`kindred: ${summary} (${folderState.folders.length} folders)`);
+    } catch (err) {
+      folderState = previous;
+      console.error("kindred: folder update failed", summary, err);
+      setStatus(String(err.message || err), "danger");
+    }
+    renderDraftList();
+  }
+
+  async function finishFolderInput(input, { cancel = false } = {}) {
+    const name = input.value.trim();
+    if (input.dataset.pending === "true") {
+      if (!pendingFolder) return;
+      const { parentId } = pendingFolder;
+      pendingFolder = null;
+      if (cancel || !name) {
+        renderDraftList();
+        return;
+      }
+      await updateFolders(
+        (state) => createFolder(state, { id: store.newFolderId(), name, parentId }).state,
+        `created folder "${name}"`
+      );
+      return;
+    }
+    const id = input.dataset.folderId;
+    if (renamingFolderId !== id) return;
+    renamingFolderId = null;
+    if (cancel || !name) {
+      renderDraftList();
+      return;
+    }
+    await updateFolders((state) => renameFolder(state, id, name), `renamed folder ${id} to "${name}"`);
+  }
+
+  function startNewFolder() {
+    pendingFolder = { parentId: null };
+    renderDraftList();
+  }
+
+  async function startSubfolder(parentId) {
+    pendingFolder = { parentId };
+    await updateFolders((state) => setFolderCollapsed(state, parentId, false), `opened folder ${parentId} for a subfolder`);
+  }
+
+  async function toggleFolder(id) {
+    const folder = folderState.folders.find((f) => f.id === id);
+    if (!folder) return;
+    await updateFolders(
+      (state) => setFolderCollapsed(state, id, !folder.collapsed),
+      `${folder.collapsed ? "expanded" : "collapsed"} folder "${folder.name}"`
+    );
+  }
+
+  async function deleteFolderById(id) {
+    const folder = folderState.folders.find((f) => f.id === id);
+    if (!folder) return;
+    if (
+      hasSubfolders(folderState, id) &&
+      !window.confirm("Delete this folder? Its subfolders and drafts move up one level.")
+    ) {
+      return;
+    }
+    await updateFolders((state) => deleteFolder(state, id), `deleted folder "${folder.name}"`);
+  }
+
+  async function moveTo(kind, id, folderId) {
+    await updateFolders((state) => {
+      const moved = kind === "folder" ? moveFolder(state, id, folderId) : assignDraft(state, id, folderId);
+      return folderId ? setFolderCollapsed(moved, folderId, false) : moved;
+    }, `moved ${kind} ${id} to ${folderId || "top level"}`);
+  }
+
+  function closeMoveMenu({ restoreFocus = false } = {}) {
+    if (!moveMenu) return;
+    const { el, anchor, dismiss } = moveMenu;
+    moveMenu = null;
+    dismiss();
+    el.remove();
+    if (restoreFocus && anchor.isConnected) anchor.focus();
+  }
+
+  function openMoveMenu({ kind, id, anchor }) {
+    closeMoveMenu();
+    const currentFolderId =
+      kind === "folder"
+        ? folderState.folders.find((f) => f.id === id)?.parentId || ""
+        : folderState.assignments[id] || "";
+    const radio = (label, target, depth = 0) =>
+      `<button type="button" role="menuitemradio" class="move-menu-item" aria-checked="${target === currentFolderId}" data-target="${escapeHtml(target)}" style="--depth:${depth}">${escapeHtml(label)}</button>`;
+    const rows = flattenFolders(folderState, { excludeId: kind === "folder" ? id : null });
+    const el = document.createElement("div");
+    el.className = "export-menu move-menu";
+    el.setAttribute("role", "menu");
+    el.setAttribute("aria-label", kind === "folder" ? "Move folder to" : "Move draft to");
+    el.innerHTML =
+      radio(kind === "folder" ? "Top level" : "No folder", "") +
+      rows.map(({ folder, depth }) => radio(folder.name, folder.id, depth)).join("") +
+      (rows.length ? "" : `<button type="button" role="menuitem" class="move-menu-item" disabled>No folders yet</button>`);
+    document.body.append(el);
+
+    const margin = 8;
+    const overlap = 12;
+    const rect = anchor.getBoundingClientRect();
+    const rowRect = (anchor.closest(DRAFT_ROW_SELECTOR) || anchor).getBoundingClientRect();
+    const below = rowRect.bottom - overlap;
+    const fitsBelow = below + el.offsetHeight <= window.innerHeight - margin;
+    el.style.left = `${Math.max(margin, Math.min(rect.right - el.offsetWidth, window.innerWidth - el.offsetWidth - margin))}px`;
+    el.style.top = `${fitsBelow ? below : Math.max(margin, rowRect.top + overlap - el.offsetHeight)}px`;
+
+    const onPointerDown = (e) => {
+      if (!el.contains(e.target)) closeMoveMenu();
+    };
+    const onScroll = (e) => {
+      if (!el.contains(e.target)) closeMoveMenu();
+    };
+    const onResize = () => closeMoveMenu();
+    document.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    moveMenu = {
+      el,
+      anchor,
+      dismiss: () => {
+        document.removeEventListener("pointerdown", onPointerDown, true);
+        window.removeEventListener("scroll", onScroll, true);
+        window.removeEventListener("resize", onResize);
+      },
+    };
+
+    el.addEventListener("click", (e) => {
+      const button = e.target.closest("[data-target]");
+      if (!button) return;
+      closeMoveMenu();
+      void moveTo(kind, id, button.dataset.target || null);
+    });
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeMoveMenu({ restoreFocus: true });
+        return;
+      }
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      e.preventDefault();
+      const items = [...el.querySelectorAll(".move-menu-item:not(:disabled)")];
+      const offset = e.key === "ArrowDown" ? 1 : -1;
+      items[(items.indexOf(document.activeElement) + offset + items.length) % items.length].focus();
+    });
+    (el.querySelector('[aria-checked="true"]') || el.querySelector(".move-menu-item")).focus();
   }
 
   function applyRevisionToEditor({ syncGoogleDocs = false, source = "applyRevisionToEditor" } = {}) {
@@ -2133,36 +2417,85 @@ import { escapeHtml } from "./htmlEscape.js";
   }
 
   draftListEl.addEventListener("click", (e) => {
+    const actionEl = e.target.closest("[data-action]");
+    const action = actionEl?.dataset.action;
+    if (action === "rename-input" || action === "folder-input") return;
+    if (action === "new-folder") {
+      startNewFolder();
+      return;
+    }
+    const folderItem = e.target.closest(".folder-item");
+    if (folderItem) {
+      const folderId = folderItem.dataset.folderId;
+      if (!folderId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (action === "move-folder") openMoveMenu({ kind: "folder", id: folderId, anchor: actionEl });
+      else if (action === "add-subfolder") void startSubfolder(folderId);
+      else if (action === "delete-folder") void deleteFolderById(folderId);
+      else void toggleFolder(folderId);
+      return;
+    }
     const item = e.target.closest(".draft-item");
     if (!item) return;
     const id = item.dataset.id;
-    const actionEl = e.target.closest("[data-action]");
-    const action = actionEl?.dataset.action;
     if (action === "delete") {
       e.preventDefault();
       e.stopPropagation();
       deleteDraft(id);
       return;
     }
-    if (action === "rename-input") return;
+    if (action === "move") {
+      e.preventDefault();
+      e.stopPropagation();
+      openMoveMenu({ kind: "draft", id, anchor: actionEl });
+      return;
+    }
     void queueBrowserRouteNavigation(() => openDraft(id));
   });
 
+  const RENAME_EXCLUDED_TARGETS = ".draft-item-actions, .draft-item-title-input, .folder-name-input";
   draftListEl.addEventListener("contextmenu", (e) => {
-    const item = e.target.closest(".draft-item");
+    const item = e.target.closest(DRAFT_ROW_SELECTOR);
     if (!item) return;
-    if (e.target.closest("[data-action='delete']")) return;
-    if (e.target.closest(".draft-item-title-input")) return;
+    if (e.target.closest(RENAME_EXCLUDED_TARGETS)) return;
     e.preventDefault();
-    startDraftListRename(item);
+    startRowRename(item);
   });
   bindLongPress(draftListEl, (e) => {
-    const item = e.target.closest(".draft-item");
-    if (!item || e.target.closest("[data-action='delete']") || e.target.closest(".draft-item-title-input")) return false;
-    return startDraftListRename(item);
+    const item = e.target.closest(DRAFT_ROW_SELECTOR);
+    if (!item || e.target.closest(RENAME_EXCLUDED_TARGETS)) return false;
+    return startRowRename(item);
   });
 
+  function setDraftView(view) {
+    if (!DRAFT_VIEWS.includes(view) || view === draftView) return;
+    draftView = view;
+    localStorage.setItem(draftViewStorageKey, draftView);
+    console.info(`kindred: draft view "${draftView}"`);
+    closeMoveMenu();
+    renderDraftList();
+  }
+
+  draftViewTabs.addEventListener("click", (e) => {
+    const tab = e.target.closest("[data-draft-view]");
+    if (tab) setDraftView(tab.dataset.draftView);
+  });
+  console.info(`kindred: draft list view "${draftView}"`);
+
   draftListEl.addEventListener("keydown", (e) => {
+    const folderInput = e.target.closest(".folder-name-input");
+    if (folderInput) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void finishFolderInput(folderInput);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        void finishFolderInput(folderInput, { cancel: true });
+      }
+      return;
+    }
+
     const input = e.target.closest(".draft-item-title-input");
     if (input) {
       const item = input.closest(".draft-item");
@@ -2178,7 +2511,7 @@ import { escapeHtml } from "./htmlEscape.js";
       return;
     }
 
-    const item = e.target.closest(".draft-item");
+    const item = e.target.closest(DRAFT_ROW_SELECTOR);
     if (!item || e.target !== item) return;
     if (e.key === "Tab" || e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
@@ -2186,11 +2519,18 @@ import { escapeHtml } from "./htmlEscape.js";
       moveDraftListFocus(item, offset);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      void queueBrowserRouteNavigation(() => openDraft(item.dataset.id));
+      if (item.dataset.folderId) void toggleFolder(item.dataset.folderId);
+      else void queueBrowserRouteNavigation(() => openDraft(item.dataset.id));
     }
   });
 
   draftListEl.addEventListener("focusout", (e) => {
+    const folderInput = e.target.closest(".folder-name-input");
+    if (folderInput) {
+      // Defer so Enter handler can run first
+      setTimeout(() => void finishFolderInput(folderInput), 0);
+      return;
+    }
     const input = e.target.closest(".draft-item-title-input");
     if (!input) return;
     const item = input.closest(".draft-item");
@@ -3101,8 +3441,9 @@ import { escapeHtml } from "./htmlEscape.js";
           titleHtml +
           `<span class="draft-item-meta">${escapeHtml(formatDraftTime(c.updatedAt))}${escapeHtml(branch)}</span>` +
           `</div>` +
+          `<div class="draft-item-actions">` +
           `<button type="button" class="draft-item-delete" data-action="delete" title="Delete chat" aria-label="Delete chat">×</button>` +
-          `</div>`
+          `</div></div>`
         );
       })
       .join("");
@@ -5402,7 +5743,7 @@ import { escapeHtml } from "./htmlEscape.js";
         e.preventDefault();
         e.stopPropagation();
         if (compactLayout.matches) setWorkspace("draft");
-        focusEditorSoon();
+        focusEditorSoon({ allowHome: true });
       }
       else if (key === "[") {
         if (activeDraftId) {
@@ -5435,18 +5776,13 @@ import { escapeHtml } from "./htmlEscape.js";
         e.stopPropagation();
         void focusOrStartChat();
       }
-      else if (key === "8") {
+      else if (key in DRAFT_VIEW_SHORTCUTS) {
         e.preventDefault();
         e.stopPropagation();
-        void runGit(() => setDirtyEditView("Text"));
-      } else if (key === "9") {
-        e.preventDefault();
-        e.stopPropagation();
-        void runGit(() => setDirtyEditView("Diff"));
-      } else if (key === "0") {
-        e.preventDefault();
-        e.stopPropagation();
-        void runGit(enterDirtyReview);
+        if (!activeDraftId) setDraftView(DRAFT_VIEW_SHORTCUTS[key]);
+        else if (key === "8") void runGit(() => setDirtyEditView("Text"));
+        else if (key === "9") void runGit(() => setDirtyEditView("Diff"));
+        else void runGit(enterDirtyReview);
       }
     },
     true
