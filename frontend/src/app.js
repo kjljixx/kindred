@@ -277,12 +277,14 @@ import {
   let renamingDraftId = null;
   let renameSource = null; // "header" | "list"
   const DRAFT_ROW_SELECTOR = ".draft-item, .folder-item";
-  const DRAFT_VIEWS = ["all", "folders", "unfiled"];
-  const DRAFT_VIEW_SHORTCUTS = { "8": "all", "9": "folders", "0": "unfiled" };
+  const DRAFT_VIEWS = ["recents", "folders"];
+  const DRAFT_VIEW_SHORTCUTS = { "8": "recents", "9": "folders" };
   const draftViewStorageKey = "kindred-draft-view";
+  const unfiledCollapsedStorageKey = "kindred-unfiled-collapsed";
   let draftView = DRAFT_VIEWS.includes(localStorage.getItem(draftViewStorageKey))
     ? localStorage.getItem(draftViewStorageKey)
-    : "all";
+    : "recents";
+  let unfiledCollapsed = localStorage.getItem(unfiledCollapsedStorageKey) !== "false";
   let folderState = emptyFolderState();
   let renamingFolderId = null;
   /** @type {{ parentId: string | null } | null} */
@@ -1906,13 +1908,33 @@ import {
   }
 
   function newFolderButtonHtml() {
-    return `<button type="button" class="btn btn-tertiary folder-add" data-action="new-folder">New Folder</button>`;
+    return `<button type="button" class="btn btn-secondary folder-add" data-action="new-folder">New Folder</button>`;
   }
 
   function folderChildrenHtml({ folder, folders, drafts: folderDrafts }) {
     const pending = pendingFolder?.parentId === folder.id ? pendingFolderRowHtml() : "";
     const rows = pending + folders.map(folderRowHtml).join("") + folderDrafts.map((d) => draftRowHtml(d)).join("");
     return rows ? `<div class="folder-children" role="list">${rows}</div>` : "";
+  }
+
+  function unfiledFolderHtml() {
+    const unfiled = unfiledDrafts(folderState, drafts);
+    if (!unfiled.length) return "";
+    const open = !unfiledCollapsed;
+    return (
+      `<div class="folder-item${open ? " open" : ""}" role="listitem" tabindex="-1" aria-expanded="${open}" data-unfiled="true">` +
+      FOLDER_CHEVRON_SVG +
+      `<span class="folder-name">Unfiled</span>` +
+      `</div>` +
+      (open ? `<div class="folder-children" role="list">${unfiled.map((d) => draftRowHtml(d)).join("")}</div>` : "")
+    );
+  }
+
+  function toggleUnfiled() {
+    unfiledCollapsed = !unfiledCollapsed;
+    localStorage.setItem(unfiledCollapsedStorageKey, String(unfiledCollapsed));
+    console.info(`kindred: ${unfiledCollapsed ? "collapsed" : "expanded"} Unfiled`);
+    renderDraftList();
   }
 
   function draftListEmptyHtml(message) {
@@ -1924,14 +1946,11 @@ import {
       const adding = pendingFolder && !pendingFolder.parentId;
       return (
         buildFolderTree(folderState, drafts).map(folderRowHtml).join("") +
-        (adding ? pendingFolderRowHtml() : newFolderButtonHtml())
+        (adding ? pendingFolderRowHtml() : newFolderButtonHtml()) +
+        unfiledFolderHtml()
       );
     }
     if (!drafts.length) return draftListEmptyHtml("No drafts yet. Type or paste on the left to create one.");
-    if (draftView === "unfiled") {
-      const rows = unfiledDrafts(folderState, drafts).map((d) => draftRowHtml(d)).join("");
-      return rows || draftListEmptyHtml("All drafts are in folders.");
-    }
     return drafts.map((d) => draftRowHtml(d, { showPath: true })).join("");
   }
 
@@ -2093,7 +2112,7 @@ import {
     el.setAttribute("role", "menu");
     el.setAttribute("aria-label", kind === "folder" ? "Move folder to" : "Move draft to");
     el.innerHTML =
-      radio(kind === "folder" ? "Top level" : "No folder", "") +
+      radio(kind === "folder" ? "Top level" : "Unfiled", "") +
       rows.map(({ folder, depth }) => radio(folder.name, folder.id, depth)).join("") +
       (rows.length ? "" : `<button type="button" role="menuitem" class="move-menu-item" disabled>No folders yet</button>`);
     document.body.append(el);
@@ -2427,9 +2446,13 @@ import {
     const folderItem = e.target.closest(".folder-item");
     if (folderItem) {
       const folderId = folderItem.dataset.folderId;
-      if (!folderId) return;
+      if (!folderId && !folderItem.dataset.unfiled) return;
       e.preventDefault();
       e.stopPropagation();
+      if (!folderId) {
+        toggleUnfiled();
+        return;
+      }
       if (action === "move-folder") openMoveMenu({ kind: "folder", id: folderId, anchor: actionEl });
       else if (action === "add-subfolder") void startSubfolder(folderId);
       else if (action === "delete-folder") void deleteFolderById(folderId);
@@ -2520,6 +2543,7 @@ import {
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (item.dataset.folderId) void toggleFolder(item.dataset.folderId);
+      else if (item.dataset.unfiled) toggleUnfiled();
       else void queueBrowserRouteNavigation(() => openDraft(item.dataset.id));
     }
   });

@@ -561,8 +561,7 @@ button.pane-title {
 
 .draft-list .folder-add {
   align-self: flex-start;
-  margin: var(--space-1) var(--space-3);
-  padding: var(--space-4) var(--space-5);
+  margin: var(--space-1) var(--space-3) var(--space-7);
 }
 
 .folder-item {

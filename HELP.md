@@ -31,7 +31,7 @@ Editor Keyboard Shortcuts
 - Ctrl+8: Switch to Text view mode
 - Ctrl+9: Switch to Diff view mode
 - Ctrl+0: Switch to Review view mode
-- Ctrl+8, Ctrl+9, Ctrl+0 on the home page: Switch the draft list to All, Folders, or Unfiled
+- Ctrl+8, Ctrl+9 on the home page: Switch the draft list to Recents or Folders
 - Ctrl+/: Focus chat input box
 
 Editor Features
