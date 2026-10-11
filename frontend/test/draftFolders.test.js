@@ -7,6 +7,7 @@ import {
   draftFolderPath,
   emptyFolderState,
   flattenFolders,
+  folderOptions,
   moveFolder,
   normalizeFolderState,
   removeDraft,
@@ -110,6 +111,14 @@ describe("views", () => {
     const state = assignDraft(build(school, math), "d1", "math");
     expect(draftFolderPath(state, "d1")).toBe("School / Math");
     expect(draftFolderPath(state, "d2")).toBe("");
+  });
+
+  it("lists every folder with its full path", () => {
+    expect(folderOptions(build(work, school, math))).toEqual([
+      { id: "work", path: "Work" },
+      { id: "school", path: "School" },
+      { id: "math", path: "School / Math" },
+    ]);
   });
 
   it("flattens folders depth-first and can exclude a subtree", () => {

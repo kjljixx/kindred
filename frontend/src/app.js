@@ -73,12 +73,15 @@ import {
   draftFolderPath,
   emptyFolderState,
   flattenFolders,
+  folderOptions,
+  folderPath,
   hasSubfolders,
   moveFolder,
   renameFolder,
   setFolderCollapsed,
   unfiledDrafts,
 } from "./draftFolders.js";
+import { suggestFolderWithJev } from "./jevFolderSuggester.js";
 
 (() => {
   const DIFF_EQUAL = 0;
@@ -2023,6 +2026,22 @@ import {
       setStatus(String(err.message || err), "danger");
     }
     renderDraftList();
+  }
+
+  async function autoFileDraft(draftId, draft) {
+    const folders = folderOptions(folderState);
+    if (!folders.length || folderState.assignments[draftId]) return;
+    try {
+      const folderId = await suggestFolderWithJev(draft, folders);
+      if (!folderId) return;
+      if (folderState.assignments[draftId] || !folderState.folders.some((f) => f.id === folderId)) return;
+      await updateFolders(
+        (state) => assignDraft(state, draftId, folderId),
+        `auto-filed ${draftId} into ${folderPath(folderState, folderId).join(" / ")}`
+      );
+    } catch (err) {
+      console.warn("kindred: auto-file failed; draft stays unfiled", err);
+    }
   }
 
   async function finishFolderInput(input, { cancel = false } = {}) {
@@ -4328,6 +4347,7 @@ import {
       setStatus("nothing to commit");
       return;
     }
+    const isFirstCommit = !headOid;
     const { oid } = await store.commitWorkingTree(activeDraftId, { verb });
     hasConflict = false;
     pendingMerge = null;
@@ -4341,6 +4361,9 @@ import {
     await refreshDraftList();
     renamingGit = { kind: "commit", key: oid };
     updateCommitBtn();
+    if (isFirstCommit) {
+      void autoFileDraft(activeDraftId, { title: wt.title, text: store.htmlToPlain(wt.html) });
+    }
   }
 
   commitBtn.addEventListener("click", () => {

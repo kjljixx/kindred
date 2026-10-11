@@ -180,6 +180,14 @@ export function draftFolderPath(state, draftId) {
   return folderPath(state, state.assignments[draftId]).join(" / ");
 }
 
+/** `{ id, path }` for every folder, e.g. "College apps / Essays". */
+export function folderOptions(state) {
+  return state.folders.map((folder) => ({
+    id: folder.id,
+    path: folderPath(state, folder.id).join(" / "),
+  }));
+}
+
 function childFolders(state, parentId) {
   return state.folders
     .filter((folder) => (folder.parentId || null) === parentId)
