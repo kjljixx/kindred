@@ -325,6 +325,14 @@ body {
   flex: 1 1 auto;
 }
 
+.draft-view-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding-top: var(--space-2);
+  flex-shrink: 0;
+}
+
 .pane-mode-cluster {
   display: flex;
   align-items: center;
@@ -550,18 +558,19 @@ button.pane-title {
   white-space: nowrap;
 }
 
-.draft-view-row {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: 0 var(--space-5);
-  flex-shrink: 0;
+.draft-list .folder-add {
+  align-self: stretch;
+  justify-content: flex-start;
+  margin: var(--space-1) var(--space-3);
+  padding-left: var(--space-5);
 }
 
-.draft-list .folder-add {
-  align-self: flex-start;
-  margin: var(--space-1) var(--space-3) var(--space-7);
+.folder-item[data-unfiled] > .folder-name {
+  color: var(--neutral-500);
+}
+
+.folder-item[data-unfiled] > .folder-chevron {
+  color: var(--neutral-600);
 }
 
 .folder-item {
@@ -596,7 +605,7 @@ button.pane-title {
 .folder-name {
   flex: 1;
   min-width: 0;
-  color: var(--color-text-muted);
+  color: var(--color-text-body);
   font-size: var(--font-size-2);
   font-weight: var(--font-weight-3);
   white-space: nowrap;
@@ -653,12 +662,11 @@ button.pane-title {
 
 .tabs[hidden],
 #feedback[hidden],
-#drafts-heading[hidden],
 #chat-heading[hidden],
 #chat-back-btn[hidden],
 #new-chat-btn[hidden],
 #draft-list[hidden],
-#draft-view-row[hidden],
+#draft-view-controls[hidden],
 #chat-list[hidden],
 #chat-composer[hidden],
 #commit-btn[hidden],

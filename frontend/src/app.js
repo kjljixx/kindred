@@ -147,9 +147,8 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   const feedbackEl = document.getElementById("feedback");
   const chatListEl = document.getElementById("chat-list");
   const draftListEl = document.getElementById("draft-list");
-  const draftViewRow = document.getElementById("draft-view-row");
+  const draftViewControls = document.getElementById("draft-view-controls");
   const draftViewTabs = document.getElementById("draft-view-tabs");
-  const draftsHeading = document.getElementById("drafts-heading");
   const chatBackBtn = document.getElementById("chat-back-btn");
   const chatHeading = document.getElementById("chat-heading");
   const newChatBtn = document.getElementById("new-chat-btn");
@@ -1763,7 +1762,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     const showChatChrome = !!(activeDraftId && paneMode === "chat");
     const inList = showChatChrome && chatView === "list";
     const inThread = showChatChrome && chatView === "thread";
-    draftsHeading.hidden = !!activeDraftId;
     if (chatBackBtn) {
       chatBackBtn.hidden = !inThread;
       chatBackBtn.textContent = "All";
@@ -1779,14 +1777,13 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
 
   function setDraftListHidden(hidden) {
     draftListEl.hidden = hidden;
-    draftViewRow.hidden = hidden;
+    draftViewControls.hidden = hidden;
     if (hidden) closeMoveMenu();
   }
 
   function showHomePane() {
     paneMode = "chat";
     paneModeCluster.hidden = true;
-    draftsHeading.hidden = false;
     if (chatHeading) chatHeading.hidden = true;
     if (newChatBtn) newChatBtn.hidden = true;
     if (chatBackBtn) chatBackBtn.hidden = true;
@@ -1806,7 +1803,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   }
 
   function showGitPane() {
-    draftsHeading.hidden = true;
     setDraftListHidden(true);
     if (chatHeading) chatHeading.hidden = true;
     if (newChatBtn) newChatBtn.hidden = true;
@@ -1822,7 +1818,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   }
 
   function showChatPane({ stickBottom = false } = {}) {
-    draftsHeading.hidden = true;
     setDraftListHidden(true);
     paneModeCluster.hidden = false;
     gitPane.hidden = true;
@@ -1911,7 +1906,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   }
 
   function newFolderButtonHtml() {
-    return `<button type="button" class="btn btn-secondary folder-add" data-action="new-folder">New Folder</button>`;
+    return `<button type="button" class="btn btn-tertiary folder-add" data-action="new-folder">New Folder</button>`;
   }
 
   function folderChildrenHtml({ folder, folders, drafts: folderDrafts }) {
@@ -1936,7 +1931,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   function toggleUnfiled() {
     unfiledCollapsed = !unfiledCollapsed;
     localStorage.setItem(unfiledCollapsedStorageKey, String(unfiledCollapsed));
-    console.info(`kindred: ${unfiledCollapsed ? "collapsed" : "expanded"} Unfiled`);
     renderDraftList();
   }
 
@@ -1986,6 +1980,12 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     return true;
   }
 
+  function focusFolderAfterToggle(selector) {
+    const folderItem = draftListEl.querySelector(`.folder-item${selector}`);
+    const children = folderItem?.nextElementSibling?.matches(".folder-children") ? folderItem.nextElementSibling : null;
+    focusDraftItem(children?.querySelector(":scope > .draft-item") ?? folderItem);
+  }
+
   function moveDraftListFocus(item, offset) {
     const items = [...draftListEl.querySelectorAll(DRAFT_ROW_SELECTOR)];
     const index = items.indexOf(item);
@@ -2019,7 +2019,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     try {
       folderState = change(previous);
       await store.saveFolderState(folderState);
-      console.info(`kindred: ${summary} (${folderState.folders.length} folders)`);
     } catch (err) {
       folderState = previous;
       console.error("kindred: folder update failed", summary, err);
@@ -2514,7 +2513,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     if (!DRAFT_VIEWS.includes(view) || view === draftView) return;
     draftView = view;
     localStorage.setItem(draftViewStorageKey, draftView);
-    console.info(`kindred: draft view "${draftView}"`);
     closeMoveMenu();
     renderDraftList();
   }
@@ -2523,7 +2521,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     const tab = e.target.closest("[data-draft-view]");
     if (tab) setDraftView(tab.dataset.draftView);
   });
-  console.info(`kindred: draft list view "${draftView}"`);
 
   draftListEl.addEventListener("keydown", (e) => {
     const folderInput = e.target.closest(".folder-name-input");
@@ -2561,9 +2558,11 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       moveDraftListFocus(item, offset);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (item.dataset.folderId) void toggleFolder(item.dataset.folderId);
-      else if (item.dataset.unfiled) toggleUnfiled();
-      else void queueBrowserRouteNavigation(() => openDraft(item.dataset.id));
+      if (item.dataset.folderId) void toggleFolder(item.dataset.folderId).then(() => focusFolderAfterToggle(`[data-folder-id="${CSS.escape(item.dataset.folderId)}"]`));
+      else if (item.dataset.unfiled) {
+        toggleUnfiled();
+        focusFolderAfterToggle("[data-unfiled]");
+      } else void queueBrowserRouteNavigation(() => openDraft(item.dataset.id));
     }
   });
 

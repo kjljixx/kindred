@@ -211,9 +211,14 @@
         tabindex="0"></div>
       <section id="feedback-pane">
         <header class="pane-header feedback-header">
+          <div id="draft-view-controls" class="draft-view-controls">
+            <div id="draft-view-tabs" class="tabs tabs-primary" role="tablist" aria-label="Draft view">
+              <button type="button" class="tab btn btn-secondary" data-draft-view="recents" role="tab">Recents</button>
+              <button type="button" class="tab btn btn-secondary" data-draft-view="folders" role="tab">Folders</button>
+            </div>
+          </div>
           <div class="feedback-header-left">
             <button type="button" id="commit-btn" class="btn btn-primary" hidden disabled>Commit</button>
-            <span id="drafts-heading" class="pane-title">Drafts</span>
             <button type="button" id="chat-back-btn" class="btn btn-secondary chat-back-btn" hidden>All</button>
             <span id="chat-heading" class="pane-title" hidden>Chats</span>
             <button type="button" id="new-chat-btn" class="btn btn-secondary" hidden>New</button>
@@ -263,12 +268,6 @@
             </div>
             <div id="git-commit-list" class="git-commit-list" role="list"></div>
           </section>
-        </div>
-        <div id="draft-view-row" class="draft-view-row">
-          <div id="draft-view-tabs" class="tabs tabs-primary" role="tablist" aria-label="Draft view">
-            <button type="button" class="tab btn btn-secondary" data-draft-view="recents" role="tab">Recents</button>
-            <button type="button" class="tab btn btn-secondary" data-draft-view="folders" role="tab">Folders</button>
-          </div>
         </div>
         <div id="draft-list" class="draft-list" role="list"></div>
       </section>
