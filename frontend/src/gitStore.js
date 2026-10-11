@@ -14,7 +14,6 @@ import { normalizeFolderState, removeDraft } from "./draftFolders.js";
 const VOLUME = "kindred";
   const ROOT = "/texts";
   const FOLDERS_PATH = "/folders.json";
-  let folderStateLogged = false;
   const AUTHOR = { name: "kindred", email: "kindred@local" };
   const TEXT_FILE = "text.html";
   const ASSETS_DIR = "assets";
@@ -836,12 +835,6 @@ const VOLUME = "kindred";
     const state = normalizeFolderState(await readJson(FOLDERS_PATH, null), (message) =>
       console.warn(`kindred: folders.json repaired: ${message}`)
     );
-    if (!folderStateLogged) {
-      folderStateLogged = true;
-      console.info(
-        `kindred: loaded ${state.folders.length} folders, ${Object.keys(state.assignments).length} filed drafts`
-      );
-    }
     return state;
   }
 
