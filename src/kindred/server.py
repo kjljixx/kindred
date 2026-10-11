@@ -228,6 +228,21 @@ class MathDetectionRequest(BaseModel):
   candidates: list[dict[str, Any]] | None = None
 
 
+class FolderOption(BaseModel):
+  id: str
+  path: str
+
+
+class FolderDraft(BaseModel):
+  title: str = ""
+  text: str = ""
+
+
+class FolderSuggestRequest(BaseModel):
+  draft: FolderDraft
+  folders: list[FolderOption]
+
+
 class GoogleDocsBatchUpdateRequest(BaseModel):
   document_id: str = Field(alias="documentId")
   requests: list[dict[str, Any]] = Field(default_factory=list)
@@ -339,6 +354,89 @@ async def detect_math(request: MathDetectionRequest) -> dict[str, Any]:
   return {
     "ranges": await detect_math_with_jev(request.text, request.candidates),
   }
+
+
+FOLDER_SUGGEST_NONE_KEY = "none"
+FOLDER_SUGGEST_MIN_PROBABILITY = 0.7
+FOLDER_SUGGEST_MAX_WORDS = 1000
+
+
+async def suggest_folder_with_jev(
+  draft: FolderDraft,
+  folders: list[FolderOption],
+) -> dict[str, Any]:
+  api_key = os.environ.get("OPENROUTER_API_KEY")
+  if not api_key:
+    raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY is not configured")
+  if not folders:
+    return {"folderId": None, "probabilities": {}}
+
+  criteria = {FOLDER_SUGGEST_NONE_KEY: "none of the folders"}
+  folder_ids_by_key: dict[str, str] = {}
+  for folder in folders:
+    key = folder.path
+    suffix = 2
+    while key in criteria:
+      key = f"{folder.path} ({suffix})"
+      suffix += 1
+    criteria[key] = folder.path
+    folder_ids_by_key[key] = folder.id
+
+  started = time.monotonic()
+  response = await get_http_client().post(
+    "https://openrouter.ai/api/alpha/decisions",
+    headers={"Authorization": f"Bearer {api_key}"},
+    json={
+      "model": "~typesafe/jev-latest",
+      "state": f"{draft.title}\n\n{' '.join(draft.text.split()[:FOLDER_SUGGEST_MAX_WORDS])}",
+      "questions": {
+        "folder": {
+          "type": "choice",
+          "instructions": (
+            "Which folder should this new draft be filed in? Pick "
+            f"'{FOLDER_SUGGEST_NONE_KEY}' if no folder clearly fits."
+          ),
+          "criteria": criteria,
+        },
+      },
+    },
+  )
+  if response.is_error:
+    logger.warning(
+      "Jev folder suggestion failed status=%s folders=%s",
+      response.status_code,
+      len(folders),
+    )
+    raise HTTPException(status_code=502, detail="Folder suggestion provider failed")
+
+  answer = response.json().get("answers", {}).get("folder", {})
+  choice = answer.get("choice")
+  probabilities = answer.get("probabilities", {})
+  probability = probabilities.get(choice, 0)
+  folder_id = (
+    folder_ids_by_key.get(choice) if probability >= FOLDER_SUGGEST_MIN_PROBABILITY else None
+  )
+  logger.info(
+    "Jev folder suggestion complete folders=%s choice=%r probability=%.2f "
+    "confidence=%s accepted=%s latency_ms=%d",
+    len(folders),
+    choice,
+    probability,
+    answer.get("confidence"),
+    folder_id is not None,
+    (time.monotonic() - started) * 1000,
+  )
+  return {
+    "folderId": folder_id,
+    "probabilities": {
+      folder_ids_by_key.get(key, key): value for key, value in probabilities.items()
+    },
+  }
+
+
+@app.post("/api/folders/suggest")
+async def suggest_folder(request: FolderSuggestRequest) -> dict[str, Any]:
+  return await suggest_folder_with_jev(request.draft, request.folders)
 
 
 @app.get("/api/google-docs/oauth/start")
