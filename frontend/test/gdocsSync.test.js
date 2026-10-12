@@ -8,7 +8,6 @@ import {
   googleDocumentToKindredHtml,
   googleDocumentIdFromUrl,
   googleDocsTransactionsFromEditorEvent,
-  insertedPlainText,
   needsGoogleDocsAuthentication,
   pullGoogleDocument,
   pushGoogleDocsTransactions,
@@ -723,6 +722,59 @@ describe("Google Docs text push", () => {
     editorElement.remove();
   });
 
+  it.each([
+    ["between paragraphs that repeat the pasted text", "<p>foo</p><p>foo</p>", 5, ["foo", "B"], 0, 5, "foo\nB\n"],
+    ["into a paragraph where the pasted text repeats the following text", "<p>abcdef</p>", 4, ["d", "B"], 1, 4, "d\nB"],
+    ["at the end of a paragraph where the pasted text repeats the next paragraph", "<p>foo</p><p>bar</p>", 4, ["bar", "B"], 1, 4, "bar\nB"],
+  ])("inserts pasted paragraphs at the step position %s", (_name, html, from, paragraphs, open, index, text) => {
+    const element = document.createElement("div");
+    document.body.append(element);
+    const editor = createKindredEditor({ element, content: html });
+    const before = editor.state.doc;
+    const { schema } = editor.state;
+    const nodes = paragraphs.map((value) => schema.nodes.paragraph.create(null, schema.text(value)));
+    const transaction = editor.state.tr.replace(from, from, new Slice(Fragment.from(nodes), open, open));
+
+    expect(transactionToGoogleDocsBatchUpdateRequests(transaction, before)).toEqual([
+      { insertText: { location: { index }, text } },
+    ]);
+
+    editor.destroy();
+    element.remove();
+  });
+
+  it.each([
+    ["through the middle of a styled paragraph", 3, 18, "A one\nB two\nC three", { start: 3, end: 17 }],
+    ["over the text of a paragraph but not its end", 1, 11, "A one\nB two\nC three", { start: 1, end: 11 }],
+    ["over the end of a paragraph", 14, 25, "A one\nB two\nC three\n", { start: 13, end: 24 }],
+  ])("replaces a styled range %s with pasted paragraphs without extra newlines", (_name, from, to, text, deleted) => {
+    const element = document.createElement("div");
+    document.body.append(element);
+    const styled = (value) => `<p><span style="color: #ff0000; font-size: 20pt">${value}</span></p>`;
+    const editor = createKindredEditor({
+      element,
+      content: ["first para", "second para", "third para", "fourth"].map(styled).join(""),
+    });
+    const before = editor.state.doc;
+    editor.commands.setTextSelection({ from, to });
+    let transaction = null;
+    editor.on("transaction", ({ transaction: nextTransaction }) => {
+      if (nextTransaction.docChanged) transaction = nextTransaction;
+    });
+
+    editor.view.pasteText("A one\n\nB two\n\nC three");
+
+    const requests = transactionToGoogleDocsBatchUpdateRequests(transaction, before)
+      .filter((request) => !request.updateTextStyle);
+    expect(requests).toEqual([
+      { deleteContentRange: { range: { startIndex: deleted.start, endIndex: deleted.end } } },
+      { insertText: { location: { index: deleted.start }, text } },
+    ]);
+
+    editor.destroy();
+    element.remove();
+  });
+
   it("pushes a paste of five paragraphs", () => {
     const editorElement = document.createElement("div");
     document.body.append(editorElement);
@@ -924,46 +976,44 @@ describe("Google Docs math push", () => {
 });
 
 describe("Google Docs list push", () => {
-  it("extracts restored list-item text instead of treating it as an empty split", () => {
-    const beforeElement = document.createElement("div");
-    const afterElement = document.createElement("div");
-    document.body.append(beforeElement, afterElement);
-    const before = createKindredEditor({
-      element: beforeElement,
-      content: "<ol><li><p>One</p></li></ol>",
-    });
-    const after = createKindredEditor({
-      element: afterElement,
+  it("restores deleted list items as their text instead of an empty split", () => {
+    const element = document.createElement("div");
+    document.body.append(element);
+    const editor = createKindredEditor({
+      element,
       content: "<ol><li><p>One</p></li><li><p>Two</p></li><li><p>Three</p></li></ol>",
     });
+    const original = editor.state.doc;
+    const deletion = editor.state.tr.delete(6, original.content.size - 3);
+    const restore = editor.state.apply(deletion).tr.step(deletion.steps[0].invert(original));
 
-    expect(insertedPlainText(before.state.doc, after.state.doc)).toBe("\nTwo\nThree");
+    expect(transactionToGoogleDocsBatchUpdateRequests(restore, deletion.doc)).toEqual([
+      { insertText: { location: { index: 4 }, text: "\nTwo\nThree" } },
+    ]);
 
-    before.destroy();
-    after.destroy();
-    beforeElement.remove();
-    afterElement.remove();
+    editor.destroy();
+    element.remove();
   });
 
   it("keeps a text-preserving list split as a single newline", () => {
-    const beforeElement = document.createElement("div");
-    const afterElement = document.createElement("div");
-    document.body.append(beforeElement, afterElement);
-    const before = createKindredEditor({
-      element: beforeElement,
-      content: "<ol><li><p>OneTwo</p></li></ol>",
-    });
-    const after = createKindredEditor({
-      element: afterElement,
-      content: "<ol><li><p>One</p></li><li><p>Two</p></li></ol>",
+    const element = document.createElement("div");
+    document.body.append(element);
+    const editor = createKindredEditor({ element, content: "<ol><li><p>OneTwo</p></li></ol>" });
+    editor.commands.setTextSelection(6);
+    const before = editor.state.doc;
+    let transaction = null;
+    editor.on("transaction", ({ transaction: nextTransaction }) => {
+      if (nextTransaction.docChanged) transaction = nextTransaction;
     });
 
-    expect(insertedPlainText(before.state.doc, after.state.doc)).toBe("\n");
+    editor.commands.splitListItem("listItem");
 
-    before.destroy();
-    after.destroy();
-    beforeElement.remove();
-    afterElement.remove();
+    expect(transactionToGoogleDocsBatchUpdateRequests(transaction, before)).toEqual([
+      { insertText: { location: { index: 4 }, text: "\n" } },
+    ]);
+
+    editor.destroy();
+    element.remove();
   });
 
   it("clears inherited formatting when typing after disabling a stored mark", () => {

@@ -189,11 +189,13 @@ function nodeChildren(node) {
   return children;
 }
 
+function googleDocsLeafText(node) {
+  return nodeType(node) === "mathLive" ? String(node.attrs?.asciiMath || "")
+    : nodeType(node) === "hardBreak" ? "\n" : "";
+}
+
 function googleDocsPlainText(content) {
-  return content.textBetween(0, content.size, "\n", (node) => (
-    nodeType(node) === "mathLive" ? String(node.attrs?.asciiMath || "")
-      : nodeType(node) === "hardBreak" ? "\n" : ""
-  ));
+  return content.textBetween(0, content.size, "\n", googleDocsLeafText);
 }
 
 export function googleDocsTransactionsFromEditorEvent({
@@ -286,26 +288,19 @@ export function mapProseMirrorPositionToGoogleDocsPosition(proseMirrorDoc, posit
   return buildProseMirrorToGoogleDocsPositionMap(proseMirrorDoc).mapPosition(position);
 }
 
-export function insertedPlainText(before, after) {
-  const beforeText = googleDocsPlainText(before.content);
-  const afterText = googleDocsPlainText(after.content);
-  let start = 0;
-  while (
-    start < beforeText.length &&
-    start < afterText.length &&
-    beforeText[start] === afterText[start]
-  ) start += 1;
-  let beforeEnd = beforeText.length;
-  let afterEnd = afterText.length;
-  while (
-    beforeEnd > start &&
-    afterEnd > start &&
-    beforeText[beforeEnd - 1] === afterText[afterEnd - 1]
-  ) {
-    beforeEnd -= 1;
-    afterEnd -= 1;
-  }
-  return afterText.slice(start, afterEnd);
+export function insertedStepText(doc, from, to) {
+  const pieces = [];
+  doc.nodesBetween(from, to, (node, position) => {
+    const closePosition = position + node.nodeSize - 1;
+    if (node.isText) {
+      pieces.push([Math.max(from, position), node.text.slice(Math.max(from, position) - position, to - position)]);
+    } else if (node.isLeaf) {
+      pieces.push([position, googleDocsLeafText(node)]);
+    } else if (node.isTextblock && closePosition >= from && closePosition < to) {
+      pieces.push([closePosition, "\n"]);
+    }
+  });
+  return pieces.sort(([a], [b]) => a - b).map(([, piece]) => piece).join("");
 }
 
 export function filterGoogleDocsTransactionSteps(transaction, positionMap) {
@@ -1035,9 +1030,9 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
       json.slice?.content?.length &&
       json.slice?.content?.every((node) => node.type === "paragraph")
     ) {
-      const paragraphText = googleDocsPlainText(step.slice.content);
+      const insertedText = insertedStepText(nextDoc, json.from, json.from + step.slice.size);
       const replacesDocumentEnd = mappedEnd === mappedDocumentEnd;
-      const replacementText = replacesDocumentEnd ? paragraphText : `${paragraphText}\n`;
+      const replacementText = replacesDocumentEnd ? insertedText.replace(/\n$/, "") : insertedText;
       const replacementRequests = deleteContentRequests(mappedStart, mappedEnd);
       if (replacementText) {
         replacementRequests.push({
@@ -1062,7 +1057,7 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
       json.slice.openEnd === 2 &&
       json.slice.content.every((node) => node.type === "listItem")
     ) {
-      const restoredText = insertedPlainText(stepDocument, nextDoc);
+      const restoredText = insertedStepText(nextDoc, json.from, step.getMap().map(json.from, 1));
       return finish(restoredText === "\n" ? "split-list-item" : "restore-list-items", [{ insertText: {
         location: { index: mappedStart },
         text: restoredText || "\n",
@@ -1074,7 +1069,7 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
       json.slice?.content?.length >= 2 &&
       json.slice.content.every((node) => node.type === "paragraph")
     ) {
-      const restoredText = insertedPlainText(stepDocument, nextDoc);
+      const restoredText = insertedStepText(nextDoc, json.from, step.getMap().map(json.from, 1));
       const paragraphRequests = [{
         insertText: {
           location: { index: mappedStart },
