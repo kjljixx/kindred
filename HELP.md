@@ -6,11 +6,9 @@
 - Ctrl-click a link in the editor to open and switch to it in a new tab
 
 Chat Pane:
-- There are 3 main constructs in the chat pane:
-- 1. Chats: These are, just like any other chat app, where you talk to an LLM. Right click in the chat lists page to rename chats
-- 2. Stacks: These are a collection of messages that are sent to the LLM within a chat. This is an organizational construct to keep messages within a chat organized. For example, if in a single chat, you're talking about several different ideas, after each idea you can start a new stack to keep the messages about that idea together. Right click Stack names to rename them
-- 3. Messages: These are the individual messages that you send to the LLM; LLM messages can contain Mentions and Suggestions within your document. You can Retry responses and Edit your previous messages.
-- Ctrl+Enter = Send message and finish stack
+- There are 2 main constructs in the chat pane:
+- Messages: Exactly what you think it is; you send a message, LLM responds w/ streaming MD that can include inline references to your document and one-click accept suggestions
+- Comments: Like Delta (made by Zed), you can place your caret in the LLM's response; begin typing, and a comment will appear inline
 
 Git Pane:
 - Ctrl+Enter: Commit changes
@@ -38,3 +36,9 @@ Editor Features
 - Auto-Detect/Calculate math: Type in any math formula and it will be automatically rendered in LaTeX. If you enter a calculation (must end with an equals sign), it will be automatically calculated and the result will be displayed. For example, typing "2+2=" will display "4" in the editor.
   - For division, you may need to add parentheses to trigger math rendering. For example, instead of '6/30', type '(6)/30'. This is to avoid confusion between the shorthand for the date June 30th and the fraction 6 divided by 30.
 - Formatting Lock: You can lock formatting in the editor so that it stays the same no matter what formatting is underneath your Caret. This is useful for filling out forms, where you want your responses to have different formatting than the questions.
+
+Exporting:
+- All math will be correctly exported; in Diff mode, exports include green for additions and red strikethroughs for deletions
+
+Folders:
+- On the initial commit of each document, the document will be automatically assigned to an existing folder if there is a relevant folder based on its content and the names of the folders
