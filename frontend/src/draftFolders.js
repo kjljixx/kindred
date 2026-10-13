@@ -1,7 +1,9 @@
 const NAME_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
+const FOLDER_STATE_VERSION = 2;
+
 export function emptyFolderState() {
-  return { folders: [], assignments: {} };
+  return { version: FOLDER_STATE_VERSION, folders: [], assignments: {} };
 }
 
 function folderById(state, id) {
@@ -71,7 +73,11 @@ export function normalizeFolderState(raw, report = () => {}) {
     if (typeof folderId === "string" && byId.has(folderId)) assignments[draftId] = folderId;
     else report(`dropped assignment of draft ${draftId} to missing folder ${JSON.stringify(folderId)}`);
   }
-  return { folders, assignments };
+  if (folders.length && source.version !== FOLDER_STATE_VERSION) {
+    report(`migrated ${folders.length} folders from A–Z to manual order`);
+    folders.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
+  }
+  return { version: FOLDER_STATE_VERSION, folders, assignments };
 }
 
 /** True when `candidateId` is `folderId` or lies anywhere beneath it. */
@@ -111,21 +117,64 @@ export function setFolderCollapsed(state, id, collapsed) {
   };
 }
 
-export function moveFolder(state, id, parentId) {
-  requireFolder(state, id);
+/** Places the folder under `parentId`, before sibling `beforeId` (or last when `beforeId` is null). */
+export function reorderFolder(state, id, { parentId = null, beforeId = null } = {}) {
+  const folder = requireFolder(state, id);
   if (parentId) {
     requireFolder(state, parentId);
     if (isSelfOrDescendant(state, id, parentId)) {
       throw new Error("A folder cannot be moved into itself or one of its subfolders");
     }
   }
-  return {
-    ...state,
-    folders: state.folders.map((folder) => (folder.id === id ? { ...folder, parentId: parentId || null } : folder)),
-  };
+  if (beforeId) {
+    const before = requireFolder(state, beforeId);
+    if (beforeId === id || (before.parentId || null) !== (parentId || null)) {
+      throw new Error("A folder can only be placed before a sibling at the target level");
+    }
+  }
+  const rest = state.folders.filter((candidate) => candidate.id !== id);
+  const isSibling = (candidate) => (candidate.parentId || null) === (parentId || null);
+  const index = beforeId
+    ? rest.findIndex((candidate) => candidate.id === beforeId)
+    : rest.findLastIndex(isSibling) + 1 || rest.length;
+  rest.splice(index, 0, { ...folder, parentId: parentId || null });
+  return { ...state, folders: rest };
 }
 
-/** Subfolders and drafts of the deleted folder move up one level. */
+export function moveFolder(state, id, parentId) {
+  return reorderFolder(state, id, { parentId });
+}
+
+/** Swaps the folder with its previous (`-1`) or next (`1`) sibling; returns `state` when at the edge. */
+export function shiftFolder(state, id, offset) {
+  const folder = requireFolder(state, id);
+  const siblings = childFolders(state, folder.parentId || null);
+  const target = siblings.findIndex((sibling) => sibling.id === id) + offset;
+  if (target < 0 || target >= siblings.length) return state;
+  const beforeId = (offset < 0 ? siblings[target] : siblings[target + 1])?.id ?? null;
+  return reorderFolder(state, id, { parentId: folder.parentId, beforeId });
+}
+
+/** Nests the folder as the last child of its previous sibling and expands that sibling. */
+export function indentFolder(state, id) {
+  const folder = requireFolder(state, id);
+  const siblings = childFolders(state, folder.parentId || null);
+  const previous = siblings[siblings.findIndex((sibling) => sibling.id === id) - 1];
+  if (!previous) return state;
+  return setFolderCollapsed(reorderFolder(state, id, { parentId: previous.id }), previous.id, false);
+}
+
+/** Moves the folder out of its parent, directly after that parent. */
+export function outdentFolder(state, id) {
+  const folder = requireFolder(state, id);
+  if (!folder.parentId) return state;
+  const parent = requireFolder(state, folder.parentId);
+  const uncles = childFolders(state, parent.parentId || null);
+  const beforeId = uncles[uncles.findIndex((uncle) => uncle.id === parent.id) + 1]?.id ?? null;
+  return reorderFolder(state, id, { parentId: parent.parentId, beforeId });
+}
+
+/** Subfolders and drafts of the deleted folder move up one level, into the deleted folder's slot. */
 export function deleteFolder(state, id) {
   const target = requireFolder(state, id);
   const parentId = target.parentId;
@@ -134,12 +183,14 @@ export function deleteFolder(state, id) {
     if (folderId !== id) assignments[draftId] = folderId;
     else if (parentId) assignments[draftId] = parentId;
   }
-  return {
-    folders: state.folders
-      .filter((folder) => folder.id !== id)
-      .map((folder) => (folder.parentId === id ? { ...folder, parentId } : folder)),
-    assignments,
-  };
+  const lifted = state.folders
+    .filter((folder) => folder.parentId === id)
+    .map((folder) => ({ ...folder, parentId }));
+  const folders = state.folders.flatMap((folder) => {
+    if (folder.id === id) return lifted;
+    return folder.parentId === id ? [] : [folder];
+  });
+  return { ...state, folders, assignments };
 }
 
 export function assignDraft(state, draftId, folderId) {
@@ -190,11 +241,10 @@ export function folderOptions(state) {
 
 function childFolders(state, parentId) {
   return state.folders
-    .filter((folder) => (folder.parentId || null) === parentId)
-    .sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
+    .filter((folder) => (folder.parentId || null) === parentId);
 }
 
-/** Folders A–Z at each level; `drafts` keep the order given. */
+/** Folders in manual order at each level; `drafts` keep the order given. */
 export function buildFolderTree(state, drafts) {
   const draftsByFolder = new Map();
   for (const draft of drafts) {

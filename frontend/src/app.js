@@ -76,9 +76,13 @@ import {
   folderOptions,
   folderPath,
   hasSubfolders,
+  indentFolder,
   moveFolder,
+  outdentFolder,
   renameFolder,
+  reorderFolder,
   setFolderCollapsed,
+  shiftFolder,
   unfiledDrafts,
 } from "./draftFolders.js";
 import { suggestFolderWithJev } from "./jevFolderSuggester.js";
@@ -289,6 +293,8 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   let unfiledCollapsed = localStorage.getItem(unfiledCollapsedStorageKey) !== "false";
   let folderState = emptyFolderState();
   let renamingFolderId = null;
+  let placingFolderId = null;
+  let stopPlacingListeners = null;
   /** @type {{ parentId: string | null } | null} */
   let pendingFolder = null;
   /** @type {{ el: HTMLElement, anchor: HTMLElement, dismiss: Function } | null} */
@@ -1893,7 +1899,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
         ? folderNameInputHtml({ id: folder.id, value: folder.name })
         : `<span class="folder-name">${escapeHtml(folder.name)}</span>`;
     return (
-      `<div class="folder-item${open ? " open" : ""}" role="listitem" tabindex="-1" aria-expanded="${open}" data-folder-id="${escapeHtml(folder.id)}">` +
+      `<div class="folder-item${open ? " open" : ""}${placingFolderId === folder.id ? " lifted" : ""}" role="listitem" tabindex="-1" aria-expanded="${open}" data-folder-id="${escapeHtml(folder.id)}">` +
       FOLDER_CHEVRON_SVG +
       nameHtml +
       `<div class="draft-item-actions">` +
@@ -1905,13 +1911,28 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     );
   }
 
+  /** Sibling folder rows; while placing, a slot sits between siblings wherever the picked-up folder would actually move. */
+  function folderListHtml(nodes, parentId) {
+    const picked = folderState.folders.find((f) => f.id === placingFolderId);
+    if (!picked || (picked.parentId || null) !== parentId) return nodes.map(folderRowHtml).join("");
+    const pickedIndex = nodes.findIndex((node) => node.folder.id === picked.id);
+    const slotHtml = (beforeId) =>
+      `<button type="button" class="folder-slot" tabindex="-1" data-action="place-folder" data-before-id="${escapeHtml(beforeId)}" aria-label="Place folder here"></button>`;
+    let html = "";
+    nodes.forEach((node, index) => {
+      if (index !== pickedIndex && index !== pickedIndex + 1) html += slotHtml(node.folder.id);
+      html += folderRowHtml(node);
+    });
+    return pickedIndex === nodes.length - 1 ? html : html + slotHtml("");
+  }
+
   function newFolderButtonHtml() {
     return `<button type="button" class="btn btn-tertiary folder-add" data-action="new-folder">New Folder</button>`;
   }
 
   function folderChildrenHtml({ folder, folders, drafts: folderDrafts }) {
     const pending = pendingFolder?.parentId === folder.id ? pendingFolderRowHtml() : "";
-    const rows = pending + folders.map(folderRowHtml).join("") + folderDrafts.map((d) => draftRowHtml(d)).join("");
+    const rows = pending + folderListHtml(folders, folder.id) + folderDrafts.map((d) => draftRowHtml(d)).join("");
     return rows ? `<div class="folder-children" role="list">${rows}</div>` : "";
   }
 
@@ -1942,7 +1963,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     if (draftView === "folders") {
       const adding = pendingFolder && !pendingFolder.parentId;
       return (
-        buildFolderTree(folderState, drafts).map(folderRowHtml).join("") +
+        folderListHtml(buildFolderTree(folderState, drafts), null) +
         (adding ? pendingFolderRowHtml() : newFolderButtonHtml()) +
         unfiledFolderHtml()
       );
@@ -2100,6 +2121,69 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     await updateFolders((state) => deleteFolder(state, id), `deleted folder "${folder.name}"`);
   }
 
+  const FOLDER_KEY_MOVES = {
+    ArrowUp: { label: "up", move: (state, id) => shiftFolder(state, id, -1) },
+    ArrowDown: { label: "down", move: (state, id) => shiftFolder(state, id, 1) },
+    ArrowRight: { label: "into previous sibling", move: indentFolder },
+    ArrowLeft: { label: "out of parent", move: outdentFolder },
+  };
+
+  async function moveFolderByKey(id, key) {
+    const { label, move } = FOLDER_KEY_MOVES[key];
+    const folder = folderState.folders.find((f) => f.id === id);
+    if (!folder || move(folderState, id) === folderState) return;
+    await updateFolders((state) => move(state, id), `moved folder "${folder.name}" ${label}`);
+    focusFolderRow(id);
+  }
+
+  function focusFolderRow(id) {
+    focusDraftItem(draftListEl.querySelector(`.folder-item[data-folder-id="${CSS.escape(id)}"]`));
+  }
+
+  function startPlacingFolder(id) {
+    stopPlacingFolder("restarted");
+    placingFolderId = id;
+    const onPointerDown = (e) => {
+      if (!e.target.closest(".folder-slot")) stopPlacingFolder("clicked elsewhere");
+    };
+    const onKeyDown = (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      stopPlacingFolder("Escape");
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    stopPlacingListeners = () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+    console.info(`kindred: placing folder ${id}`);
+    renderDraftList();
+  }
+
+  function stopPlacingFolder(reason) {
+    if (!placingFolderId) return;
+    console.info(`kindred: stopped placing folder ${placingFolderId} (${reason})`);
+    placingFolderId = null;
+    stopPlacingListeners();
+    stopPlacingListeners = null;
+    renderDraftList();
+  }
+
+  async function placeFolder(beforeId) {
+    const id = placingFolderId;
+    const folder = folderState.folders.find((f) => f.id === id);
+    stopPlacingFolder("placed");
+    if (!folder) return;
+    const before = folderState.folders.find((f) => f.id === beforeId);
+    await updateFolders(
+      (state) => reorderFolder(state, id, { parentId: folder.parentId, beforeId }),
+      `placed folder "${folder.name}" before ${before ? `"${before.name}"` : "end of level"}`
+    );
+    focusFolderRow(id);
+  }
+
   async function moveTo(kind, id, folderId) {
     await updateFolders((state) => {
       const moved = kind === "folder" ? moveFolder(state, id, folderId) : assignDraft(state, id, folderId);
@@ -2125,11 +2209,15 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     const radio = (label, target, depth = 0) =>
       `<button type="button" role="menuitemradio" class="move-menu-item" aria-checked="${target === currentFolderId}" data-target="${escapeHtml(target)}" style="--depth:${depth}">${escapeHtml(label)}</button>`;
     const rows = flattenFolders(folderState, { excludeId: kind === "folder" ? id : null });
+    const folder = kind === "folder" ? folderState.folders.find((f) => f.id === id) : null;
+    const hasSiblings =
+      !!folder && folderState.folders.filter((f) => (f.parentId || null) === (folder.parentId || null)).length > 1;
     const el = document.createElement("div");
     el.className = "export-menu move-menu";
     el.setAttribute("role", "menu");
     el.setAttribute("aria-label", kind === "folder" ? "Move folder to" : "Move draft to");
     el.innerHTML =
+      (hasSiblings ? `<button type="button" role="menuitem" class="move-menu-item move-menu-reorder" data-reorder>Reorder</button>` : "") +
       radio(kind === "folder" ? "Top level" : "Unfiled", "") +
       rows.map(({ folder, depth }) => radio(folder.name, folder.id, depth)).join("") +
       (rows.length ? "" : `<button type="button" role="menuitem" class="move-menu-item" disabled>No folders yet</button>`);
@@ -2165,6 +2253,11 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     };
 
     el.addEventListener("click", (e) => {
+      if (e.target.closest("[data-reorder]")) {
+        closeMoveMenu();
+        startPlacingFolder(id);
+        return;
+      }
       const button = e.target.closest("[data-target]");
       if (!button) return;
       closeMoveMenu();
@@ -2461,6 +2554,10 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       startNewFolder();
       return;
     }
+    if (action === "place-folder") {
+      void placeFolder(actionEl.dataset.beforeId || null);
+      return;
+    }
     const folderItem = e.target.closest(".folder-item");
     if (folderItem) {
       const folderId = folderItem.dataset.folderId;
@@ -2514,6 +2611,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     draftView = view;
     localStorage.setItem(draftViewStorageKey, draftView);
     closeMoveMenu();
+    stopPlacingFolder("view changed");
     renderDraftList();
   }
 
@@ -2552,7 +2650,10 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
 
     const item = e.target.closest(DRAFT_ROW_SELECTOR);
     if (!item || e.target !== item) return;
-    if (e.key === "Tab" || e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if (e.altKey && item.dataset.folderId && FOLDER_KEY_MOVES[e.key]) {
+      e.preventDefault();
+      void moveFolderByKey(item.dataset.folderId, e.key);
+    } else if (e.key === "Tab" || e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const offset = e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey) ? -1 : 1;
       moveDraftListFocus(item, offset);

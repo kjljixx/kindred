@@ -636,6 +636,46 @@ button.pane-title {
   border-left-color: var(--neutral-700);
 }
 
+/* Same outline as a selected editor image (.ProseMirror-selectednode), inset like .has-caret */
+.folder-item.lifted {
+  background: var(--color-bg-raised);
+  outline: 2px solid hsl(207 90% 62%);
+  outline-offset: -2px;
+}
+
+.folder-slot {
+  position: relative;
+  display: block;
+  flex: none;
+  width: calc(100% - var(--space-3) * 2);
+  height: 14px;
+  margin: 0 var(--space-3);
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Mirrors #divider: guide-line grey at rest, accent-soft on hover or focus, same thickness */
+.folder-slot::before {
+  content: "";
+  position: absolute;
+  inset: 50% var(--space-5) auto;
+  height: var(--size-divider);
+  margin-top: calc(var(--size-divider) / -2);
+  background: var(--neutral-700);
+}
+
+.folder-slot:hover::before,
+.folder-slot:focus-visible::before {
+  background: var(--color-accent-soft);
+}
+
+.move-menu .move-menu-reorder {
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--neutral-700);
+}
+
 .export-menu.move-menu {
   position: fixed;
   right: auto;

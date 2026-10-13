@@ -41,4 +41,7 @@ Exporting:
 - All math will be correctly exported; in Diff mode, exports include green for additions and red strikethroughs for deletions
 
 Folders:
+- Move > Reorder on a folder: Click a line between its sibling folders to place it there. Esc or a click elsewhere cancels.
+- Alt+Up/Down on a focused folder: Move it up or down among its siblings
+- Alt+Right on a focused folder: Nest it inside the folder above it; Alt+Left moves it back out, directly after its parent
 - On the initial commit of each document, the document will be automatically assigned to an existing folder if there is a relevant folder based on its content and the names of the folders
