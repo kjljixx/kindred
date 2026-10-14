@@ -980,6 +980,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
 
   /** True when there is exportable WT/base body (conflict views omit sides from plain text). */
   function hasExportableBody() {
+    if (isViewingHistory()) return !!currentText || currentHtml !== "<p></p>";
     if (dirtyText || "") return true;
     if ((dirtyHtml || "").trim() && dirtyHtml !== "<p></p>") return true;
     if (unresolvedMergeConflictCount(currentHtml) > 0) {
@@ -1001,7 +1002,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     if (unresolvedMergeConflictCount(html) > 0) {
       return dirtyReviewing ? htmlTakingTheirs(html) : htmlTakingOurs(html);
     }
-    const textHtml = dirtyHtml || html;
+    const textHtml = isViewingHistory() ? html : dirtyHtml || html;
     const wantsStyled = wantsStyledDiffExport(CONFIG, dirtyViewMode, formatId);
     if (wantsStyled && tipTap) {
       const styledHtml = serializeDiffEditorHtml(tipTap);
@@ -1033,7 +1034,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
 
   function updateExportBtn() {
     const exportDisabled =
-      converting || gitBusy || !hasExportableBody() || isViewingHistory();
+      converting || gitBusy || !hasExportableBody();
     importBtn.hidden = !activeDraftId;
     exportControls.hidden = !activeDraftId;
     transferControls.hidden = !activeDraftId;
@@ -4700,8 +4701,10 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     updateCommitBtn();
     setStatus("exporting...");
     try {
-      pullFromEditor();
-      syncDirtyBodyFromCurrent();
+      if (!isViewingHistory()) {
+        pullFromEditor();
+        syncDirtyBodyFromCurrent();
+      }
       const exportHtml = htmlForExport(formatId);
       const embeddedHtml = await store.embedAssetImagesForExport(
         activeDraftId,
@@ -4716,9 +4719,17 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
         setStatus("nothing to export", "warn");
         return;
       }
-      const base = sanitizeDownloadBase(
+      const viewedCommit = commits.find((c) => c.oid === viewingOid);
+      const commitSubject = (viewedCommit?.message || "").split("\n")[0];
+      const docTitle =
         activeDraftDisplayTitle() ||
-          store.titleFromText(embeddedHtml || dirtyHtml || dirtyText || ""),
+        store.titleFromText(embeddedHtml || dirtyHtml || dirtyText || "");
+      const base = sanitizeDownloadBase(
+        viewedCommit
+          ? styledDiff && docTitle
+            ? `${docTitle} - ${commitSubject}`
+            : commitSubject
+          : docTitle,
       );
       let slowTimer = setTimeout(() => {
         setStatus("exporting... please be patient, pandoc may be downloading...");

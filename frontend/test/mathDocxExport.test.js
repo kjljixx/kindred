@@ -30,16 +30,18 @@ function zipMinimalDocx(bodyInner) {
   });
 }
 
+const NONCE = "test1234";
+
 describe("prepareHtmlForDocxMath", () => {
   it("replaces KaTeX with placeholders and collects OMML", () => {
     const rendered = renderMathForExport('<p><span class="render-latex" data-kindred-math="sin(x)">sin(x)</span></p>');
     if (document.compatMode !== "CSS1Compat") return;
 
-    const { html, mathEntries } = prepareHtmlForDocxMath(rendered);
-    expect(html).toContain(mathPlaceholder(0));
+    const { html, mathEntries } = prepareHtmlForDocxMath(rendered, NONCE);
+    expect(html).toContain(mathPlaceholder(0, NONCE));
     expect(html).not.toContain('class="katex"');
     expect(mathEntries).toHaveLength(1);
-    expect(mathEntries[0].placeholder).toBe(mathPlaceholder(0));
+    expect(mathEntries[0].placeholder).toBe(mathPlaceholder(0, NONCE));
     expect(mathEntries[0].omml).toContain("m:oMath");
   });
 
@@ -67,7 +69,7 @@ describe("extractMathmlFromKatex", () => {
 
 describe("replacePlaceholderWithOmml", () => {
   it("replaces a standalone placeholder run with OMML", () => {
-    const placeholder = mathPlaceholder(0);
+    const placeholder = mathPlaceholder(0, NONCE);
     const omml = `<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>2+2=4</m:t></m:r></m:oMath>`;
     const xml = `<w:p><w:r><w:t>${placeholder}</w:t></w:r></w:p>`;
 
@@ -77,7 +79,7 @@ describe("replacePlaceholderWithOmml", () => {
   });
 
   it("splits a run when placeholder is embedded in text", () => {
-    const placeholder = mathPlaceholder(0);
+    const placeholder = mathPlaceholder(0, NONCE);
     const omml = `<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>sin(x)</m:t></m:r></m:oMath>`;
     const xml = `<w:p><w:r><w:t>before ${placeholder} after</w:t></w:r></w:p>`;
 
@@ -89,7 +91,7 @@ describe("replacePlaceholderWithOmml", () => {
   });
 
   it("replaces a placeholder run that includes w:rPr (docshift shape)", () => {
-    const placeholder = mathPlaceholder(0);
+    const placeholder = mathPlaceholder(0, NONCE);
     const omml = `<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>a^2+b^2=c^2</m:t></m:r></m:oMath>`;
     const xml = `<w:p><w:r><w:rPr><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr><w:t xml:space="preserve">so, the pythagorean theorem is </w:t></w:r><w:r><w:rPr><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr><w:t xml:space="preserve">${placeholder}</w:t></w:r></w:p>`;
 
@@ -102,7 +104,7 @@ describe("replacePlaceholderWithOmml", () => {
 
 describe("patchDocxMath", () => {
   it("replaces placeholders in a minimal docx blob", async () => {
-    const placeholder = mathPlaceholder(0);
+    const placeholder = mathPlaceholder(0, NONCE);
     const omml = `<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>2+2=4</m:t></m:r></m:oMath>`;
     const blob = zipMinimalDocx(`<w:p><w:r><w:t>${placeholder}</w:t></w:r></w:p>`);
 

@@ -1,4 +1,5 @@
 import { mml2omml } from "mathml2omml";
+import { createExportNonce } from "./exportNonce.js";
 
 /** @typedef {{ placeholder: string, omml: string }} MathDocxEntry */
 
@@ -22,18 +23,20 @@ export function extractMathmlFromKatex(katexEl) {
 
 /**
  * @param {number} index
+ * @param {string} nonce
  * @returns {string}
  */
-export function mathPlaceholder(index) {
-  return `⟦KMATH:${index}⟧`;
+export function mathPlaceholder(index, nonce) {
+  return `⟦KMATH:${nonce}:${index}⟧`;
 }
 
 /**
  * Replace KaTeX blocks with unique placeholders and collect OMML for each.
  * @param {string} html
+ * @param {string} [nonce]
  * @returns {{ html: string, mathEntries: MathDocxEntry[] }}
  */
-export function prepareHtmlForDocxMath(html) {
+export function prepareHtmlForDocxMath(html, nonce = createExportNonce()) {
   const doc = new DOMParser().parseFromString(`<div>${html || ""}</div>`, "text/html");
   const root = doc.body.firstElementChild;
   if (!root) return { html: html || "", mathEntries: [] };
@@ -56,7 +59,7 @@ export function prepareHtmlForDocxMath(html) {
     }
     if (!omml?.includes("m:oMath")) continue;
 
-    const placeholder = mathPlaceholder(index);
+    const placeholder = mathPlaceholder(index, nonce);
     mathEntries.push({ placeholder, omml });
 
     const span = doc.createElement("span");
