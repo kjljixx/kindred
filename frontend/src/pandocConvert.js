@@ -6,7 +6,12 @@ const WASM_CANDIDATES = [
 import { importDocxToHtml, htmlToDocxBlob as docshiftHtmlToDocxBlob } from './docshiftConvert.js';
 import { invertHtmlColors, normalizeHtmlColorsToHex, normalizeBackgroundForDocx, blendTransparentBackgroundsInHtml } from './colorInvert.js';
 import { CONFIG } from './config.js';
-import { wrapStyledDiffHtml, DIFF_EXPORT_EMBEDDED_CSS } from './diffExport.js';
+import {
+  wrapStyledDiffHtml,
+  DIFF_EXPORT_EMBEDDED_CSS,
+  DIFF_PDF_WORD_CSS,
+  splitInlineDiffBackgroundsByWord,
+} from './diffExport.js';
 import {
   getMathExportEmbeddedCss,
   renderMathForExport,
@@ -415,10 +420,11 @@ export async function htmlToPdfBlob(html, options = {}) {
   container.innerHTML = html;
   container.style.fontFamily = DEFAULT_FONT_FAMILY;
   container.style.color = "#000000";
+  if (styledDiff) splitInlineDiffBackgroundsByWord(container);
   const style = document.createElement("style");
   style.textContent = `
     mark { color: inherit; }
-    ${styledDiff ? DIFF_EXPORT_EMBEDDED_CSS : ""}
+    ${styledDiff ? DIFF_EXPORT_EMBEDDED_CSS + DIFF_PDF_WORD_CSS : ""}
     ${htmlHasRenderedMath(html) ? getMathExportEmbeddedCss() : ""}
   `;
   container.prepend(style);

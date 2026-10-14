@@ -6,6 +6,7 @@ import {
   sanitizeProseMirrorDom,
   inlineDiffExportStyles,
   wrapStyledDiffHtml,
+  splitInlineDiffBackgroundsByWord,
 } from "../src/diffExport.js";
 
 const EDITOR_DIFF_CLASSES = [
@@ -123,5 +124,20 @@ describe("wrapStyledDiffHtml", () => {
     expect(wrapped).toContain("<!DOCTYPE html>");
     expect(wrapped).toContain(".diff-ins");
     expect(wrapped).toContain("<p class=\"diff-ins\">x</p>");
+  });
+});
+
+describe("splitInlineDiffBackgroundsByWord", () => {
+  it("moves the span background onto single-line word spans", () => {
+    const root = document.createElement("div");
+    root.innerHTML =
+      '<p>a <span class="diff-ins" style="background: rgb(1, 2, 3); color: red">two words </span>b</p>';
+    splitInlineDiffBackgroundsByWord(root);
+    const ins = root.querySelector(".diff-ins");
+    expect(ins.style.background).toBe("");
+    const words = [...ins.querySelectorAll(".diff-word")];
+    expect(words.map((w) => w.textContent)).toEqual(["two ", "words "]);
+    expect(words.every((w) => w.style.background === "rgb(1, 2, 3)")).toBe(true);
+    expect(root.textContent).toBe("a two words b");
   });
 });
