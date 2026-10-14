@@ -426,6 +426,10 @@ export async function htmlToPdfBlob(html, options = {}) {
     margin: [15, 15, 15, 15], // [top, right, bottom, left] in millimeters
     html2canvas: { scale: 2, useCORS: true },
     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    pagebreak: {
+      mode: ["css", "legacy"],
+      avoid: ["p", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "img"],
+    },
   };
   return html2pdf().set(pdfLayout).from(container).outputPdf("blob");
 }
