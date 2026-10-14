@@ -140,4 +140,12 @@ describe("splitInlineDiffBackgroundsByWord", () => {
     expect(words.every((w) => w.style.background === "rgb(1, 2, 3)")).toBe(true);
     expect(root.textContent).toBe("a two words b");
   });
+
+  it("splits after hyphens so a wrapped word cannot span two lines", () => {
+    const root = document.createElement("div");
+    root.innerHTML = '<span class="diff-ins">Monte-Carlo well-defined/easy</span>';
+    splitInlineDiffBackgroundsByWord(root);
+    const words = [...root.querySelectorAll(".diff-word")].map((w) => w.textContent);
+    expect(words).toEqual(["Monte-", "Carlo ", "well-", "defined/", "easy"]);
+  });
 });

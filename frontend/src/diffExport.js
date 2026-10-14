@@ -224,7 +224,7 @@ export function serializeDiffEditorHtml(editor) {
 
 /**
  * html2canvas paints a wrapped inline element's background as one bounding box
- * spanning every line. Per-word backgrounds never wrap, so each stays on one line.
+ * spanning every line. Per-word backgrounds (split after hyphens and slashes, where lines can also break) never wrap, so each stays on one line.
  * @param {Element} root
  */
 export function splitInlineDiffBackgroundsByWord(root) {
@@ -237,7 +237,7 @@ export function splitInlineDiffBackgroundsByWord(root) {
     while (walker.nextNode()) textNodes.push(walker.currentNode);
     for (const node of textNodes) {
       const fragment = document.createDocumentFragment();
-      for (const word of node.nodeValue.match(/\S+\s*|\s+/g) ?? []) {
+      for (const word of node.nodeValue.match(/[^\s\-–—/]+[-–—/]*\s*|[-–—/]+\s*|\s+/g) ?? []) {
         const span = document.createElement("span");
         span.className = "diff-word";
         if (background) span.style.background = background;
