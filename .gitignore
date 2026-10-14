@@ -18,3 +18,4 @@ src/kindred/static/dist/pandoc.wasm
 src/kindred/static/dist/**/*.map
 run_kindred.bat
 tauri-app
+node_modules/
