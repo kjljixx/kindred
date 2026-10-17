@@ -117,6 +117,19 @@ export function setFolderCollapsed(state, id, collapsed) {
   };
 }
 
+/** Expands the folder and its ancestors; collapses every other folder. */
+export function openFolderExclusively(state, id) {
+  requireFolder(state, id);
+  const open = new Set();
+  for (let current = id; current && !open.has(current); current = folderById(state, current)?.parentId || null) {
+    open.add(current);
+  }
+  return {
+    ...state,
+    folders: state.folders.map((folder) => ({ ...folder, collapsed: !open.has(folder.id) })),
+  };
+}
+
 /** Places the folder under `parentId`, before sibling `beforeId` (or last when `beforeId` is null). */
 export function reorderFolder(state, id, { parentId = null, beforeId = null } = {}) {
   const folder = requireFolder(state, id);
