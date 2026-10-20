@@ -317,12 +317,17 @@ body {
 }
 
 .feedback-header-left {
+  --feedback-header-gap: var(--space-4);
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--feedback-header-gap);
   padding-top: var(--space-2);
   min-width: 0;
   flex: 1 1 auto;
+}
+
+.feedback-header-left .btn-tertiary {
+  --btn-tertiary-font-size: var(--btn-font-size);
 }
 
 .draft-view-controls {
@@ -2193,7 +2198,7 @@ button.pane-title {
 
   .draft-header-right,
   .feedback-header-left {
-    gap: var(--space-2);
+    --feedback-header-gap: var(--space-2);
   }
 
   .pane-mode-cluster {
@@ -2590,6 +2595,12 @@ button.pane-title {
 .suggestion-replacement { color: var(--accent-success-500); }
 .suggest-preview-original { display: none; }
 .suggest-preview-replacement { background: var(--color-success-bg); color: var(--accent-success-300); }
+.chat-suggestion ins { background: var(--color-success-bg); color: var(--accent-success-300); text-decoration: none; border-radius: var(--radius-1); }
+.chat-suggestion del { background: var(--color-danger-bg); color: var(--accent-danger-300); text-decoration: line-through; border-radius: var(--radius-1); }
+.chat-suggestion del + ins { margin-left: var(--space-2); }
+.chat-suggestion .btn.suggestion-diff { display: block; font-weight: var(--font-weight-1); color: var(--color-text-body); }
+.chat-suggestion .btn.suggestion-diff:hover { color: var(--color-text-body); outline: 1px solid var(--neutral-600); }
+.chat-suggestion-replaced .suggestion-diff { display: block; color: var(--color-text-body); opacity: var(--opacity-2); }
 
 .chat-composer {
   flex-shrink: 0;
@@ -2680,6 +2691,38 @@ button.pane-title {
   pointer-events: none;
 }
 
+.chat-input-field {
+  --send-size: 2rem;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+#chat-send {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  min-width: var(--send-size);
+  height: var(--send-size);
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+}
+
+#chat-send svg {
+  display: block;
+  height: 1rem;
+  width: auto;
+  fill: currentColor;
+}
+
+#chat-send:disabled {
+  background: var(--neutral-800);
+  color: var(--neutral-500);
+  opacity: 1;
+}
+
 .chat-composer textarea,
 #chat-input {
   flex: 1;
@@ -2688,7 +2731,7 @@ button.pane-title {
   resize: none;
   max-height: var(--size-composer-max);
   overflow-y: auto;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-4) calc(var(--send-size) + 2 * var(--space-2)) var(--space-4) var(--space-5);
   border: none;
   background: var(--color-bg-inset);
   color: var(--color-text);
@@ -2856,6 +2899,7 @@ button.pane-title {
 .editor-toolbar button,
 .editor-toolbar .toolbar-color,
 .tabs .tab,
+.feedback-header-left .btn-tertiary,
 #import-btn,
 #export-btn {
   position: relative;
@@ -2867,6 +2911,7 @@ button.pane-title {
 .editor-toolbar button::before,
 .editor-toolbar .toolbar-color::before,
 .tabs .tab::before,
+.feedback-header-left .btn-tertiary::before,
 #import-btn::before,
 #export-btn::before {
   content: "";
@@ -2930,6 +2975,10 @@ button.pane-title {
 
 .tabs .tab::before {
   inset: 0 calc(var(--space-4) / -2);
+}
+
+.feedback-header-left .btn-tertiary::before {
+  inset: 0 calc(var(--feedback-header-gap) / -2);
 }
 
 #import-btn::before {

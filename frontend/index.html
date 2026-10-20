@@ -219,9 +219,9 @@
           </div>
           <div class="feedback-header-left">
             <button type="button" id="commit-btn" class="btn btn-primary" hidden disabled>Commit</button>
-            <button type="button" id="chat-back-btn" class="btn btn-secondary chat-back-btn" hidden>All</button>
+            <button type="button" id="chat-back-btn" class="btn btn-tertiary chat-back-btn" hidden>All</button>
             <span id="chat-heading" class="pane-title" hidden>Chats</span>
-            <button type="button" id="new-chat-btn" class="btn btn-secondary" hidden>New</button>
+            <button type="button" id="new-chat-btn" class="btn btn-tertiary" hidden>New</button>
           </div>
           <div id="pane-mode-cluster" class="pane-mode-cluster" hidden>
             <div class="tab-group is-active" data-group="chat">
@@ -243,11 +243,15 @@
         <form id="chat-composer" class="chat-composer" hidden aria-busy="false">
           <div id="chat-comment-strip" class="chat-comment-strip" hidden></div>
           <div class="chat-composer-row">
-            <label class="chat-input-hit" for="chat-input">
-              <textarea id="chat-input" rows="1" placeholder="Ask about the draft..." aria-label="Ask about the draft"
-                autocomplete="off" disabled></textarea>
-            </label>
-            <button type="submit" id="chat-send" class="btn btn-primary" disabled>Send</button>
+            <div class="chat-input-field">
+              <label class="chat-input-hit" for="chat-input">
+                <textarea id="chat-input" rows="1" placeholder="Ask about the draft..." aria-label="Ask about the draft"
+                  autocomplete="off" disabled></textarea>
+              </label>
+              <button type="submit" id="chat-send" class="btn btn-primary" title="Send" aria-label="Send" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" aria-hidden="true"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M214.6 9.4c-12.5-12.5-32.8-12.5-45.3 0l-160 160c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L160 109.3 160 480c0 17.7 14.3 32 32 32s32-14.3 32-32l0-370.7 105.4 105.4c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3l-160-160z"/></svg>
+              </button>
+            </div>
           </div>
         </form>
         <div id="git-pane" class="git-pane" hidden>

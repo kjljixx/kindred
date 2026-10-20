@@ -37,7 +37,8 @@ import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, 
 import { listDiffsFromAlignOps, resolveListConflictHtml, resolveAllListConflicts } from "./listAlign.js";
 import * as markdownWasm from "markdown-wasm";
 import DOMPurify from "dompurify";
-import { createChatMarkdownStream, refreshChatAnchors, renderChatAnchor } from "./chatStreamMarkdown.js";
+import { createChatMarkdownStream, refreshChatAnchors, renderChatAnchor, renderReplacedSuggestion } from "./chatStreamMarkdown.js";
+import { suggestionDiffParts } from "./suggestionDiff.js";
 import {
   buildProseMirrorToGoogleDocsPositionMap,
   fetchGoogleDocumentRevision,
@@ -799,7 +800,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
           !feedbackEl.hidden &&
           !chatNeedsFullDraftRender
         ) {
-          refreshChatAnchors(feedbackEl, resolveTextAnchor);
+          refreshChatAnchors(feedbackEl, resolveTextAnchor, chatSuggestionDiffParts);
           highlightCommentAnchors();
         } else {
           syncRightPane();
@@ -1391,6 +1392,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
 
   function renderMarkdown(text) {
     const input = text || "";
+    if (!input) return "";
     try {
       return DOMPurify.sanitize(markdownWasm.parse(input));
     } catch (error) {
@@ -1779,7 +1781,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       newChatBtn.hidden = !showChatChrome;
       newChatBtn.textContent = "New";
       newChatBtn.classList.toggle("btn-primary", inList);
-      newChatBtn.classList.toggle("btn-secondary", !inList);
+      newChatBtn.classList.toggle("btn-tertiary", !inList);
     }
   }
 
@@ -3297,6 +3299,15 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     return coalesceShortEquals(parts);
   }
 
+  function chatSuggestionDiffParts(original, replacement) {
+    if (typeof HtmlDiff === "undefined") {
+      console.debug("kindred: suggestion diff skipped (HtmlDiff not loaded yet)");
+      void loadHtmlDiff().catch((error) => console.warn("HtmlDiff load failed:", error));
+      return null;
+    }
+    return suggestionDiffParts(original, replacement, wordDiffParts);
+  }
+
   /** Project AST ops → plain DIFF parts (shape from aligner; words inside replace). */
   function diffsFromAstOps(ops) {
     const parts = [];
@@ -4155,7 +4166,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       anchor,
       kind: action === "suggest" ? "suggestion" : "mention",
       token,
-    }, msgIndex, resolveTextAnchor).outerHTML;
+    }, msgIndex, resolveTextAnchor, chatSuggestionDiffParts).outerHTML;
   }
 
   function renderCoachReply(content, msgIndex) {
@@ -4190,15 +4201,9 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       `<span role="button" class="btn btn-tertiary" data-chat-action="suggest" data-preview="replacement" data-msg-index="${msgIndex}" data-start="${start}" data-end="${end}" data-replacement="${escapeHtml(replacement)}">${escapeHtml(replacement)}</span>` +
       `</span>`
     ).replace(/\[{1,2}replaced:(?!\d+:\d+:)([^\]]*?)=(?:>|&gt;)([\s\S]*?)\]{1,2}/g, (_, current, replacement) =>
-      '<span class="chat-suggestion chat-suggestion-replaced">' +
-      '<span class="suggestion-static suggestion-current">' + escapeHtml(current) + '</span>' +
-      '<span class="suggestion-static suggestion-replacement">' + escapeHtml(replacement) + '</span>' +
-      '</span>'
+      renderReplacedSuggestion(current, replacement, chatSuggestionDiffParts).outerHTML
     ).replace(/\[{1,2}replaced:(\d+):(\d+):([\s\S]*?)=(?:>|&gt;)([\s\S]*?)\]{1,2}/g, (_, _start, _end, current, replacement) =>
-      `<span class="chat-suggestion chat-suggestion-replaced">` +
-      `<span class="suggestion-static suggestion-current">${escapeHtml(current)}</span>` +
-      `<span class="suggestion-static suggestion-replacement">${escapeHtml(replacement)}</span>` +
-      `</span>`
+      renderReplacedSuggestion(current, replacement, chatSuggestionDiffParts).outerHTML
     );
   }
 
@@ -5328,7 +5333,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
                 return anchor && (!kind.includes("suggestion") || typeof anchor.replacement === "string")
                   ? anchor : null;
               },
-              renderAnchor: (anchor) => renderChatAnchor(anchor, chat.messages.length - 1, resolveTextAnchor),
+              renderAnchor: (anchor) => renderChatAnchor(anchor, chat.messages.length - 1, resolveTextAnchor, chatSuggestionDiffParts),
             }),
           };
           streamingReply.parser.write(pendingReply.content);

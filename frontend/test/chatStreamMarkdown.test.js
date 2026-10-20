@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import DOMPurify from "dompurify";
-import { createChatMarkdownStream, refreshChatAnchors, renderChatAnchor, UnsupportedAnchorContext } from "../src/chatStreamMarkdown.js";
+import { createChatMarkdownStream, refreshChatAnchors, renderChatAnchor, renderReplacedSuggestion, UnsupportedAnchorContext } from "../src/chatStreamMarkdown.js";
 
 const suggestion = '<suggestion start="0" end="4"><original>text</original><prefix></prefix><suffix></suffix><replacement>**clear**</replacement></suggestion>';
 const mention = '<mention start="0" end="4"><original>text</original><prefix></prefix><suffix></suffix></mention>';
@@ -169,6 +169,76 @@ describe("streaming chat Markdown", () => {
     expect(refreshChatAnchors(container, () => null)).toEqual({ scanned: 1, changed: 0 });
     expect(container.querySelector(".chat-suggestion")).toBe(unmatched);
     expect(container.querySelector("p")).toBe(paragraph);
+  });
+
+  describe("suggestion diff chips", () => {
+    const info = {
+      anchor: { original: "old words here", prefix: "", suffix: "", replacement: "new words here" },
+      kind: "suggestion",
+      token: suggestion,
+    };
+    const diffParts = (original, replacement) => {
+      expect([original, replacement]).toEqual(["old words here", "new words here"]);
+      return [
+        { type: "delete", text: "old" },
+        { type: "insert", text: "new" },
+        { type: "equal", text: " words here" },
+      ];
+    };
+    const location = { start: 3, end: 17, original: "old words here" };
+
+    it("shows one clickable chip with the diff and the existing suggest data", () => {
+      const node = renderChatAnchor(info, 2, () => location, diffParts);
+
+      expect(node.classList.contains("chat-suggestion-diff")).toBe(true);
+      expect(node.querySelector('[data-chat-action="current"]')).toBeNull();
+      const apply = node.querySelector('[data-chat-action="suggest"]');
+      expect(node.querySelectorAll("[data-chat-action]")).toHaveLength(1);
+      expect(apply.dataset).toMatchObject({ start: "3", end: "17", msgIndex: "2", replacement: "new words here", preview: "replacement" });
+      expect(decodeURIComponent(apply.dataset.suggestionToken)).toBe(suggestion);
+      expect(apply.querySelector("del")?.textContent).toBe("old");
+      expect(apply.querySelector("ins")?.textContent).toBe("new");
+      expect(apply.textContent).toBe("oldnew words here");
+    });
+
+    it("keeps both versions when no diff is available", () => {
+      const node = renderChatAnchor(info, 2, () => location, () => null);
+
+      expect(node.classList.contains("chat-suggestion-diff")).toBe(false);
+      expect(node.querySelector('[data-chat-action="current"]')?.textContent).toBe("old words here");
+      expect(node.querySelector('[data-chat-action="suggest"]')?.textContent).toBe("new words here");
+      expect(node.querySelector("ins, del")).toBeNull();
+    });
+
+    it("shows an inert diff when the suggestion cannot be located", () => {
+      const node = renderChatAnchor(info, 2, () => null, diffParts);
+
+      expect(node.classList.contains("chat-suggestion-replaced")).toBe(true);
+      expect(node.classList.contains("chat-suggestion-diff")).toBe(true);
+      expect(node.querySelector("[data-chat-action]")).toBeNull();
+      expect(node.querySelector("del")?.textContent).toBe("old");
+    });
+
+    it("shows an applied suggestion as an inert diff, or as two versions without one", () => {
+      const withDiff = renderReplacedSuggestion("old words here", "new words here", diffParts);
+      expect(withDiff.className).toBe("chat-suggestion chat-suggestion-replaced chat-suggestion-diff");
+      expect(withDiff.querySelector("ins")?.textContent).toBe("new");
+
+      const without = renderReplacedSuggestion("a", "b");
+      expect(without.className).toBe("chat-suggestion chat-suggestion-replaced");
+      expect(without.querySelector(".suggestion-current")?.textContent).toBe("a");
+      expect(without.querySelector(".suggestion-replacement")?.textContent).toBe("b");
+    });
+
+    it("builds the diff again when a refreshed anchor moves", () => {
+      const container = document.createElement("div");
+      container.append(renderChatAnchor(info, 2, () => null));
+      expect(container.querySelector("ins")).toBeNull();
+
+      refreshChatAnchors(container, () => location, diffParts);
+
+      expect(container.querySelector('[data-chat-action="suggest"] ins')?.textContent).toBe("new");
+    });
   });
 
   it("streams many mixed Markdown and XML anchors without replacing earlier nodes", () => {

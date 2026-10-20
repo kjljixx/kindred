@@ -7,7 +7,46 @@ const MARKER_END = "\uE001";
 
 export class UnsupportedAnchorContext extends Error {}
 
-export function renderChatAnchor({ anchor, kind, token }, msgIndex, resolveAnchor) {
+function appendDiffParts(parent, parts) {
+  for (const { type, text } of parts) {
+    if (type === "equal") {
+      parent.append(document.createTextNode(text));
+      continue;
+    }
+    const element = document.createElement(type === "insert" ? "ins" : "del");
+    element.textContent = text;
+    parent.append(element);
+  }
+}
+
+function appendStaticSuggestion(wrapper, original, replacement, diffParts) {
+  wrapper.classList.add("chat-suggestion-replaced");
+  const parts = diffParts?.(original, replacement);
+  if (parts) {
+    wrapper.classList.add("chat-suggestion-diff");
+    const diff = document.createElement("span");
+    diff.className = "suggestion-static suggestion-diff";
+    appendDiffParts(diff, parts);
+    wrapper.append(diff);
+    return;
+  }
+  const currentText = document.createElement("span");
+  currentText.className = "suggestion-static suggestion-current";
+  currentText.textContent = original;
+  const replacementText = document.createElement("span");
+  replacementText.className = "suggestion-static suggestion-replacement";
+  replacementText.textContent = replacement;
+  wrapper.append(currentText, replacementText);
+}
+
+export function renderReplacedSuggestion(original, replacement, diffParts) {
+  const wrapper = document.createElement("span");
+  wrapper.className = "chat-suggestion";
+  appendStaticSuggestion(wrapper, original, replacement, diffParts);
+  return wrapper;
+}
+
+export function renderChatAnchor({ anchor, kind, token }, msgIndex, resolveAnchor, diffParts) {
   const location = resolveAnchor(anchor);
   const suggestion = kind === "suggestion";
   const wrapper = document.createElement("span");
@@ -16,16 +55,12 @@ export function renderChatAnchor({ anchor, kind, token }, msgIndex, resolveAncho
   wrapper.dataset.msgIndex = String(msgIndex);
   if (!location) {
     wrapper.classList.add("suggestion-static");
-    if (suggestion) wrapper.classList.add("chat-suggestion-replaced");
-    const original = document.createElement("span");
-    original.className = suggestion ? "suggestion-static suggestion-current" : "";
-    original.textContent = anchor.original || "";
-    wrapper.append(original);
     if (suggestion) {
-      const replacement = document.createElement("span");
-      replacement.className = "suggestion-static suggestion-replacement";
-      replacement.textContent = anchor.replacement || "";
-      wrapper.append(replacement);
+      appendStaticSuggestion(wrapper, anchor.original || "", anchor.replacement || "", diffParts);
+    } else {
+      const original = document.createElement("span");
+      original.textContent = anchor.original || "";
+      wrapper.append(original);
     }
     return wrapper;
   }
@@ -46,17 +81,23 @@ export function renderChatAnchor({ anchor, kind, token }, msgIndex, resolveAncho
   };
   if (!suggestion) {
     wrapper.append(button("mention", location.original));
+    return wrapper;
+  }
+  const parts = diffParts?.(location.original, anchor.replacement);
+  const replacement = button("suggest", parts ? "" : anchor.replacement, parts ? "suggestion-diff" : "");
+  replacement.dataset.msgIndex = String(msgIndex);
+  replacement.dataset.replacement = anchor.replacement;
+  if (parts) {
+    wrapper.classList.add("chat-suggestion-diff");
+    appendDiffParts(replacement, parts);
   } else {
     wrapper.append(button("current", location.original, "suggestion-current"));
-    const replacement = button("suggest", anchor.replacement);
-    replacement.dataset.msgIndex = String(msgIndex);
-    replacement.dataset.replacement = anchor.replacement;
-    wrapper.append(replacement);
   }
+  wrapper.append(replacement);
   return wrapper;
 }
 
-export function refreshChatAnchors(container, resolveAnchor) {
+export function refreshChatAnchors(container, resolveAnchor, diffParts) {
   const wrappers = container.querySelectorAll("[data-chat-anchor-info]");
   let changed = 0;
   for (const wrapper of wrappers) {
@@ -68,7 +109,7 @@ export function refreshChatAnchors(container, resolveAnchor) {
       : !wrapper.hasAttribute("data-anchor-start")) {
       continue;
     }
-    wrapper.replaceWith(renderChatAnchor(info, Number(wrapper.dataset.msgIndex), () => location));
+    wrapper.replaceWith(renderChatAnchor(info, Number(wrapper.dataset.msgIndex), () => location, diffParts));
     changed++;
   }
   return { scanned: wrappers.length, changed };
