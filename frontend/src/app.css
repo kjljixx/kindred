@@ -1395,6 +1395,7 @@ button.pane-title {
 
 .editor .tiptap,
 .editor .ProseMirror {
+  display: flow-root;
   min-height: 100%;
   outline: none;
   white-space: pre-wrap;
