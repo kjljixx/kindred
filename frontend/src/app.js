@@ -227,6 +227,8 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   /** @type {"list"|"thread"} */
   let chatView = "list";
   let chatBusy = false;
+  let followChatStream = true;
+  let draggingChatScrollbar = false;
   let composerDraft = "";
   let renamingChatId = null;
   let renderedChatId = null;
@@ -3565,10 +3567,45 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
 
   }
 
+  function setFollowChatStream(follow) {
+    if (followChatStream === follow) return;
+    followChatStream = follow;
+    console.debug(`Chat stream scroll following ${follow ? "resumed" : "paused"}`);
+  }
+
+  function bindChatScrollIntent(el) {
+    const pauseFollow = () => setFollowChatStream(false);
+    let touchStartY = 0;
+    el.addEventListener("wheel", (event) => {
+      if (event.deltaY < 0) pauseFollow();
+    }, { passive: true });
+    el.addEventListener("keydown", (event) => {
+      if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pauseFollow();
+    });
+    el.addEventListener("touchstart", (event) => {
+      touchStartY = event.touches[0].clientY;
+    }, { passive: true });
+    el.addEventListener("touchmove", (event) => {
+      if (event.touches[0].clientY > touchStartY) pauseFollow();
+      touchStartY = event.touches[0].clientY;
+    }, { passive: true });
+    el.addEventListener("pointerdown", (event) => {
+      draggingChatScrollbar = event.target === el && event.offsetX >= el.clientWidth;
+    });
+    window.addEventListener("pointerup", () => {
+      draggingChatScrollbar = false;
+    });
+  }
+
   function bindComposerScrollWatch(el) {
     if (!el || el.dataset.sepScroll === "1") return;
     el.dataset.sepScroll = "1";
-    el.addEventListener("scroll", () => syncComposerSeparators(), {
+    bindChatScrollIntent(el);
+    el.addEventListener("scroll", () => {
+      if (scrollAreaAtBottom(el)) setFollowChatStream(true);
+      else if (draggingChatScrollbar) setFollowChatStream(false);
+      syncComposerSeparators();
+    }, {
       passive: true,
     });
   }
@@ -5289,6 +5326,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       chatInput.value = "";
       resizeTextarea(chatInput);
     }
+    setFollowChatStream(true);
     renderChatThread({ stickBottom: true });
     syncChatComposer();
 
@@ -5299,7 +5337,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     let useStandardRenderer = false;
     let pendingScroll = null;
     const renderStandardReply = () => {
-      if (isViewingThisChat()) renderChatThread({ stickBottom: true });
+      if (isViewingThisChat()) renderChatThread({ stickBottom: followChatStream });
     };
     const showTextDelta = (pendingReply, delta) => {
       if (useStandardRenderer || /\[{1,2}(?:mention|suggest|replaced):/i.test(pendingReply.content.slice(-delta.length - 32))) {
@@ -5350,7 +5388,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       if (pendingScroll === null) {
         pendingScroll = requestAnimationFrame(() => {
           pendingScroll = null;
-          if (isViewingThisChat()) feedbackEl.scrollTop = feedbackEl.scrollHeight;
+          if (followChatStream && isViewingThisChat()) feedbackEl.scrollTop = feedbackEl.scrollHeight;
         });
       }
     };
@@ -5401,7 +5439,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       setStatus("");
 
       if (isViewingThisChat()) {
-        renderChatThread({ stickBottom: true });
+        renderChatThread({ stickBottom: followChatStream });
       } else if (paneMode === "chat" && chatView === "list") {
         renderChatList();
       }
