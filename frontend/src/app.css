@@ -2601,7 +2601,7 @@ button.pane-title {
 .chat-suggestion del { background: var(--color-danger-bg); color: var(--accent-danger-300); text-decoration: line-through; border-radius: var(--radius-1); }
 .chat-suggestion del + ins { margin-left: var(--space-2); }
 .chat-suggestion .btn.suggestion-diff { display: block; font-weight: var(--font-weight-1); color: var(--color-text-body); }
-.chat-suggestion .btn.suggestion-diff:hover { color: var(--color-text-body); outline: 1px solid var(--neutral-600); }
+.chat-suggestion .btn.suggestion-diff:hover { color: var(--color-text-body); }
 .chat-suggestion-replaced .suggestion-diff { display: block; color: var(--color-text-body); opacity: var(--opacity-2); }
 
 .chat-composer {

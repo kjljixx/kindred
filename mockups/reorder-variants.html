@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>kindred — reorder variants</title>
+<style>
+:root {
+  --space-1: 2px; --space-2: 4px; --space-3: 6px; --space-4: 8px; --space-5: 12px; --space-6: 16px; --space-7: 24px;
+  --font-size-1: 14px; --font-size-2: 16px; --font-size-3: 18px;
+  --radius-1: 2px; --radius-2: 4px; --radius-3: 8px;
+  --neutral-950: hsl(240,10%,4%); --neutral-900: hsl(240,6%,10%); --neutral-800: hsl(240,5%,16%); --neutral-700: hsl(240,5%,26%);
+  --neutral-500: hsl(240,4%,46%); --neutral-400: hsl(240,5%,65%); --neutral-200: hsl(240,6%,90%); --neutral-50: hsl(0,0%,98%);
+  --primary-300: hsl(213,97%,78%); --primary-600: hsl(218,83%,53%);
+  --font-ui: Geist, ui-sans-serif, system-ui, sans-serif;
+  --tint: hsla(217,91%,60%,.2);
+  --line: hsla(217,91%,60%,.38);
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: var(--space-7); background: var(--neutral-950); color: var(--neutral-200); font-family: var(--font-ui); }
+.group { margin: 0 0 var(--space-5); font-size: var(--font-size-1); font-weight: 700; color: var(--neutral-400); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, 300px); gap: var(--space-6) var(--space-7); margin-bottom: var(--space-7); }
+figcaption { margin-bottom: var(--space-3); font-size: var(--font-size-2); font-weight: 700; color: var(--neutral-50); }
+figcaption i { font-style: normal; display: inline-block; min-width: 22px; text-align: center; margin-right: var(--space-3); padding: 1px var(--space-4); border-radius: var(--radius-3); font-size: 12px; background: var(--tint); color: var(--primary-300); }
+figure { margin: 0; }
+
+.pane { height: 270px; border: 1px solid var(--neutral-700); border-radius: var(--radius-3); background: var(--neutral-900); padding: var(--space-4) var(--space-2); position: relative; overflow: hidden; }
+.row { position: relative; display: flex; align-items: center; gap: var(--space-4); height: 38px; padding: 0 var(--space-5); margin: 0 var(--space-3); border-radius: var(--radius-2); }
+.row .chev { width: 10px; height: 10px; color: var(--neutral-500); transform: rotate(-90deg); flex: none; }
+.row .name { flex: 1; font-size: var(--font-size-2); font-weight: 600; color: var(--neutral-50); }
+.row.lifted { background: var(--neutral-800); box-shadow: 0 0 0 1px var(--primary-600); }
+
+.slot { position: relative; height: 14px; margin: 0 var(--space-3); flex: none; }
+.slot::before { content: ""; position: absolute; left: var(--space-5); right: var(--space-5); top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: var(--line); }
+.slot.on::before { background: var(--primary-300); height: 3px; margin-top: -1.5px; }
+
+/* B: line + plus */
+.plus.slot.on .btn { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: var(--primary-600); color: var(--neutral-50); font-weight: 700; font-size: 16px; line-height: 22px; text-align: center; }
+
+/* C: gap */
+.gap.slot { height: 6px; }
+.gap.slot::before { height: 1px; opacity: .6; }
+.gap.slot.on { height: 38px; margin-top: var(--space-1); margin-bottom: var(--space-1); border: 2px dashed var(--primary-600); background: var(--tint); border-radius: var(--radius-2); }
+.gap.slot.on::before { display: none; }
+
+/* D: half tint */
+.row.half-bottom { background: linear-gradient(transparent 50%, var(--tint) 50%); box-shadow: inset 0 -3px 0 var(--primary-300); }
+
+/* E: ghost */
+.row.ghost { background: var(--tint); border: 2px dashed var(--primary-600); }
+
+/* F: numbers */
+.num { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--neutral-500); color: var(--neutral-400); font-size: 13px; font-weight: 700; display: grid; place-items: center; flex: none; }
+.num.here { background: var(--primary-600); border-color: var(--primary-600); color: var(--neutral-50); }
+.num.on { border-color: var(--primary-300); color: var(--primary-300); background: var(--tint); }
+
+/* G: arrows */
+.steps { display: flex; gap: var(--space-2); }
+.steps b { width: 26px; height: 26px; border-radius: var(--radius-2); background: var(--neutral-700); color: var(--neutral-50); display: grid; place-items: center; font-size: 13px; }
+.steps b.ok { background: var(--primary-600); }
+.steps b.off { opacity: .35; }
+
+/* H: bar */
+.row.target-hover { background: var(--neutral-800); }
+.row.target-hover::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 2px; background: var(--primary-300); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="c" viewBox="0 0 12 12"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M 2.5 4.5 L 6 8 L 9.5 4.5"/></symbol>
+</svg>
+
+<p class="group">Lines</p>
+<div class="grid">
+
+<figure>
+  <figcaption><i>A</i>Line</figcaption>
+  <div class="pane">
+    <div class="slot on"></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Job search</span></div>
+    <div class="row lifted"><svg class="chev"><use href="#c"/></svg><span class="name">School</span></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Work</span></div>
+    <div class="slot"></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Personal</span></div>
+    <div class="slot"></div>
+  </div>
+</figure>
+
+<figure>
+  <figcaption><i>B</i>Line + plus</figcaption>
+  <div class="pane">
+    <div class="slot"></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Job search</span></div>
+    <div class="row lifted"><svg class="chev"><use href="#c"/></svg><span class="name">School</span></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Work</span></div>
+    <div class="plus slot on"><span class="btn">+</span></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Personal</span></div>
+    <div class="slot"></div>
+  </div>
+</figure>
+
+<figure>
+  <figcaption><i>C</i>Gap</figcaption>
+  <div class="pane">
+    <div class="gap slot"></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Job search</span></div>
+    <div class="row lifted"><svg class="chev"><use href="#c"/></svg><span class="name">School</span></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Work</span></div>
+    <div class="gap slot on"></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Personal</span></div>
+    <div class="gap slot"></div>
+  </div>
+</figure>
+
+</div>
+
+<p class="group">No lines</p>
+<div class="grid">
+
+<figure>
+  <figcaption><i>D</i>Half tint</figcaption>
+  <div class="pane">
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Job search</span></div>
+    <div class="row lifted"><svg class="chev"><use href="#c"/></svg><span class="name">School</span></div>
+    <div class="row half-bottom"><svg class="chev"><use href="#c"/></svg><span class="name">Work</span></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Personal</span></div>
+  </div>
+</figure>
+
+<figure>
+  <figcaption><i>E</i>Live preview</figcaption>
+  <div class="pane">
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Job search</span></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Work</span></div>
+    <div class="row ghost"><svg class="chev"><use href="#c"/></svg><span class="name">School</span></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Personal</span></div>
+  </div>
+</figure>
+
+<figure>
+  <figcaption><i>F</i>Numbers</figcaption>
+  <div class="pane">
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Job search</span><span class="num">1</span></div>
+    <div class="row lifted"><svg class="chev"><use href="#c"/></svg><span class="name">School</span><span class="num here">2</span></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Work</span><span class="num">3</span></div>
+    <div class="row target-hover"><svg class="chev"><use href="#c"/></svg><span class="name">Personal</span><span class="num on">4</span></div>
+  </div>
+</figure>
+
+<figure>
+  <figcaption><i>G</i>Arrows</figcaption>
+  <div class="pane">
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Job search</span></div>
+    <div class="row lifted"><svg class="chev"><use href="#c"/></svg><span class="name">School</span><span class="steps"><b>▲</b><b>▼</b><b class="ok">✓</b></span></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Work</span></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Personal</span></div>
+  </div>
+</figure>
+
+<figure>
+  <figcaption><i>H</i>Edge bar</figcaption>
+  <div class="pane">
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Job search</span></div>
+    <div class="row lifted"><svg class="chev"><use href="#c"/></svg><span class="name">School</span></div>
+    <div class="row"><svg class="chev"><use href="#c"/></svg><span class="name">Work</span></div>
+    <div class="row target-hover"><svg class="chev"><use href="#c"/></svg><span class="name">Personal</span></div>
+  </div>
+</figure>
+
+</div>
+</body>
+</html>

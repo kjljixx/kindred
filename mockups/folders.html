@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>kindred — folders mockup</title>
+<style>
+:root {
+  --space-1: 2px; --space-2: 4px; --space-3: 6px; --space-4: 8px; --space-5: 12px; --space-6: 16px; --space-7: 24px; --space-8: 32px;
+  --font-size-1: 14px; --font-size-2: 16px; --font-size-3: 18px;
+  --radius-1: 2px; --radius-2: 4px; --radius-3: 8px;
+  --neutral-950: hsl(240,10%,4%); --neutral-925: hsl(240,8%,7%); --neutral-900: hsl(240,6%,10%);
+  --neutral-800: hsl(240,5%,16%); --neutral-750: hsl(240,5%,20%); --neutral-700: hsl(240,5%,26%);
+  --neutral-600: hsl(240,4%,34%); --neutral-500: hsl(240,4%,46%); --neutral-400: hsl(240,5%,65%);
+  --neutral-200: hsl(240,6%,90%); --neutral-50: hsl(0,0%,98%);
+  --primary-300: hsl(213,97%,78%); --primary-600: hsl(218,83%,53%);
+  --accent-danger-300: hsl(0,93%,82%);
+  --color-bg: var(--neutral-900); --color-bg-inset: var(--neutral-925); --color-bg-raised: var(--neutral-800);
+  --color-border-strong: var(--neutral-700);
+  --color-text: var(--neutral-200); --color-text-bright: var(--neutral-50); --color-text-muted: var(--neutral-400);
+  --color-text-subtle: var(--neutral-500); --color-text-faint: var(--neutral-600);
+  --color-accent: var(--primary-600);
+  --font-ui: Geist, ui-sans-serif, system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: var(--space-7); background: var(--neutral-950); color: var(--color-text); font-family: var(--font-ui); }
+h1 { font-size: 22px; margin: 0 0 var(--space-2); color: var(--color-text-bright); }
+.lede { color: var(--color-text-muted); margin: 0 0 var(--space-7); font-size: var(--font-size-1); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: var(--space-7); align-items: start; }
+figure { margin: 0; }
+figcaption { margin-bottom: var(--space-4); font-size: var(--font-size-1); color: var(--color-text-muted); }
+figcaption b { color: var(--color-text-bright); font-size: var(--font-size-2); margin-right: var(--space-4); }
+.tag { display: inline-block; padding: 1px var(--space-4); border-radius: var(--radius-3); font-size: 12px; font-weight: 600; }
+.tag.before { background: hsla(0,84%,60%,.18); color: var(--accent-danger-300); }
+.tag.after { background: hsla(142,71%,45%,.22); color: hsl(142,77%,73%); }
+
+/* ---- app frame ---- */
+.app { display: grid; grid-template-columns: 38% 1fr; height: 600px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-3); overflow: hidden; background: var(--color-bg); }
+.pane { display: flex; flex-direction: column; min-width: 0; position: relative; }
+.pane + .pane { border-left: 1px solid var(--color-border-strong); }
+.pane-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); height: 48px; padding: 0 var(--space-5); flex: none; }
+.brand, .pane-title { font-weight: 700; font-size: var(--font-size-3); color: var(--color-text-bright); }
+.header-left { display: flex; align-items: baseline; gap: var(--space-4); }
+.btn-tertiary { background: transparent; border: none; color: var(--color-text-muted); font: inherit; font-size: var(--font-size-2); font-weight: 700; padding: var(--space-1) var(--space-2); cursor: pointer; }
+.editor-ph { padding: var(--space-5); color: var(--color-text-faint); font-size: var(--font-size-1); }
+
+/* ---- NEW: view tab bar (same look as the app's .tabs-primary) ---- */
+.mode-row { display: flex; align-items: flex-end; justify-content: space-between; padding: 0 var(--space-5); flex: none; }
+.tabs { display: flex; gap: var(--space-4); }
+.tab { padding: var(--space-3) var(--space-5); font-size: var(--font-size-3); font-weight: 600; color: var(--color-text-muted); border-radius: var(--radius-1) var(--radius-1) 0 0; }
+.tab.active { background: var(--neutral-700); color: var(--color-text-bright); box-shadow: inset 0 -2px 0 var(--color-accent); }
+.mode-row .btn-tertiary { margin-bottom: var(--space-3); }
+
+/* ---- draft list (existing styles, copied) ---- */
+.draft-list { flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); margin-top: var(--space-1); position: relative; }
+.draft-item { position: relative; display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-4) var(--space-5); margin: 0 var(--space-3) var(--space-1); border-radius: var(--radius-2); }
+.draft-item.hover, .draft-item:hover { background: var(--color-bg-raised); }
+.draft-item-body { flex: 1; min-width: 0; }
+.draft-item-title { display: block; font-size: var(--font-size-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.draft-item-meta { display: block; margin-top: var(--space-1); color: var(--color-text-subtle); font-size: var(--font-size-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.draft-item-meta .path { color: var(--primary-300); opacity: .75; }
+.draft-item-actions { display: flex; gap: var(--space-2); visibility: hidden; align-items: center; }
+.draft-item.hover .draft-item-actions, .draft-item:hover .draft-item-actions, .folder-item:hover .draft-item-actions, .folder-item.hover .draft-item-actions { visibility: visible; }
+.draft-item-action { background: transparent; border: none; color: var(--color-text-muted); font: inherit; font-size: 16px; font-weight: 700; padding: 2px var(--space-2); cursor: pointer; line-height: 1.5; display: inline-flex; align-items: center; }
+.draft-item-action:hover { color: var(--color-text); }
+.draft-item-action.danger:hover { color: var(--accent-danger-300); }
+.draft-item-action { font-size: var(--font-size-1); }
+
+/* ---- NEW: folders (nested) ---- */
+.folder-item { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-5); margin: 0 var(--space-3) var(--space-1); border-radius: var(--radius-2); cursor: pointer; }
+.folder-item:hover, .folder-item.hover { background: var(--color-bg-raised); }
+.folder-item.drop-target { background: hsla(217,91%,60%,.18); outline: 1px dashed var(--primary-300); }
+.folder-chevron { width: 10px; height: 10px; flex: none; color: var(--color-text-subtle); transform: rotate(-90deg); }
+.folder-item.open > .folder-chevron { transform: rotate(0); }
+.folder-name { flex: 1; min-width: 0; font-size: var(--font-size-2); font-weight: 600; color: var(--color-text-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.folder-children { margin-left: 18px; border-left: 1px solid transparent; }
+.folder-children:hover, .folder-children.hover-line { border-left-color: var(--neutral-700); }
+.folder-input { flex: 1; background: transparent; border: none; border-bottom: 1px solid var(--color-accent); color: var(--color-text); font: inherit; font-size: var(--font-size-2); outline: none; padding: 0; }
+.empty { color: var(--color-text-muted); text-align: center; margin: var(--space-6) var(--space-7); font-size: var(--font-size-1); }
+.export-menu { position: absolute; z-index: 2; min-width: 9rem; padding: var(--space-3); background: var(--color-bg-raised); border-radius: var(--radius-2); box-shadow: 0 4px 24px hsl(240 10% 4% / .9); overflow: hidden; }
+.export-menu .item { display: block; padding: var(--space-3) var(--space-5); border-radius: var(--radius-1); color: var(--neutral-50); font-size: 18px; font-weight: 500; white-space: nowrap; }
+.export-menu .item.hover { background: var(--neutral-700); }
+.export-menu .item.current { color: var(--primary-300); }
+.export-menu .item.l1 { padding-left: calc(var(--space-5) * 2); }
+.opt-note { margin: var(--space-2) 0 0; color: var(--color-text-muted); font-size: var(--font-size-1); }
+.rec { color: hsl(142,77%,73%); font-weight: 600; }
+.add-row { margin: 0 var(--space-3); padding: var(--space-4) var(--space-5); color: var(--color-text-muted); font-size: 16px; font-weight: 700; }
+.app.short { height: 380px; }
+.callout { position: absolute; font-size: 12px; color: var(--primary-300); background: var(--color-bg-inset); border: 1px solid var(--primary-600); border-radius: var(--radius-3); padding: 2px var(--space-4); white-space: nowrap; }
+.notes { margin-top: var(--space-4); padding-left: var(--space-6); color: var(--color-text-muted); font-size: var(--font-size-1); line-height: 1.5; }
+.notes li { margin-bottom: var(--space-2); }
+.notes code { color: var(--primary-300); }
+.wide { grid-column: 1 / -1; }
+.phone { width: 340px; height: 600px; margin: 0 auto; border: 1px solid var(--color-border-strong); border-radius: 18px; overflow: hidden; display: flex; flex-direction: column; background: var(--color-bg); }
+.phone .wsnav { margin-top: auto; display: flex; border-top: 1px solid var(--color-border-strong); }
+.phone .wsnav span { flex: 1; text-align: center; padding: var(--space-4); color: var(--color-text-muted); font-size: var(--font-size-1); }
+.phone .wsnav span.on { color: var(--color-text-bright); box-shadow: inset 0 -2px 0 var(--color-accent); }
+.phone .tab { padding: var(--space-3) var(--space-4); }
+.phone .draft-item-actions { visibility: visible; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 12 12"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M 2.5 4.5 L 6 8 L 9.5 4.5"/></symbol>
+</svg>
+
+<h1>Folders for drafts — UI mockup (All · Folders · Unfiled)</h1>
+<p class="lede">Revised: tertiary row buttons, export-style Move menu (no New folder entry), New Folder placement options near the bottom. Right pane, home view (no draft open). Real design tokens. "Hover" rows show actions that appear on hover/focus. The selected view is remembered.</p>
+
+<div class="grid">
+
+<!-- ============ BEFORE ============ -->
+<figure>
+  <figcaption><span class="tag before">BEFORE</span><b>Flat draft list</b>Every draft in one list, newest first.</figcaption>
+  <div class="app">
+    <div class="pane"><div class="pane-header"><span class="brand">kindred</span></div><div class="editor-ph">Paste or type text here…</div></div>
+    <div class="pane">
+      <div class="pane-header"><div class="header-left"><span class="pane-title">Drafts</span></div></div>
+      <div class="draft-list">
+        <div class="draft-item hover"><div class="draft-item-body"><span class="draft-item-title">Q3 planning memo</span><span class="draft-item-meta">Oct 9, 4:12 PM</span></div><div class="draft-item-actions"><button class="draft-item-action danger">×</button></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Linear algebra — problem set 4</span><span class="draft-item-meta">Oct 9, 1:40 PM</span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Cover letter — Acme</span><span class="draft-item-meta">Oct 8, 9:05 PM</span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Untitled draft</span><span class="draft-item-meta">Oct 7, 6:30 PM</span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Thesis outline</span><span class="draft-item-meta">Oct 6, 11:18 AM</span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Meeting notes — design sync</span><span class="draft-item-meta">Oct 4, 3:02 PM</span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Linear algebra — midterm notes</span><span class="draft-item-meta">Oct 2, 8:47 PM</span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Grant proposal v2</span><span class="draft-item-meta">Sep 29, 2:15 PM</span></div></div>
+      </div>
+    </div>
+  </div>
+  <ul class="notes">
+    <li>No grouping; the list grows without bound.</li>
+    <li>Right-click / long-press renames; <code>×</code> deletes.</li>
+  </ul>
+</figure>
+
+<!-- ============ AFTER: ALL ============ -->
+<figure>
+  <figcaption><span class="tag after">AFTER</span><b>All</b>Same flat list as today, plus the folder path on each filed draft.</figcaption>
+  <div class="app">
+    <div class="pane"><div class="pane-header"><span class="brand">kindred</span></div><div class="editor-ph">Paste or type text here…</div></div>
+    <div class="pane">
+      <div class="pane-header"><div class="header-left"><span class="pane-title">Drafts</span></div></div>
+      <div class="mode-row"><div class="tabs"><span class="tab active">All</span><span class="tab">Folders</span><span class="tab">Unfiled</span></div></div>
+      <div class="draft-list">
+        <div class="draft-item hover"><div class="draft-item-body"><span class="draft-item-title">Q3 planning memo</span><span class="draft-item-meta">Oct 9, 4:12 PM</span></div><div class="draft-item-actions"><button class="draft-item-action">Move</button><button class="draft-item-action danger">×</button></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Linear algebra — problem set 4</span><span class="draft-item-meta">Oct 9, 1:40 PM · <span class="path">School / Math</span></span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Cover letter — Acme</span><span class="draft-item-meta">Oct 8, 9:05 PM · <span class="path">Job search</span></span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Untitled draft</span><span class="draft-item-meta">Oct 7, 6:30 PM</span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Thesis outline</span><span class="draft-item-meta">Oct 6, 11:18 AM · <span class="path">School</span></span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Meeting notes — design sync</span><span class="draft-item-meta">Oct 4, 3:02 PM · <span class="path">Work</span></span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Linear algebra — midterm notes</span><span class="draft-item-meta">Oct 2, 8:47 PM · <span class="path">School / Math</span></span></div></div>
+      </div>
+    </div>
+  </div>
+  <ul class="notes">
+    <li>Default tab. Looks and behaves like today's list.</li>
+    <li>The blue path in the meta line shows where each draft lives.</li>
+  </ul>
+</figure>
+
+<!-- ============ AFTER: FOLDERS ============ -->
+<figure>
+  <figcaption><span class="tag after">AFTER</span><b>Folders</b>Nested tree. Folders A–Z; drafts inside each folder newest first.</figcaption>
+  <div class="app">
+    <div class="pane"><div class="pane-header"><span class="brand">kindred</span></div><div class="editor-ph">Paste or type text here…</div></div>
+    <div class="pane">
+      <div class="pane-header"><div class="header-left"><span class="pane-title">Drafts</span></div></div>
+      <div class="mode-row"><div class="tabs"><span class="tab">All</span><span class="tab active">Folders</span><span class="tab">Unfiled</span></div><button class="btn-tertiary">New Folder</button></div>
+      <div class="draft-list">
+        <div class="folder-item open"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Job search</span></div>
+        <div class="folder-children">
+          <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Cover letter — Acme</span><span class="draft-item-meta">Oct 8, 9:05 PM</span></div></div>
+        </div>
+        <div class="folder-item open hover"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">School</span>
+          <div class="draft-item-actions"><button class="draft-item-action" title="New subfolder">+</button><button class="draft-item-action danger">×</button></div></div>
+        <div class="folder-children hover-line">
+          <div class="folder-item open"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Math</span></div>
+          <div class="folder-children">
+            <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Linear algebra — problem set 4</span><span class="draft-item-meta">Oct 9, 1:40 PM</span></div></div>
+            <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Linear algebra — midterm notes</span><span class="draft-item-meta">Oct 2, 8:47 PM</span></div></div>
+          </div>
+          <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Thesis outline</span><span class="draft-item-meta">Oct 6, 11:18 AM</span></div></div>
+        </div>
+        <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Work</span></div>
+      </div>
+    </div>
+  </div>
+  <ul class="notes">
+    <li><b>New Folder</b> sits on the tab row and shows only on this tab.</li>
+    <li>Click a folder to expand or collapse it. State is saved.</li>
+    <li>No icons or counts. Draft titles line up under their folder's name; a faint guide line appears only while the pointer is inside a folder.</li>
+    <li>Hover a folder for <code>+</code> (new subfolder) and <code>×</code>.</li>
+    <li>Only folders appear here. Loose drafts are in <b>Unfiled</b>.</li>
+  </ul>
+</figure>
+
+<!-- ============ AFTER: UNFILED ============ -->
+<figure>
+  <figcaption><span class="tag after">AFTER</span><b>Unfiled</b>Only drafts with no folder. Works as an inbox to sort.</figcaption>
+  <div class="app">
+    <div class="pane"><div class="pane-header"><span class="brand">kindred</span></div><div class="editor-ph">Paste or type text here…</div></div>
+    <div class="pane">
+      <div class="pane-header"><div class="header-left"><span class="pane-title">Drafts</span></div></div>
+      <div class="mode-row"><div class="tabs"><span class="tab">All</span><span class="tab">Folders</span><span class="tab active">Unfiled</span></div></div>
+      <div class="draft-list">
+        <div class="draft-item hover"><div class="draft-item-body"><span class="draft-item-title">Q3 planning memo</span><span class="draft-item-meta">Oct 9, 4:12 PM</span></div><div class="draft-item-actions"><button class="draft-item-action" style="color:var(--primary-300)">Move</button><button class="draft-item-action danger">×</button></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Untitled draft</span><span class="draft-item-meta">Oct 7, 6:30 PM</span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Grant proposal v2</span><span class="draft-item-meta">Sep 29, 2:15 PM</span></div></div>
+        <p class="empty" style="margin-top:var(--space-7)">When every draft is filed this tab shows:<br /><i>“All drafts are in folders.”</i></p>
+      </div>
+    </div>
+  </div>
+  <ul class="notes">
+    <li>Moving a draft out of this tab removes it from the list right away.</li>
+    <li>Tab is last because it is the narrowest, most task-focused view.</li>
+  </ul>
+</figure>
+
+<!-- ============ AFTER: MOVE MENU ============ -->
+<figure>
+  <figcaption><span class="tag after">AFTER</span><b>Move menu</b>Same menu look as the Export formats menu.</figcaption>
+  <div class="app">
+    <div class="pane"><div class="pane-header"><span class="brand">kindred</span></div><div class="editor-ph">Paste or type text here…</div></div>
+    <div class="pane">
+      <div class="pane-header"><div class="header-left"><span class="pane-title">Drafts</span></div></div>
+      <div class="mode-row"><div class="tabs"><span class="tab active">All</span><span class="tab">Folders</span><span class="tab">Unfiled</span></div></div>
+      <div class="draft-list">
+        <div class="draft-item hover"><div class="draft-item-body"><span class="draft-item-title">Q3 planning memo</span><span class="draft-item-meta">Oct 9, 4:12 PM</span></div><div class="draft-item-actions"><button class="draft-item-action" style="color:var(--color-text)">Move</button><button class="draft-item-action danger">×</button></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Linear algebra — problem set 4</span><span class="draft-item-meta">Oct 9, 1:40 PM · <span class="path">School / Math</span></span></div></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Cover letter — Acme</span><span class="draft-item-meta">Oct 8, 9:05 PM · <span class="path">Job search</span></span></div></div>
+        <div class="export-menu" style="top:62px; right:14px;">
+          <span class="item current">No folder</span>
+          <span class="item">Job search</span>
+          <span class="item">School</span>
+          <span class="item l1 hover">Math</span>
+          <span class="item">Work</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <ul class="notes">
+    <li>Uses the Export menu's look: raised background, 4px radius, drop shadow, 18px medium text, grey hover.</li>
+    <li>Nested folders are indented. The current location is tinted blue.</li>
+    <li>No "New folder" entry. With no folders the menu shows a dimmed "No folders yet".</li>
+    <li><b>Move</b>, <b>+</b> and <b>New Folder</b> are tertiary buttons (bold, muted, brighten on hover), like Reset/Restore in the Git pane.</li>
+    <li><code>role="menu"</code>, arrow keys move focus, <kbd>Esc</kbd> closes.</li>
+  </ul>
+</figure>
+
+<!-- ============ AFTER: CREATE / RENAME ============ -->
+<figure>
+  <figcaption><span class="tag after">AFTER</span><b>Creating a folder</b>Inline name input, same pattern as renaming a draft.</figcaption>
+  <div class="app">
+    <div class="pane"><div class="pane-header"><span class="brand">kindred</span></div><div class="editor-ph">Paste or type text here…</div></div>
+    <div class="pane">
+      <div class="pane-header"><div class="header-left"><span class="pane-title">Drafts</span></div></div>
+      <div class="mode-row"><div class="tabs"><span class="tab">All</span><span class="tab active">Folders</span><span class="tab">Unfiled</span></div><button class="btn-tertiary">New Folder</button></div>
+      <div class="draft-list">
+        <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><input class="folder-input" value="Reading list" aria-label="Folder name" /></div>
+        <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">School</span></div>
+        <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Work</span></div>
+      </div>
+    </div>
+  </div>
+  <ul class="notes">
+    <li>Enter commits; Esc or an empty name cancels.</li>
+    <li>Right-click / long-press on a folder renames it. <code>+</code> on a folder adds a subfolder.</li>
+    <li>Where the "New Folder" button lives is still open: see the options below.</li>
+  </ul>
+</figure>
+
+<!-- ============ NEW FOLDER PLACEMENT OPTIONS ============ -->
+<figure class="wide" style="margin-top:var(--space-4)">
+  <figcaption><b style="font-size:20px">Where should New Folder go?</b> Four options, Folders tab shown. Not implemented yet; the app currently uses A.</figcaption>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(480px,1fr))">
+<figure>
+  <figcaption><span class="tag after">OPTION A</span><b>Right end of the tab row (current)</b></figcaption>
+  <div class="app short">
+    <div class="pane"><div class="pane-header"><span class="brand">kindred</span></div><div class="editor-ph">Paste or type text here…</div></div>
+    <div class="pane">
+      <div class="pane-header"><div class="header-left"><span class="pane-title">Drafts</span></div></div>
+      <div class="mode-row"><div class="tabs"><span class="tab">All</span><span class="tab active">Folders</span><span class="tab">Unfiled</span></div><button class="btn-tertiary">New Folder</button></div>
+      <div class="draft-list">
+        <div class="folder-item open"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">School</span></div>
+        <div class="folder-children">
+          <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Math</span></div>
+          <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Thesis outline</span><span class="draft-item-meta">Oct 6, 11:18 AM</span></div></div>
+        </div>
+        <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Work</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="opt-note">Always visible. Competes with the tabs for width; on narrow panes it shrinks to a plus sign.</p>
+</figure>
+
+<figure>
+  <figcaption><span class="tag after">OPTION B</span><b>Next to the Drafts title</b> <span class="rec">· recommended</span></figcaption>
+  <div class="app short">
+    <div class="pane"><div class="pane-header"><span class="brand">kindred</span></div><div class="editor-ph">Paste or type text here…</div></div>
+    <div class="pane">
+      <div class="pane-header"><div class="header-left"><span class="pane-title">Drafts</span><button class="btn-tertiary">New Folder</button></div></div>
+      <div class="mode-row"><div class="tabs"><span class="tab">All</span><span class="tab active">Folders</span><span class="tab">Unfiled</span></div></div>
+      <div class="draft-list">
+        <div class="folder-item open"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">School</span></div>
+        <div class="folder-children">
+          <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Math</span></div>
+          <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Thesis outline</span><span class="draft-item-meta">Oct 6, 11:18 AM</span></div></div>
+        </div>
+        <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Work</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="opt-note">Same spot as New beside Chats in the chat pane. Always visible and keeps the tab row clean. Shown only on the Folders tab.</p>
+</figure>
+
+<figure>
+  <figcaption><span class="tag after">OPTION C</span><b>Last row of the folder list</b></figcaption>
+  <div class="app short">
+    <div class="pane"><div class="pane-header"><span class="brand">kindred</span></div><div class="editor-ph">Paste or type text here…</div></div>
+    <div class="pane">
+      <div class="pane-header"><div class="header-left"><span class="pane-title">Drafts</span></div></div>
+      <div class="mode-row"><div class="tabs"><span class="tab">All</span><span class="tab active">Folders</span><span class="tab">Unfiled</span></div></div>
+      <div class="draft-list">
+        <div class="folder-item open"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">School</span></div>
+        <div class="folder-children">
+          <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Math</span></div>
+          <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Thesis outline</span><span class="draft-item-meta">Oct 6, 11:18 AM</span></div></div>
+        </div>
+        <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Work</span></div>
+        <div class="add-row">New Folder</div>
+      </div>
+    </div>
+  </div>
+  <p class="opt-note">No extra chrome; it sits where the new folder will appear. Scrolls out of view when the list is long.</p>
+</figure>
+
+<figure>
+  <figcaption><span class="tag after">OPTION D</span><b>Attached to the Folders tab</b></figcaption>
+  <div class="app short">
+    <div class="pane"><div class="pane-header"><span class="brand">kindred</span></div><div class="editor-ph">Paste or type text here…</div></div>
+    <div class="pane">
+      <div class="pane-header"><div class="header-left"><span class="pane-title">Drafts</span></div></div>
+      <div class="mode-row"><div class="tabs"><span class="tab">All</span><span class="tab active">Folders&nbsp;&nbsp;<span style="color:var(--primary-300)">+</span></span><span class="tab">Unfiled</span></div></div>
+      <div class="draft-list">
+        <div class="folder-item open"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">School</span></div>
+        <div class="folder-children">
+          <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Math</span></div>
+          <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Thesis outline</span><span class="draft-item-meta">Oct 6, 11:18 AM</span></div></div>
+        </div>
+        <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Work</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="opt-note">A plus sign inside the active Folders tab. Compact, but the tab then has two click targets (switch view vs. create).</p>
+</figure>
+
+  </div>
+</figure>
+
+<!-- ============ MOBILE ============ -->
+<figure class="wide">
+  <figcaption><span class="tag after">AFTER</span><b>Narrow / mobile</b>Folders tab. Action buttons are always visible on touch, like the current delete button.</figcaption>
+  <div class="phone">
+    <div class="pane-header"><div class="header-left"><span class="pane-title">Drafts</span></div></div>
+    <div class="mode-row"><div class="tabs"><span class="tab">All</span><span class="tab active">Folders</span><span class="tab">Unfiled</span></div><button class="btn-tertiary">＋</button></div>
+    <div class="draft-list">
+      <div class="folder-item open"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">School</span></div>
+      <div class="folder-children">
+        <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Math</span></div>
+        <div class="draft-item"><div class="draft-item-body"><span class="draft-item-title">Thesis outline</span><span class="draft-item-meta">Oct 6, 11:18 AM</span></div><div class="draft-item-actions"><button class="draft-item-action">Move</button><button class="draft-item-action danger">×</button></div></div>
+      </div>
+      <div class="folder-item"><svg class="folder-chevron"><use href="#i-chev"/></svg><span class="folder-name">Work</span></div>
+    </div>
+    <div class="wsnav"><span class="on">Draft</span><span>Chat</span><span>Git</span></div>
+  </div>
+  <ul class="notes" style="max-width:340px;margin-left:auto;margin-right:auto">
+    <li>"New Folder" collapses to a <b>＋</b> icon on narrow widths.</li>
+  </ul>
+</figure>
+
+</div>
+</body>
+</html>

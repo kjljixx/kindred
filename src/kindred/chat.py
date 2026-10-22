@@ -5,7 +5,7 @@ from typing import Any
 from kindred import prompts
 from kindred.lm import reflect_chat, reflect_chat_stream
 
-DEFAULT_MODEL = "openrouter/free"
+DEFAULT_MODEL = "openai/gpt-6-luna"
 
 
 def _selection_offsets(selection: dict[str, Any] | None) -> tuple[int, int]:
