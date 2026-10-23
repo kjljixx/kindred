@@ -288,7 +288,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   let renameSource = null; // "header" | "list"
   const DRAFT_ROW_SELECTOR = ".draft-item, .folder-item";
   const DRAFT_VIEWS = ["recents", "folders"];
-  const DRAFT_VIEW_SHORTCUTS = { "8": "recents", "9": "folders" };
   const draftViewStorageKey = "kindred-draft-view";
   const unfiledCollapsedStorageKey = "kindred-unfiled-collapsed";
   let draftView = DRAFT_VIEWS.includes(localStorage.getItem(draftViewStorageKey))
@@ -5952,18 +5951,16 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
         focusEditorSoon({ allowHome: true });
       }
       else if (key === "[") {
-        if (activeDraftId) {
-          e.preventDefault();
-          e.stopPropagation();
-          setPaneMode("chat");
-        }
+        e.preventDefault();
+        e.stopPropagation();
+        if (activeDraftId) setPaneMode("chat");
+        else setDraftView("recents");
       }
       else if (key === "]") {
-        if (activeDraftId) {
-          e.preventDefault();
-          e.stopPropagation();
-          setPaneMode("git");
-        }
+        e.preventDefault();
+        e.stopPropagation();
+        if (activeDraftId) setPaneMode("git");
+        else setDraftView("folders");
       }
       else if (key === "enter") {
         if (paneMode === "git" && activeDraftId && !gitBusy && !isViewingHistory() && hasExportableBody()) {
@@ -5982,11 +5979,10 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
         e.stopPropagation();
         void focusOrStartChat();
       }
-      else if (key in DRAFT_VIEW_SHORTCUTS) {
+      else if (activeDraftId && (key === "8" || key === "9" || key === "0")) {
         e.preventDefault();
         e.stopPropagation();
-        if (!activeDraftId) setDraftView(DRAFT_VIEW_SHORTCUTS[key]);
-        else if (key === "8") void runGit(() => setDirtyEditView("Text"));
+        if (key === "8") void runGit(() => setDirtyEditView("Text"));
         else if (key === "9") void runGit(() => setDirtyEditView("Diff"));
         else void runGit(enterDirtyReview);
       }
