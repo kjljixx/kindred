@@ -1893,11 +1893,15 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     return `<input class="folder-name-input" data-action="folder-input" ${identity} value="${escapeHtml(value)}" aria-label="Folder name" />`;
   }
 
-  function pendingFolderRowHtml() {
-    return `<div class="folder-item" role="listitem">${FOLDER_CHEVRON_SVG}${folderNameInputHtml()}</div>`;
+  function folderDepthStyle(depth) {
+    return depth ? ` style="--folder-depth:${depth}"` : "";
   }
 
-  function folderRowHtml(node) {
+  function pendingFolderRowHtml(depth = 0) {
+    return `<div class="folder-item" role="listitem"${folderDepthStyle(depth)}>${FOLDER_CHEVRON_SVG}${folderNameInputHtml()}</div>`;
+  }
+
+  function folderRowHtml(node, depth) {
     const { folder } = node;
     const open = !folder.collapsed;
     const nameHtml =
@@ -1905,7 +1909,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
         ? folderNameInputHtml({ id: folder.id, value: folder.name })
         : `<span class="folder-name">${escapeHtml(folder.name)}</span>`;
     return (
-      `<div class="folder-item${open ? " open" : ""}${placingFolderId === folder.id ? " lifted" : ""}" role="listitem" tabindex="-1" aria-expanded="${open}" data-folder-id="${escapeHtml(folder.id)}">` +
+      `<div class="folder-item${open ? " open" : ""}${placingFolderId === folder.id ? " lifted" : ""}" role="listitem" tabindex="-1" aria-expanded="${open}" data-folder-id="${escapeHtml(folder.id)}"${folderDepthStyle(depth)}>` +
       FOLDER_CHEVRON_SVG +
       nameHtml +
       `<div class="draft-item-actions">` +
@@ -1913,21 +1917,21 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       draftActionButtonHtml("add-subfolder", "New subfolder", "New") +
       draftActionButtonHtml("delete-folder", "Delete folder", "×", "draft-item-delete") +
       `</div></div>` +
-      (open ? folderChildrenHtml(node) : "")
+      (open ? folderChildrenHtml(node, depth + 1) : "")
     );
   }
 
   /** Sibling folder rows; while placing, a slot sits between siblings wherever the picked-up folder would actually move. */
-  function folderListHtml(nodes, parentId) {
+  function folderListHtml(nodes, parentId, depth = 0) {
     const picked = folderState.folders.find((f) => f.id === placingFolderId);
-    if (!picked || (picked.parentId || null) !== parentId) return nodes.map(folderRowHtml).join("");
+    if (!picked || (picked.parentId || null) !== parentId) return nodes.map((node) => folderRowHtml(node, depth)).join("");
     const pickedIndex = nodes.findIndex((node) => node.folder.id === picked.id);
     const slotHtml = (beforeId) =>
       `<button type="button" class="folder-slot" tabindex="-1" data-action="place-folder" data-before-id="${escapeHtml(beforeId)}" aria-label="Place folder here"></button>`;
     let html = "";
     nodes.forEach((node, index) => {
       if (index !== pickedIndex && index !== pickedIndex + 1) html += slotHtml(node.folder.id);
-      html += folderRowHtml(node);
+      html += folderRowHtml(node, depth);
     });
     return pickedIndex === nodes.length - 1 ? html : html + slotHtml("");
   }
@@ -1936,9 +1940,9 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     return `<button type="button" class="btn btn-tertiary folder-add" data-action="new-folder">New Folder</button>`;
   }
 
-  function folderChildrenHtml({ folder, folders, drafts: folderDrafts }) {
-    const pending = pendingFolder?.parentId === folder.id ? pendingFolderRowHtml() : "";
-    const rows = pending + folderListHtml(folders, folder.id) + folderDrafts.map((d) => draftRowHtml(d)).join("");
+  function folderChildrenHtml({ folder, folders, drafts: folderDrafts }, depth) {
+    const pending = pendingFolder?.parentId === folder.id ? pendingFolderRowHtml(depth) : "";
+    const rows = pending + folderListHtml(folders, folder.id, depth) + folderDrafts.map((d) => draftRowHtml(d)).join("");
     return rows ? `<div class="folder-children" role="list">${rows}</div>` : "";
   }
 
