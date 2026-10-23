@@ -548,9 +548,9 @@ button.pane-title {
 }
 
 .draft-item:hover > .draft-item-actions,
-.draft-item:focus-within > .draft-item-actions,
+.draft-item:focus-within:not(:focus-visible) > .draft-item-actions,
 .folder-item:hover > .draft-item-actions,
-.folder-item:focus-within > .draft-item-actions {
+.folder-item:focus-within:not(:focus-visible) > .draft-item-actions {
   display: flex;
 }
 
