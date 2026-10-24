@@ -4503,7 +4503,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     workingDirty = false;
     await refreshCommits();
     const wt = await store.readWorkingFiles(activeDraftId);
-    loadSnapshotState(wt, { historical: false });
+    await withViewAnchor(() => loadSnapshotState(wt, { historical: false }));
     setStatus("");
     await refreshDraftList();
     renamingGit = { kind: "commit", key: oid };
