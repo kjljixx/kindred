@@ -3684,7 +3684,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
                 const role = m.role === "assistant" ? "assistant" : "user";
 
                 let thinkingHtml = "";
-                if (role === "assistant" && m.thinking) {
+                if (role === "assistant" && typeof m.thinking === "string") {
                   const isCollapsed = m.thinkingCollapsed !== false;
                   const btnHtml =
                     `<div class="chat-thinking-label">` +
@@ -5295,7 +5295,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       chat.messages = [
         ...priorMessages,
         { role: "user", content: text, ...(source.sentComments && { sentComments: source.sentComments }) },
-        { role: "assistant", content: "" },
+        { role: "assistant", content: "", thinking: "" },
       ];
       sentComments = source.sentComments || [];
       forEachChatComment(chat, (c) => {
@@ -5307,7 +5307,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       sentComments = pending.map(({ quote, note }) => ({ quote, note }));
       chat.messages.push(
         { role: "user", content: text, ...(sentComments.length && { sentComments }) },
-        { role: "assistant", content: "" }
+        { role: "assistant", content: "", thinking: "" }
       );
       pending.forEach((c) => {
         c.replyIndex = chat.messages.length - 1;
@@ -5335,7 +5335,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
 
     chatBusy = true;
     syncChatComposer();
-    setStatus("replying...");
     let streamingReply = null;
     let useStandardRenderer = false;
     let pendingScroll = null;
@@ -5365,7 +5364,9 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
             renderStandardReply();
             return;
           }
-          body.textContent = "";
+          [...body.childNodes].forEach((node) => {
+            if (!node.classList?.contains("chat-thinking")) node.remove();
+          });
           streamingReply = {
             body,
             parser: createChatMarkdownStream(body, {
@@ -5435,6 +5436,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       if (data.reasoning_summary) {
         pendingReply.thinking = data.reasoning_summary;
       }
+      if (!pendingReply.thinking) delete pendingReply.thinking;
       chat.lastBranch = currentBranchName || chat.lastBranch || "main";
       chat.updatedAt = Date.now();
       draftCost += cost;
