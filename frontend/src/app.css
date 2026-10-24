@@ -57,6 +57,7 @@
   --neutral-0: hsl(0, 0%, 100%);
 
   /* Primary / complementary (20%) — blue */
+  --primary-200: hsl(213, 97%, 84%);
   --primary-300: hsl(213, 97%, 78%);
   --primary-400: hsl(213, 94%, 68%);
   --primary-500: hsl(215, 91%, 57%);
@@ -2583,22 +2584,22 @@ button.pane-title {
 }
 
 .chat-msg.user.is-editing .chat-msg-body { box-shadow: inset 0 0 0 1px var(--color-accent); }
-.chat-mention { display: inline-flex; max-width: 100%; margin: 0 var(--space-1); padding: var(--space-1); border-radius: var(--radius-3); background: var(--color-bg-raised); }
-.chat-mention .btn { font-size: 14px; min-width: 0; max-width: 100%; padding: var(--space-1) var(--space-2); overflow-wrap: anywhere; white-space: normal; color: hsl(32, 100%, 60%); text-align: left; }
-.chat-mention .btn:hover { color: hsl(32, 100%, 70%); }
-.chat-mention.suggestion-static { color: hsl(32, 25%, 60%); }
+.chat-mention { display: inline-block; position: relative; z-index: 0; max-width: 100%; margin: 0 var(--space-1); padding: var(--space-1) calc(var(--space-1) + var(--space-2)); border-radius: var(--radius-3); background: var(--color-bg-raised); }
+.chat-mention .btn { display: inline; box-decoration-break: clone; font-size: 14px; font-weight: var(--font-weight-1); min-width: 0; max-width: 100%; padding: 0; overflow-wrap: anywhere; white-space: normal; background: var(--blue-bg); color: var(--primary-200); text-align: left; }
+.chat-mention .btn::after { content: ""; position: absolute; inset: 0; z-index: -1; }
+.chat-mention .btn:hover { color: var(--primary-200); }
+.chat-mention.suggestion-static { color: var(--primary-200); opacity: var(--opacity-2); }
 .chat-suggestion { display: inline-flex; max-width: 100%; flex-wrap: wrap; align-items: stretch; gap: var(--space-3); margin: 0 var(--space-1); padding: var(--space-1); border-radius: var(--radius-3); background: var(--color-bg-raised); color: var(--color-text-muted); }
 .chat-suggestion .btn { font-size: 14px; flex: 0 1 auto; min-width: 0; max-width: 100%; padding: var(--space-1) var(--space-2); overflow-wrap: anywhere; white-space: normal; text-align: left; }
-.chat-suggestion .suggestion-current { color: hsl(32, 100%, 60%); }
-.chat-suggestion .suggestion-current:hover { background: transparent; color: hsl(32, 100%, 70%); }
-.chat-suggestion .btn:not(.suggestion-current) { color: hsl(from var(--accent-success-500) h s 50%); }
-.chat-suggestion .btn:not(.suggestion-current):hover { color: var(--accent-success-300); }
+.chat-suggestion .suggestion-current { background: var(--color-danger-bg); color: var(--accent-danger-300); text-decoration: line-through; }
+.chat-suggestion .suggestion-current:hover { background: hsla(0, 84%, 60%, 0.3); color: var(--accent-danger-300); }
+.chat-suggestion .btn:not(.suggestion-current):not(.suggestion-diff) { background: var(--color-success-bg); color: var(--accent-success-300); }
+.chat-suggestion .btn:not(.suggestion-current):not(.suggestion-diff):hover { background: hsla(142, 71%, 45%, 0.35); color: var(--accent-success-300); }
 .chat-suggestion-replaced { pointer-events: none; }
 .suggestion-static { font-size: 14px; flex: 0 1 auto; min-width: 0; padding: var(--space-1) var(--space-2); overflow-wrap: anywhere; white-space: normal; text-align: left; }
-.chat-suggestion-replaced .suggestion-current { color: hsl(32, 25%, 60%); }
-.chat-suggestion-replaced .suggestion-replacement { color: hsl(from var(--accent-success-500) h 25% 60%); }
 .chat-suggestion-replaced .suggestion-static { background: transparent; border: 0; border-radius: var(--btn-radius); font: inherit; font-size: 14px; line-height: inherit; }
-.suggestion-replacement { color: var(--accent-success-500); }
+.chat-suggestion-replaced .suggestion-current { background: var(--color-danger-bg); color: var(--accent-danger-300); text-decoration: line-through; opacity: var(--opacity-2); }
+.chat-suggestion-replaced .suggestion-replacement { background: var(--color-success-bg); color: var(--accent-success-300); opacity: var(--opacity-2); }
 .suggest-preview-original { display: none; }
 .suggest-preview-replacement { background: var(--color-success-bg); color: var(--accent-success-300); }
 .chat-suggestion ins { background: var(--color-success-bg); color: var(--accent-success-300); text-decoration: none; border-radius: var(--radius-1); }
