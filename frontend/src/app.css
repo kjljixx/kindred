@@ -2588,6 +2588,9 @@ button.pane-title {
 .chat-mention .btn { display: inline; box-decoration-break: clone; font-size: 14px; font-weight: var(--font-weight-1); min-width: 0; max-width: 100%; padding: 0; overflow-wrap: anywhere; white-space: normal; background: var(--blue-bg); color: var(--primary-200); text-align: left; }
 .chat-mention .btn::after { content: ""; position: absolute; inset: 0; z-index: -1; }
 .chat-mention .btn:hover { color: var(--primary-200); }
+.chat-mention:hover { background: var(--neutral-750); }
+.chat-mention:hover .btn { background: var(--blue-bg-raised); }
+.chat-suggestion:hover { background: var(--neutral-750); }
 .chat-mention.suggestion-static { padding: var(--space-1) calc(var(--space-1) + var(--space-2)); }
 .chat-mention.suggestion-static > span { box-decoration-break: clone; font-size: 14px; font-weight: var(--font-weight-1); background: var(--blue-bg); color: var(--primary-200); opacity: var(--opacity-2); }
 .chat-suggestion { display: inline-flex; max-width: 100%; flex-wrap: wrap; align-items: stretch; gap: var(--space-3); margin: 0 var(--space-1); padding: var(--space-1); border-radius: var(--radius-3); background: var(--color-bg-raised); color: var(--color-text-muted); }
