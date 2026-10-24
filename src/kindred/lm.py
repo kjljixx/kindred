@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import threading
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,11 @@ LITELLM_OPENROUTER_FREE_MODEL = "openrouter/openrouter/free"
 END_SENTINEL = "END"
 _HUMAN_PROMPT_LOCK = threading.Lock()
 _RESPONSE_LOG_LOCK = threading.Lock()
+OPENROUTER_PREFIX = "openrouter/"
+OPENROUTER_ROUTING: dict[str, Any] = {
+  "provider": {"sort": "throughput"},
+  "service_tier": "default",
+}
 DEFAULT_REASONING_EFFORT: dict[str, str] = {"effort": "medium", "summary": "auto"}
 RESPONSE_LOG_PATH = Path(
   os.getenv("KINDRED_RESPONSE_LOG", "kindred_responses.log")
@@ -39,6 +45,14 @@ def litellm_model(model: str) -> str:
   if model.strip().lower() == OPENROUTER_FREE_MODEL:
     return LITELLM_OPENROUTER_FREE_MODEL
   return model
+
+
+def openrouter_routing(model: str) -> dict[str, Any]:
+  """Fastest-provider routing at the standard tier for OpenRouter models (not the free router)."""
+  resolved = litellm_model(model)
+  if resolved.startswith(OPENROUTER_PREFIX) and resolved != LITELLM_OPENROUTER_FREE_MODEL:
+    return {"extra_body": OPENROUTER_ROUTING}
+  return {}
 
 
 def resolve_reasoning_effort(
@@ -163,6 +177,7 @@ def _log_full_response(
   request_summary: str | None,
   response: Any,
   kwargs: dict[str, Any],
+  timing: dict[str, Any] | None = None,
 ) -> None:
   """Append the full Responses API payload to KINDRED_RESPONSE_LOG."""
   record = {
@@ -178,6 +193,7 @@ def _log_full_response(
       "temperature": kwargs.get("temperature"),
       "metadata": kwargs.get("metadata"),
     },
+    "timing": timing,
     "response": _response_to_loggable(response),
   }
   line = json.dumps(record, default=str, ensure_ascii=False)
@@ -341,6 +357,7 @@ def reflect_chat_stream(
     kwargs["instructions"] = instructions
   if temperature is not None:
     kwargs["temperature"] = temperature
+  kwargs.update(openrouter_routing(model))
 
   resolved = resolve_reasoning_effort(reasoning_effort)
   request_summary: str | None = None
@@ -354,12 +371,21 @@ def reflect_chat_stream(
       kwargs["reasoning"] = {"effort": resolved, "summary": "auto"}
       request_summary = "auto"
 
+  print(
+    f"[LM CONFIG] purpose={purpose} model={kwargs['model']} reasoning={kwargs.get('reasoning')} "
+    f"routing={kwargs.get('extra_body')} "
+    f"max_output_tokens={max_tokens} instructions_chars={len(instructions or '')} "
+    f"input_chars={len(json.dumps(input_payload, default=str))}",
+    file=sys.stderr,
+  )
+
   t_start = time.perf_counter()
   t_first_event: float | None = None
   t_first_thinking: float | None = None
   t_first_text: float | None = None
   thinking_chunks = 0
   text_chunks = 0
+  event_counts: Counter[str] = Counter()
 
   final_response: Any = None
   for event in litellm.responses(**kwargs):
@@ -367,10 +393,10 @@ def reflect_chat_stream(
     if t_first_event is None:
       t_first_event = now
 
-    print(event)
     event_type_str = str(
       event.get("type", "") if isinstance(event, dict) else getattr(event, "type", "")
     ).lower()
+    event_counts[event_type_str] += 1
 
     if (
       "completed" in event_type_str
@@ -394,19 +420,18 @@ def reflect_chat_stream(
       yield delta_type, delta_text
 
   t_end = time.perf_counter()
-  total_dur = t_end - t_start
-  ttft = (t_first_event - t_start) if t_first_event else total_dur
-  think_dur = ((t_first_text or t_end) - (t_first_thinking or t_first_event or t_start)) if (t_first_thinking or thinking_chunks) else 0.0
-  gen_dur = (t_end - t_first_text) if t_first_text else 0.0
-
-  usage = getattr(final_response, "usage", None) or (final_response.get("usage") if isinstance(final_response, dict) else None)
-  prompt_toks = getattr(usage, "prompt_tokens", None) or (usage.get("prompt_tokens") if isinstance(usage, dict) else "?")
-  compl_toks = getattr(usage, "completion_tokens", None) or (usage.get("completion_tokens") if isinstance(usage, dict) else "?")
-
-  print(
-    f"\n[LATENCY REPORT] total={total_dur:.2f}s | ttft={ttft:.2f}s | thinking={think_dur:.2f}s ({thinking_chunks} chunks) | output_gen={gen_dur:.2f}s ({text_chunks} chunks) | tokens=(in:{prompt_toks}, out:{compl_toks})",
-    file=sys.stderr,
+  timing = _stream_timing(
+    t_start=t_start,
+    t_first_event=t_first_event,
+    t_first_thinking=t_first_thinking,
+    t_first_text=t_first_text,
+    t_end=t_end,
+    thinking_chunks=thinking_chunks,
+    text_chunks=text_chunks,
+    event_counts=event_counts,
+    final_response=final_response,
   )
+  print(f"[LM TIMING] purpose={purpose} {json.dumps(timing)}", file=sys.stderr)
 
   if final_response is not None:
     _log_full_response(
@@ -415,6 +440,7 @@ def reflect_chat_stream(
       request_summary=request_summary,
       response=final_response,
       kwargs=kwargs,
+      timing=timing,
     )
     record_reasoning_summary(final_response, request_summary=request_summary)
     if _summary_out is not None:
@@ -429,6 +455,70 @@ def reflect_chat_stream(
       except Exception:
         cost = 0.0
     _cost_out["cost"] = cost
+
+
+def _field(obj: Any, name: str) -> Any:
+  if obj is None:
+    return None
+  return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
+def _stream_timing(
+  *,
+  t_start: float,
+  t_first_event: float | None,
+  t_first_thinking: float | None,
+  t_first_text: float | None,
+  t_end: float,
+  thinking_chunks: int,
+  text_chunks: int,
+  event_counts: Counter[str],
+  final_response: Any,
+) -> dict[str, Any]:
+  """
+  Summarize one streamed response.
+
+  ``time_to_first_text_s`` is the user-visible wait. Thinking summaries arrive
+  in parts after the model finishes each one, so ``time_to_first_thinking_s``
+  can lag the real start of reasoning; use ``time_to_first_text_s`` and
+  ``reasoning_tokens`` for the true thinking cost.
+  """
+  def since_start(t: float | None) -> float | None:
+    return round(t - t_start, 3) if t is not None else None
+
+  usage = _field(final_response, "usage")
+  input_tokens = _field(usage, "input_tokens")
+  output_tokens = _field(usage, "output_tokens")
+  reasoning_tokens = _field(_field(usage, "output_tokens_details"), "reasoning_tokens")
+  answer_tokens = (
+    output_tokens - reasoning_tokens
+    if output_tokens is not None and reasoning_tokens is not None
+    else None
+  )
+
+  generation_s = (t_end - t_first_event) if t_first_event is not None else None
+  thinking_s = (t_first_text - t_first_event) if t_first_text and t_first_event else None
+  answer_s = (t_end - t_first_text) if t_first_text else None
+
+  def rate(tokens: int | None, seconds: float | None) -> float | None:
+    return round(tokens / seconds, 1) if tokens and seconds else None
+
+  return {
+    "time_to_first_event_s": since_start(t_first_event),
+    "time_to_first_thinking_s": since_start(t_first_thinking),
+    "time_to_first_text_s": since_start(t_first_text),
+    "total_s": since_start(t_end),
+    "input_tokens": input_tokens,
+    "cached_tokens": _field(_field(usage, "input_tokens_details"), "cached_tokens"),
+    "reasoning_tokens": reasoning_tokens,
+    "answer_tokens": answer_tokens,
+    "reasoning_tokens_per_s": rate(reasoning_tokens, thinking_s),
+    "answer_tokens_per_s": rate(answer_tokens, answer_s),
+    "overall_tokens_per_s": rate(output_tokens, generation_s),
+    "thinking_chunks": thinking_chunks,
+    "text_chunks": text_chunks,
+    "event_counts": dict(event_counts),
+  }
 
 
 def _response_stream_delta(event: Any) -> tuple[str, str]:

@@ -10,9 +10,17 @@ from kindred import chat, lm, server
 from kindred.prompts import annotate_draft
 
 
-def test_default_chat_model_is_gpt_6_luna():
-  assert chat.DEFAULT_MODEL == "openai/gpt-6-luna"
+def test_default_chat_model_is_gpt_6_luna_via_openrouter():
+  assert chat.DEFAULT_MODEL == "openrouter/openai/gpt-6-luna"
   assert server.ChatRequest(message="Help me revise this").model == chat.DEFAULT_MODEL
+
+
+def test_openrouter_models_sort_by_throughput_at_standard_tier():
+  assert lm.openrouter_routing("openrouter/openai/gpt-6-luna") == {
+    "extra_body": {"provider": {"sort": "throughput"}, "service_tier": "default"}
+  }
+  assert lm.openrouter_routing("openrouter/free") == {}
+  assert lm.openrouter_routing("openai/gpt-6-luna") == {}
 
 
 def test_litellm_model_preserves_openrouter_free_router_id():
@@ -57,7 +65,7 @@ def test_chat_endpoint_rejects_non_default_model_when_restricted(monkeypatch):
   async def request():
     await server.api_chat(body)
 
-  with pytest.raises(HTTPException, match="Only the openai/gpt-6-luna model is allowed") as exc:
+  with pytest.raises(HTTPException, match="Only the openrouter/openai/gpt-6-luna model is allowed") as exc:
     asyncio.run(request())
 
   assert exc.value.status_code == 403

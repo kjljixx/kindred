@@ -1,6 +1,6 @@
 export const CONFIG = {
   chat: {
-    model: "openai/gpt-6-luna",
+    model: "openrouter/openai/gpt-6-luna",
   },
   googleDocs: {
     compatibility: {
