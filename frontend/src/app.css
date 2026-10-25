@@ -619,7 +619,7 @@ button.pane-title {
   flex: 1;
   min-width: 0;
   padding-left: var(--folder-title-offset);
-  color: var(--color-text-body);
+  color: var(--color-text-muted);
   font-size: var(--font-size-2);
   font-weight: var(--font-weight-3);
   white-space: nowrap;
@@ -2596,14 +2596,17 @@ button.pane-title {
 .chat-suggestion { display: inline-flex; max-width: 100%; flex-wrap: wrap; align-items: stretch; gap: var(--space-3); margin: 0 var(--space-1); padding: var(--space-1); border-radius: var(--radius-3); background: var(--color-bg-raised); color: var(--color-text-muted); }
 .chat-suggestion .btn { font-size: 14px; flex: 0 1 auto; min-width: 0; max-width: 100%; padding: var(--space-1) var(--space-2); overflow-wrap: anywhere; white-space: normal; text-align: left; }
 .chat-suggestion .suggestion-current { background: var(--color-danger-bg); color: var(--accent-danger-300); text-decoration: line-through; }
-.chat-suggestion .suggestion-current:hover { background: hsla(0, 84%, 60%, 0.3); color: var(--accent-danger-300); }
+.chat-suggestion .suggestion-current:hover { color: var(--accent-danger-300); }
 .chat-suggestion .btn:not(.suggestion-current):not(.suggestion-diff) { background: var(--color-success-bg); color: var(--accent-success-300); }
-.chat-suggestion .btn:not(.suggestion-current):not(.suggestion-diff):hover { background: hsla(142, 71%, 45%, 0.35); color: var(--accent-success-300); }
+.chat-suggestion .btn:not(.suggestion-current):not(.suggestion-diff):hover { color: var(--accent-success-300); }
 .chat-suggestion-replaced { pointer-events: none; }
 .suggestion-static { font-size: 14px; flex: 0 1 auto; min-width: 0; padding: var(--space-1) var(--space-2); overflow-wrap: anywhere; white-space: normal; text-align: left; }
 .chat-suggestion-replaced .suggestion-static { background: transparent; border: 0; border-radius: var(--btn-radius); font: inherit; font-size: 14px; line-height: inherit; }
 .chat-suggestion-replaced .suggestion-current { background: var(--color-danger-bg); color: var(--accent-danger-300); text-decoration: line-through; opacity: var(--opacity-2); }
 .chat-suggestion-replaced .suggestion-replacement { background: var(--color-success-bg); color: var(--accent-success-300); opacity: var(--opacity-2); }
+.chat-suggestion:not(.chat-suggestion-diff) { display: inline-block; padding: var(--space-1) calc(var(--space-1) + var(--space-2)); }
+.chat-suggestion:not(.chat-suggestion-diff) :is(.btn, .suggestion-static) { display: inline; box-decoration-break: clone; padding: 0; font-weight: var(--font-weight-1); }
+.chat-suggestion:not(.chat-suggestion-diff) .suggestion-current::after { content: "\A"; white-space: pre; }
 .suggest-preview-original { display: none; }
 .suggest-preview-replacement { background: var(--color-success-bg); color: var(--accent-success-300); }
 .chat-suggestion ins { background: var(--color-success-bg); color: var(--accent-success-300); text-decoration: none; border-radius: var(--radius-1); }
