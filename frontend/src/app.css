@@ -602,6 +602,13 @@ button.pane-title {
   background: var(--color-bg-raised);
 }
 
+@media (hover: hover) {
+  .folder-item:hover > .folder-name,
+  .folder-item:hover > .folder-chevron {
+    color: var(--color-text-bright);
+  }
+}
+
 .folder-chevron {
   flex-shrink: 0;
   width: 10px;
