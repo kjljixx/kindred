@@ -11,7 +11,6 @@ import {
   indentFolder,
   moveFolder,
   normalizeFolderState,
-  openFolderExclusively,
   outdentFolder,
   removeDraft,
   renameFolder,
@@ -205,14 +204,6 @@ describe("views", () => {
   it("toggles collapsed state", () => {
     const state = setFolderCollapsed(build(school), "school", true);
     expect(state.folders[0].collapsed).toBe(true);
-  });
-
-  it("opens a folder and its ancestors, collapsing every other folder", () => {
-    const algebra = ["algebra", "Algebra", "math"];
-    const art = ["art", "Art", "school"];
-    const state = openFolderExclusively(build(school, math, algebra, art, work), "algebra");
-    const open = state.folders.filter((folder) => !folder.collapsed).map((folder) => folder.id);
-    expect(open).toEqual(["school", "math", "algebra"]);
   });
 });
 

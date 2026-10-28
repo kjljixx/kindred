@@ -886,7 +886,7 @@ button.pane-title {
 
 .tabs-primary .tab.btn-secondary:not(.active):hover:not(:disabled) {
   background: var(--neutral-800);
-  color: var(--btn-tertiary-fg);
+  color: var(--btn-tertiary-fg-hover);
 }
 
 .tabs-primary .tab.btn-secondary.active {
@@ -2878,6 +2878,12 @@ button.pane-title {
 
 .git-row.active .git-row-title {
   color: var(--btn-secondary-fg);
+}
+
+@media (hover: hover) {
+  .git-row:hover .git-row-title {
+    color: var(--color-text-bright);
+  }
 }
 
 .git-row-body {

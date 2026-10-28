@@ -82,7 +82,6 @@ import {
   outdentFolder,
   renameFolder,
   reorderFolder,
-  openFolderExclusively,
   setFolderCollapsed,
   shiftFolder,
   unfiledDrafts,
@@ -2106,7 +2105,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     const folder = folderState.folders.find((f) => f.id === id);
     if (!folder) return;
     await updateFolders(
-      (state) => (folder.collapsed ? openFolderExclusively(state, id) : setFolderCollapsed(state, id, true)),
+      (state) => setFolderCollapsed(state, id, !folder.collapsed),
       `${folder.collapsed ? "expanded" : "collapsed"} folder "${folder.name}"`
     );
   }
