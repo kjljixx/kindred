@@ -1913,7 +1913,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       nameHtml +
       `<div class="draft-item-actions">` +
       draftActionButtonHtml("move-folder", "Move folder", "Move") +
-      draftActionButtonHtml("add-subfolder", "New subfolder", "New") +
       draftActionButtonHtml("delete-folder", "Delete folder", "×", "draft-item-delete") +
       `</div></div>` +
       (open ? folderChildrenHtml(node, depth + 1) : "")
@@ -1940,8 +1939,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   }
 
   function folderChildrenHtml({ folder, folders, drafts: folderDrafts }, depth) {
-    const pending = pendingFolder?.parentId === folder.id ? pendingFolderRowHtml(depth) : "";
-    const rows = pending + folderListHtml(folders, folder.id, depth) + folderDrafts.map((d) => draftRowHtml(d)).join("");
+    const rows = folderListHtml(folders, folder.id, depth) + folderDrafts.map((d) => draftRowHtml(d)).join("");
     return rows ? `<div class="folder-children" role="list">${rows}</div>` : "";
   }
 
@@ -2102,11 +2100,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   function startNewFolder() {
     pendingFolder = { parentId: null };
     renderDraftList();
-  }
-
-  async function startSubfolder(parentId) {
-    pendingFolder = { parentId };
-    await updateFolders((state) => setFolderCollapsed(state, parentId, false), `opened folder ${parentId} for a subfolder`);
   }
 
   async function toggleFolder(id) {
@@ -2578,7 +2571,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
         return;
       }
       if (action === "move-folder") openMoveMenu({ kind: "folder", id: folderId, anchor: actionEl });
-      else if (action === "add-subfolder") void startSubfolder(folderId);
       else if (action === "delete-folder") void deleteFolderById(folderId);
       else void toggleFolder(folderId);
       return;
