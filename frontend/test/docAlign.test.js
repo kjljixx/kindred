@@ -12,17 +12,17 @@ function operationTexts(operation) {
 describe("alignTwoWay", () => {
   it("pairs a lightly edited paragraph instead of the adjacent deleted paragraph", () => {
     const before = htmlToDoc(`
-      <p>Curious and willing to follow ideas.</p>
-      <p>Open-minded and learning primarily by listening to others'.</p>
-      <p>8. Five years from now, where will you be?</p>
-      <p>Five years from now, I expect to finish a CS degree.</p>
-      <p>9. What have you read recently?</p>
+      <p>Placeholder intro line.</p>
+      <p>Placeholder body text with a trailing period.</p>
+      <p>Q1. Placeholder question about the future?</p>
+      <p>Placeholder answer text that stays unchanged.</p>
+      <p>Q2. Placeholder question about reading?</p>
     `);
     const after = htmlToDoc(`
-      <p>Curious and willing to follow ideas.</p>
-      <p>Open-minded and learning primarily by listening to others'</p>
-      <p>Five years from now, I expect to finish a CS degree.</p>
-      <p>9. What have you read recently?</p>
+      <p>Placeholder intro line.</p>
+      <p>Placeholder body text with a trailing period</p>
+      <p>Placeholder answer text that stays unchanged.</p>
+      <p>Q2. Placeholder question about reading?</p>
     `);
 
     const changed = alignTwoWay(before, after)
@@ -35,12 +35,12 @@ describe("alignTwoWay", () => {
     expect(changed).toEqual([
       {
         type: "replace",
-        base: "Open-minded and learning primarily by listening to others'.",
-        current: "Open-minded and learning primarily by listening to others'",
+        base: "Placeholder body text with a trailing period.",
+        current: "Placeholder body text with a trailing period",
       },
       {
         type: "delete",
-        base: "8. Five years from now, where will you be?",
+        base: "Q1. Placeholder question about the future?",
         current: "",
       },
     ]);
@@ -49,12 +49,12 @@ describe("alignTwoWay", () => {
   it("does not pair unrelated adjacent paragraphs", () => {
     const before = htmlToDoc(`
       <p>Stable opening.</p>
-      <p>My favorite course was English literature.</p>
+      <p>Alpha beta gamma delta epsilon.</p>
       <p>Stable closing.</p>
     `);
     const after = htmlToDoc(`
       <p>Stable opening.</p>
-      <p>I coach a robotics team on weekends.</p>
+      <p>Unrelated words sharing nothing here.</p>
       <p>Stable closing.</p>
     `);
 
@@ -66,17 +66,19 @@ describe("alignTwoWay", () => {
   });
 
   it("keeps an insertion before the edited paragraph that follows it", () => {
+    const edited = "Placeholder paragraph repeating several words across both versions of the document.";
+    const inserted = "A brand new unrelated sentence appears just above it.";
     const before = htmlToDoc(`
       <p>Stable opening.</p>
-      <p>(300 word maximum)</p>
-      <p>My interest in Computer Science began because I loved finding useful information in dormant data. I built models for games and chess matches.</p>
+      <p>(placeholder note)</p>
+      <p>${edited} Second sentence mentions alpha and beta.</p>
       <p>Stable closing.</p>
     `);
     const after = htmlToDoc(`
       <p>Stable opening.</p>
-      <p>(300 word maximum)</p>
-      <p>My passion started with the idea that a keyboard and computer could create anything.</p>
-      <p>My interest in Computer Science began because I loved finding useful information in dormant data. I built models for games, chess matches, and programming competitions.</p>
+      <p>(placeholder note)</p>
+      <p>${inserted}</p>
+      <p>${edited} Second sentence mentions alpha, beta, and gamma.</p>
       <p>Stable closing.</p>
     `);
 
@@ -88,19 +90,61 @@ describe("alignTwoWay", () => {
       }));
 
     expect(changed).toEqual([
-      {
-        type: "insert",
-        base: "",
-        current:
-          "My passion started with the idea that a keyboard and computer could create anything.",
-      },
+      { type: "insert", base: "", current: inserted },
       {
         type: "replace",
-        base:
-          "My interest in Computer Science began because I loved finding useful information in dormant data. I built models for games and chess matches.",
-        current:
-          "My interest in Computer Science began because I loved finding useful information in dormant data. I built models for games, chess matches, and programming competitions.",
+        base: `${edited} Second sentence mentions alpha and beta.`,
+        current: `${edited} Second sentence mentions alpha, beta, and gamma.`,
       },
+    ]);
+  });
+
+  it("keeps current-document order when inserts sit between edited paragraphs before a deleted one", () => {
+    const alpha = "Alpha paragraph opens with a long sentence about the first topic and its main supporting detail.";
+    const beta = "Beta paragraph introduces the second topic with a different long sentence and another supporting detail.";
+    const gamma = "Gamma paragraph describes the third topic using its own distinct wording and a closing detail.";
+    const delta = "Delta paragraph explains the fourth topic with unique wording plus one more supporting detail.";
+    const before = htmlToDoc(`
+      <p>Stable opening.</p>
+      <p>${alpha} Extra base sentence one.</p>
+      <p>${beta} Extra base sentence two.</p>
+      <p>${gamma} Extra base sentence three.</p>
+      <p>${delta} Extra base sentence four.</p>
+      <p>Final paragraph that is removed entirely from the new version.</p>
+      <p>Stable prompt.</p>
+    `);
+    const after = htmlToDoc(`
+      <p>Stable opening.</p>
+      <p>${alpha}</p>
+      <p>[Placeholder insert one.]</p>
+      <p>[Placeholder insert two.]</p>
+      <p>${beta}</p>
+      <p>[Placeholder insert three.]</p>
+      <p>${gamma}</p>
+      <p>[Placeholder insert four.]</p>
+      <p>${delta}</p>
+      <p>[Placeholder insert five.]</p>
+      <p>[Placeholder insert six.]</p>
+      <p>Stable prompt.</p>
+    `);
+
+    const projected = alignTwoWay(before, after)
+      .filter((operation) => operation.type !== "delete")
+      .map((operation) => operationTexts(operation).current);
+
+    expect(projected).toEqual([
+      "Stable opening.",
+      alpha,
+      "[Placeholder insert one.]",
+      "[Placeholder insert two.]",
+      beta,
+      "[Placeholder insert three.]",
+      gamma,
+      "[Placeholder insert four.]",
+      delta,
+      "[Placeholder insert five.]",
+      "[Placeholder insert six.]",
+      "Stable prompt.",
     ]);
   });
 });

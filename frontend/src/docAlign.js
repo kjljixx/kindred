@@ -71,8 +71,12 @@ function mapSideToBase(baseKeys, sideKeys) {
 
 function reanchorInserts(mapping) {
   for (const insert of mapping.inserts) {
-    const anchorSideIndex = mapping.baseToSide[insert.afterBase];
-    if (anchorSideIndex == null || anchorSideIndex < insert.sideIndex) continue;
+    const outOfOrder = mapping.baseToSide.some(
+      (sideIndex, baseIndex) =>
+        sideIndex != null &&
+        (baseIndex <= insert.afterBase) === (sideIndex > insert.sideIndex)
+    );
+    if (!outOfOrder) continue;
 
     insert.afterBase = -1;
     for (let baseIndex = 0; baseIndex < mapping.baseToSide.length; baseIndex++) {
