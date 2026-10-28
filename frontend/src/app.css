@@ -568,7 +568,7 @@ button.pane-title {
 .draft-list .folder-add {
   align-self: stretch;
   justify-content: flex-start;
-  margin: var(--space-5) var(--space-3) var(--space-1);
+  margin: var(--space-8) var(--space-3) var(--space-1);
   padding-left: var(--space-5);
 }
 
