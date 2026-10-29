@@ -613,7 +613,7 @@ button.pane-title {
   flex-shrink: 0;
   width: 10px;
   height: 10px;
-  order: 1;
+  margin-left: var(--folder-title-offset);
   color: var(--color-text-subtle);
   transform: rotate(-90deg);
 }
@@ -625,7 +625,6 @@ button.pane-title {
 .folder-name {
   flex: 1;
   min-width: 0;
-  padding-left: var(--folder-title-offset);
   color: var(--color-text-muted);
   font-size: var(--font-size-2);
   font-weight: var(--font-weight-3);
@@ -646,12 +645,20 @@ button.pane-title {
   font: inherit;
   font-size: var(--font-size-2);
   outline: none;
-  padding-left: var(--folder-title-offset);
 }
 
 .folder-children {
+  display: flow-root;
+  --folder-name-baseline-rise: calc(var(--space-4) + var(--font-size-2) * (var(--line-height-3) / 2 + 0.36));
+  --folder-line-bottom-inset: calc(var(--space-1) + var(--space-4) + var(--font-size-1) * (var(--line-height-3) / 2 - 0.36));
+  margin-top: calc(-1 * (var(--space-1) + var(--folder-name-baseline-rise)));
+  padding-top: calc(var(--space-1) + var(--folder-name-baseline-rise));
   margin-right: calc(var(--space-3) + var(--space-5) + 10px / 2 - 0.5px);
-  border-right: 1px solid var(--neutral-700);
+  background: linear-gradient(var(--neutral-700), var(--neutral-700)) right top / 1px calc(100% - var(--folder-line-bottom-inset)) no-repeat;
+}
+
+.folder-children:has(> .folder-item:last-child) {
+  --folder-line-bottom-inset: calc(var(--space-1) + var(--folder-name-baseline-rise));
 }
 
 /* Same outline as a selected editor image (.ProseMirror-selectednode), inset like .has-caret */
