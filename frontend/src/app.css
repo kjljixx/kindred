@@ -3054,6 +3054,7 @@ button.pane-title {
   font: inherit;
   font-size: inherit;
   line-height: inherit;
+  text-align: left;
   vertical-align: baseline;
   white-space: normal;
 }
