@@ -20,6 +20,7 @@ import {
   isFormatOnlyConflict,
   stripHtml,
   mergeCleanEditsIntoMarked,
+  resolveBlockConflictInEditor,
   resolveConflictInEditor,
   plainOffsetsToPmRange,
   plainOffsetForPmPos,
@@ -2891,7 +2892,17 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     let resolvedInEditor = false;
     let googleHtml;
     if (blockSide) {
+      const seg = parseConflictSegments(currentHtml)?.filter((s) => s.type === "conflict")[index];
       currentHtml = resolveBlockStateConflicts(currentHtml, blockSide, index);
+      if (seg) {
+        const chosen = seg[`${blockSide}State`] === "deleted" ? "" : seg[blockSide];
+        resolvedInEditor = resolveBlockConflictInEditor(
+          tipTap,
+          index,
+          chosen.trim() ? chosen : "",
+          { googleHtml: dirtyReviewing ? seg.theirs : undefined }
+        );
+      }
     } else {
       const segments = parseConflictSegments(currentHtml);
       if (!segments) return;

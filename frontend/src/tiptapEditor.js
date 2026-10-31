@@ -933,6 +933,39 @@ export function resolveConflictInEditor(editor, index, html, { googleHtml } = {}
   return replaceRange(editor, pos, googleTextEnd, html);
 }
 
+/**
+ * Replaces the paragraph shell around conflict anchor `index` with block `html` ("" removes it).
+ * `googleHtml` is the block Google Docs currently holds there ("" when it holds none); omit it
+ * when Google should not be updated.
+ */
+export function resolveBlockConflictInEditor(editor, index, html, { googleHtml } = {}) {
+  const pos = conflictNodePos(editor.state.doc, index);
+  if (pos == null) return false;
+  const $pos = editor.state.doc.resolve(pos);
+  if ($pos.parent.type.name !== "paragraph") return false;
+  const from = $pos.before();
+  const to = $pos.after();
+  const googleKnown = googleHtml != null;
+  const renumberLaterConflicts = ({ tr }) => {
+    tr.doc.descendants((node, nodePos) => {
+      if (node.type.name === "conflictParagraph" && node.attrs.conflictIndex > index) {
+        tr.setNodeMarkup(nodePos, undefined, { conflictIndex: node.attrs.conflictIndex - 1 });
+      }
+    });
+    return true;
+  };
+
+  const sizeBefore = editor.state.doc.content.size;
+  const shellReplacement = googleKnown ? googleHtml : html;
+  if (!replaceRange(editor, from, to, shellReplacement, googleKnown ? "conflict-anchor-to-google-text" : "conflict-resolution", renumberLaterConflicts)) {
+    return false;
+  }
+  if (!googleKnown || html === googleHtml) return true;
+
+  const googleBlockEnd = from + (editor.state.doc.content.size - (sizeBefore - (to - from)));
+  return replaceRange(editor, from, googleBlockEnd, html);
+}
+
 const isAlignConflictNode = (node) =>
   node.type.name === "paragraph" && Boolean(node.attrs.alignOurs || node.attrs.alignTheirs);
 

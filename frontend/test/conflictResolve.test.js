@@ -4,6 +4,7 @@ import {
   conflictDisplayHtml,
   createKindredEditor,
   resolveAllConflictsToTheirs,
+  resolveBlockConflictInEditor,
   resolveConflictInEditor,
 } from "../src/tiptapEditor.js";
 
@@ -69,6 +70,56 @@ describe("resolveConflictInEditor", () => {
 
     it("sends nothing when Google's content is unknown", () => {
       expect(resolveAndCollectRequests(0, "OURS", undefined)).toEqual([]);
+    });
+  });
+
+  describe("resolveBlockConflictInEditor", () => {
+    const resolveAndCollectRequests = (content, html, googleHtml) => {
+      createEditor(content);
+      const requests = [];
+      editor.on("transaction", ({ transaction }) => {
+        if (!transaction.docChanged || transaction.getMeta("skipGoogleDocsSync")) return;
+        requests.push(...transactionToGoogleDocsBatchUpdateRequests(transaction, transaction.before));
+      });
+      const resolved = resolveBlockConflictInEditor(editor, 0, html, { googleHtml });
+      return { resolved, requests };
+    };
+    const lastParagraphConflict = `<p>first</p><p><span data-kindred-conflict="0"></span></p>`;
+
+    it("restores a final paragraph Google no longer holds", () => {
+      const { resolved, requests } = resolveAndCollectRequests(lastParagraphConflict, "<p>restored</p>", "");
+
+      expect(resolved).toBe(true);
+      expect(editor.getHTML()).toBe("<p>first</p><p>restored</p>");
+      expect(requests.find((request) => request.insertText)?.insertText.text).toContain("restored");
+    });
+
+    it("deletes a final paragraph Google still holds", () => {
+      const { resolved, requests } = resolveAndCollectRequests(lastParagraphConflict, "", "<p>dirty</p>");
+
+      expect(resolved).toBe(true);
+      expect(editor.getHTML()).toBe("<p>first</p>");
+      expect(requests.find((request) => request.deleteContentRange)).toBeTruthy();
+    });
+
+    it("sends nothing when the side Google already holds is chosen", () => {
+      const { resolved, requests } = resolveAndCollectRequests(lastParagraphConflict, "", "");
+
+      expect(resolved).toBe(true);
+      expect(editor.getHTML()).toBe("<p>first</p>");
+      expect(requests).toEqual([]);
+    });
+
+    it("renumbers later conflicts", () => {
+      const { resolved } = resolveAndCollectRequests(
+        `<p>a</p><p><span data-kindred-conflict="0"></span></p><p>b <span data-kindred-conflict="1"></span></p>`,
+        "<p>x</p>",
+        ""
+      );
+
+      expect(resolved).toBe(true);
+      expect(editor.getHTML()).toContain('data-kindred-conflict="0"');
+      expect(editor.getHTML()).not.toContain('data-kindred-conflict="1"');
     });
   });
 

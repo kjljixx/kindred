@@ -1019,10 +1019,10 @@ export function transactionToGoogleDocsBatchUpdateRequests(transaction, proseMir
       insertedNode?.type === "paragraph"
     ) {
       const paragraphText = googleDocsPlainText(step.slice.content);
-      return finish("insert-paragraph", [{ insertText: {
-        location: { index: mappedStart },
-        text: `${paragraphText}\n`,
-      } }]);
+      const appendsAfterFinalNewline = mappedStart === mappedDocumentEnd;
+      return finish("insert-paragraph", [{ insertText: appendsAfterFinalNewline
+        ? { location: { index: mappedStart - 1 }, text: `\n${paragraphText}` }
+        : { location: { index: mappedStart }, text: `${paragraphText}\n` } }], { appendsAfterFinalNewline });
     }
     if (
       json.stepType === "replace" &&
