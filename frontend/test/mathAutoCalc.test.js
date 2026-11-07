@@ -73,6 +73,33 @@ describe("calculateTrailingEquals", () => {
     expect(calculateTrailingEquals("1/30000000=")).toBe("3.333333*10^-8");
   });
 
+  it("returns quickly for expressions that need huge exact arithmetic", () => {
+    const startTime = performance.now();
+    expect(calculateTrailingEquals("10^1000000=")).toBeNull();
+    expect(calculateTrailingEquals("99999!=")).toBeNull();
+    expect(performance.now() - startTime).toBeLessThan(2000);
+  });
+
+  it("evaluates integrals exactly and gives up quickly on unsolvable ones", () => {
+    const startTime = performance.now();
+    expect(calculateTrailingEquals("int_0^1 x dx=")).toBe("0.5");
+    expect(calculateTrailingEquals("int _(-oo)^(oo)f(x)d x=")).toBeNull();
+    expect(performance.now() - startTime).toBeLessThan(500);
+  });
+
+  it("skips chained equations without evaluating their integrals", () => {
+    const startTime = performance.now();
+    expect(calculateTrailingEquals(
+      "r int  _(-oo)^(oo)(k_e lambda)/((r^2+r^2tan ^2(theta))^(3/2))d x=r int  _(-(pi)/(2))^((pi)/(2))(k_e lambda)/(r^3sec ^3(theta))r sec ^2(theta)d theta=",
+    )).toBeNull();
+    expect(performance.now() - startTime).toBeLessThan(500);
+  });
+
+  it("does not assign values to symbols after a chained equation", () => {
+    calculateTrailingEquals("r int _(-oo)^(oo)(k_e lambda)/(r^2+x^2)d x=(2k_e lambda)/(r)=");
+    expect(calculateTrailingEquals("(2k_e lambda)/(r)=")).toBeNull();
+  });
+
   it("leaves symbolic expressions and equations alone", () => {
     expect(calculateTrailingEquals("x+x=")).toBeNull();
     expect(calculateTrailingEquals("x^2=4=")).toBeNull();
