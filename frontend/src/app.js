@@ -246,6 +246,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   let drafts = [];
   let draftListGeneration = 0;
   let activeDraftId = null;
+  let pendingDraftCreation = null;
   let browserRouteNavigation = Promise.resolve();
   let saveTimer = null;
   let uiSaveTimer = null;
@@ -1733,11 +1734,23 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       return findDraft(activeDraftId);
     }
     if (!(text || "").length) return null;
-    await storeReady;
-    const draft = await createDraft(text);
-    syncRightPane({ stickChatBottom: true });
-    updateCommitBtn();
-    return draft;
+    if (pendingDraftCreation) {
+      const draft = await pendingDraftCreation;
+      persistActiveDraftSoon();
+      return draft;
+    }
+    pendingDraftCreation = (async () => {
+      await storeReady;
+      const draft = await createDraft(text);
+      syncRightPane({ stickChatBottom: true });
+      updateCommitBtn();
+      return draft;
+    })();
+    try {
+      return await pendingDraftCreation;
+    } finally {
+      pendingDraftCreation = null;
+    }
   }
 
   async function refreshCommits() {
