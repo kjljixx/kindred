@@ -280,8 +280,9 @@ body {
   line-height: var(--line-height-2);
   background: transparent;
   border: none;
-  padding: 0 var(--space-2);
-  margin: 0;
+  height: var(--size-header);
+  padding: 0 calc(var(--space-2) + var(--space-5));
+  margin: 0 calc(-1 * var(--space-5));
   font-family: inherit;
   text-align: left;
   cursor: text;
