@@ -76,7 +76,11 @@ import {
   draftFolderName,
   emptyFolderState,
   filterDraftsByFolder,
+  createFolder,
+  deleteFolder,
   folderOptions,
+  renameFolder,
+  reorderFolder,
 } from "./draftFolders.js";
 import { suggestFolderWithJev } from "./jevFolderSuggester.js";
 
@@ -166,6 +170,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   const statusEl = document.getElementById("status");
   const metaEl = document.getElementById("meta");
   const commitBtn = document.getElementById("commit-btn");
+  const folderEditDoneBtn = document.getElementById("folder-edit-done-btn");
   const importBtn = document.getElementById("import-btn");
   const exportControls = document.getElementById("export-controls");
   const exportBtn = document.getElementById("export-btn");
@@ -287,6 +292,12 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   /** "" shows every draft; otherwise UNFILED_FILTER or a folder id. */
   let draftFolderFilter = localStorage.getItem(folderFilterStorageKey) || "";
   let folderState = emptyFolderState();
+  let editingFolders = false;
+  let armedDeleteFolderId = "";
+  let focusFolderNameId = "";
+  let renamingFolderId = "";
+  let placingFolderId = "";
+  let stopPlacingListeners = null;
   console.info(`kindred: draft folder filter "${draftFolderFilter || "all"}", hover ${canHover ? "on" : "off"}`);
   /** @type {{ el: HTMLElement, anchor: HTMLElement, dismiss: Function } | null} */
   let moveMenu = null;
@@ -1794,6 +1805,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   function setDraftListHidden(hidden) {
     draftListEl.hidden = hidden;
     draftViewControls.hidden = hidden;
+    syncFolderEditDone();
     if (hidden) {
       closeMoveMenu();
       setFolderMenuOpen(false);
@@ -1919,12 +1931,24 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       `<button type="button" role="menuitemradio" aria-checked="${value === draftFolderFilter}" data-filter="${escapeHtml(value)}">${escapeHtml(label)}</button>`;
     const folderItems = folderState.folders.map((f) => item(f.id, f.name)).join("");
     draftFolderMenu.innerHTML =
-      item("", "All drafts") + (folderItems ? `<hr>${folderItems}` : "") + `<hr>${item(UNFILED_FILTER, "Unfiled")}`;
+      item("", "All drafts") +
+      (folderItems ? `<hr>${folderItems}` : "") +
+      `<hr>${item(UNFILED_FILTER, "Unfiled")}` +
+      `<hr><button type="button" role="menuitem" class="folder-edit-btn" data-action="edit-folders">Edit folders</button>`;
   }
 
   function renderDraftRows() {
-    draftFolderLabel.textContent = folderFilterLabel(draftFolderFilter);
-    draftListEl.innerHTML = draftListHtml();
+    draftFolderLabel.textContent = editingFolders ? "Edit folders" : folderFilterLabel(draftFolderFilter);
+    draftListEl.innerHTML = editingFolders ? folderEditHtml() : draftListHtml();
+    if (editingFolders) {
+      const input = focusFolderNameId && draftListEl.querySelector(`[data-folder-id="${CSS.escape(focusFolderNameId)}"] input`);
+      focusFolderNameId = "";
+      if (input) {
+        input.focus();
+        input.select();
+      }
+      return;
+    }
     if (!renamingDraftId || renameSource !== "list") return;
     const renameInput = draftListEl.querySelector(
       `.draft-item[data-id="${CSS.escape(renamingDraftId)}"] .draft-item-title-input`
@@ -2005,6 +2029,164 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     );
   }
 
+  function folderDraftCount(folderId) {
+    return Object.values(folderState.assignments).filter((assigned) => assigned === folderId).length;
+  }
+
+  function folderEditHtml() {
+    const rows = [];
+    const picked = folderState.folders.findIndex((f) => f.id === placingFolderId);
+    const slotHtml = (beforeId) =>
+      `<button type="button" class="folder-slot" tabindex="-1" data-action="place-folder" data-before-id="${escapeHtml(beforeId)}" aria-label="Place folder here"></button>`;
+    folderState.folders.forEach((folder, index) => {
+      if (picked >= 0 && index !== picked && index !== picked + 1) rows.push(slotHtml(folder.id));
+      const armed = folder.id === armedDeleteFolderId;
+      const nameHtml =
+        renamingFolderId === folder.id
+          ? `<input class="folder-name-input" data-folder-input value="${escapeHtml(folder.name)}" aria-label="Folder name" spellcheck="false" />`
+          : `<span class="folder-name" data-action="rename-folder">${escapeHtml(folder.name)}</span>`;
+      const deleteLabel = armed ? `Unfile ${folderDraftCount(folder.id)} and delete` : "Delete folder";
+      rows.push(
+        `<div class="folder-item${placingFolderId === folder.id ? " lifted" : ""}" role="listitem" data-folder-id="${escapeHtml(folder.id)}">` +
+          nameHtml +
+          `<div class="draft-item-actions">` +
+          draftActionButtonHtml("move-folder", "Move folder", "Move") +
+          draftActionButtonHtml("delete-folder", deleteLabel, armed ? deleteLabel : "×", "draft-item-delete") +
+          `</div></div>`
+      );
+    });
+    if (picked >= 0 && picked !== folderState.folders.length - 1) rows.push(slotHtml(""));
+    if (!folderState.folders.length) rows.push(draftListEmptyHtml("No folders yet."));
+    rows.push(`<button type="button" class="btn btn-tertiary folder-add" data-action="new-folder">New Folder</button>`);
+    return rows.join("");
+  }
+
+  function syncFolderEditDone() {
+    folderEditDoneBtn.hidden = !editingFolders || draftListEl.hidden;
+  }
+
+  function stopPlacingFolder(reason) {
+    if (!placingFolderId) return;
+    console.info(`kindred: stopped placing folder ${placingFolderId} (${reason})`);
+    placingFolderId = "";
+    stopPlacingListeners?.();
+    stopPlacingListeners = null;
+    renderDraftRows();
+  }
+
+  function startPlacingFolder(id) {
+    stopPlacingFolder("restarted");
+    placingFolderId = id;
+    const onPointerDown = (e) => {
+      if (!e.target.closest(".folder-slot")) stopPlacingFolder("clicked elsewhere");
+    };
+    const onKeyDown = (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      stopPlacingFolder("Escape");
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    stopPlacingListeners = () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+    console.info(`kindred: placing folder ${id}`);
+    renderDraftRows();
+  }
+
+  function setEditingFolders(editing) {
+    if (editingFolders === editing) return;
+    stopPlacingFolder("editing changed");
+    editingFolders = editing;
+    armedDeleteFolderId = "";
+    renamingFolderId = "";
+    console.info(`kindred: folder editing ${editing ? "started" : "finished"} (${folderState.folders.length} folders)`);
+    if (editing) {
+      folderMenuSuppressed = true;
+      setFolderMenuOpen(false);
+      closeMoveMenu();
+    }
+    syncFolderEditDone();
+    if (!folderFilterValid(draftFolderFilter)) setDraftFolderFilter("");
+    else renderDraftRows();
+  }
+
+  async function placeFolder(beforeId) {
+    const id = placingFolderId;
+    stopPlacingFolder("placed");
+    await updateFolders(
+      (state) => reorderFolder(state, id, { beforeId: beforeId || null }),
+      `placed folder ${id} before ${beforeId || "end"}`
+    );
+  }
+
+  async function createFolderAndRename() {
+    const id = crypto.randomUUID();
+    renamingFolderId = id;
+    focusFolderNameId = id;
+    await updateFolders((state) => createFolder(state, { id, name: "New folder" }).state, `created folder ${id}`);
+  }
+
+  async function commitFolderRename(input) {
+    const folderId = input.closest("[data-folder-id]")?.dataset.folderId;
+    if (!folderId || renamingFolderId !== folderId) return;
+    renamingFolderId = "";
+    const name = input.value.trim();
+    if (!name || name === folderState.folders.find((f) => f.id === folderId)?.name) return renderDraftRows();
+    await updateFolders((state) => renameFolder(state, folderId, name), `renamed folder ${folderId}`);
+  }
+
+  async function deleteFolderWithConfirm(folderId) {
+    if (folderDraftCount(folderId) && armedDeleteFolderId !== folderId) {
+      armedDeleteFolderId = folderId;
+      return renderDraftRows();
+    }
+    armedDeleteFolderId = "";
+    await updateFolders((state) => deleteFolder(state, folderId), `deleted folder ${folderId}`);
+    if (!folderFilterValid(draftFolderFilter)) setDraftFolderFilter("");
+  }
+
+  draftListEl.addEventListener("click", (e) => {
+    if (!editingFolders) return;
+    const actionEl = e.target.closest("[data-action]");
+    const folderId = actionEl?.closest("[data-folder-id]")?.dataset.folderId;
+    if (actionEl?.dataset.action === "new-folder") createFolderAndRename();
+    else if (actionEl?.dataset.action === "place-folder") placeFolder(actionEl.dataset.beforeId);
+    else if (!folderId || placingFolderId) return;
+    else if (actionEl.dataset.action === "move-folder") startPlacingFolder(folderId);
+    else if (actionEl.dataset.action === "delete-folder") deleteFolderWithConfirm(folderId);
+    else if (actionEl.dataset.action === "rename-folder") {
+      armedDeleteFolderId = "";
+      renamingFolderId = folderId;
+      focusFolderNameId = folderId;
+      renderDraftRows();
+    }
+  });
+
+  draftListEl.addEventListener("focusout", (e) => {
+    const input = e.target.closest?.("[data-folder-input]");
+    if (input) commitFolderRename(input);
+  });
+
+  draftListEl.addEventListener(
+    "keydown",
+    (e) => {
+      const input = e.target.closest?.("[data-folder-input]");
+      if (!input) return;
+      if (e.key === "Enter") input.blur();
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        renamingFolderId = "";
+        renderDraftRows();
+      }
+    },
+    true
+  );
+
+  folderEditDoneBtn.addEventListener("click", () => setEditingFolders(false));
+
   function closeMoveMenu({ restoreFocus = false } = {}) {
     if (!moveMenu) return;
     const { el, anchor, dismiss } = moveMenu;
@@ -2014,9 +2196,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     if (restoreFocus && anchor.isConnected) anchor.focus();
   }
 
-  const MOVE_MENU_HOVER_CLOSE_MS = 150;
-
-  function openMoveMenu({ id, anchor, focusMenu = true }) {
+  function openMoveMenu({ id, anchor }) {
     closeMoveMenu();
     const currentFolderId = folderState.assignments[id] || "";
     const radio = (label, target) =>
@@ -2042,7 +2222,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     el.style.left = `${Math.max(margin, Math.min(rect.right - el.offsetWidth, window.innerWidth - el.offsetWidth - margin))}px`;
     el.style.top = `${fitsBelow ? below : Math.max(margin, rowRect.top + overlap - el.offsetHeight)}px`;
 
-    let hoverCloseTimer = null;
     const onPointerDown = (e) => {
       if (!el.contains(e.target)) closeMoveMenu();
     };
@@ -2050,24 +2229,13 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       if (!el.contains(e.target)) closeMoveMenu();
     };
     const onResize = () => closeMoveMenu();
-    const scheduleHoverClose = () => {
-      hoverCloseTimer = setTimeout(() => closeMoveMenu(), MOVE_MENU_HOVER_CLOSE_MS);
-    };
-    const cancelHoverClose = () => clearTimeout(hoverCloseTimer);
     document.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onResize);
-    if (!focusMenu) {
-      for (const target of [anchor, el]) {
-        target.addEventListener("mouseleave", scheduleHoverClose);
-        target.addEventListener("mouseenter", cancelHoverClose);
-      }
-    }
     moveMenu = {
       el,
       anchor,
       dismiss: () => {
-        cancelHoverClose();
         document.removeEventListener("pointerdown", onPointerDown, true);
         window.removeEventListener("scroll", onScroll, true);
         window.removeEventListener("resize", onResize);
@@ -2092,7 +2260,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       const offset = e.key === "ArrowDown" ? 1 : -1;
       items[(items.indexOf(document.activeElement) + offset + items.length) % items.length].focus();
     });
-    if (focusMenu) (el.querySelector('[aria-checked="true"]') || el.querySelector(".move-menu-item")).focus();
+    (el.querySelector('[aria-checked="true"]') || el.querySelector(".move-menu-item")).focus();
   }
 
   function applyRevisionToEditor({ syncGoogleDocs = false, source = "applyRevisionToEditor" } = {}) {
@@ -2385,21 +2553,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     void queueBrowserRouteNavigation(() => openDraft(id));
   });
 
-  const MOVE_HOVER_INTENT_MS = 120;
-  let moveHoverTimer = null;
-  draftListEl.addEventListener("mouseover", (e) => {
-    const anchor = canHover ? e.target.closest('[data-action="move"]') : null;
-    if (!anchor || moveMenu?.anchor === anchor) return;
-    clearTimeout(moveHoverTimer);
-    moveHoverTimer = setTimeout(() => {
-      if (!anchor.isConnected || !anchor.matches(":hover")) return;
-      openMoveMenu({ id: anchor.closest(".draft-item").dataset.id, anchor, focusMenu: false });
-    }, MOVE_HOVER_INTENT_MS);
-  });
-  draftListEl.addEventListener("mouseout", (e) => {
-    if (e.target.closest('[data-action="move"]')) clearTimeout(moveHoverTimer);
-  });
-
   const RENAME_EXCLUDED_TARGETS = ".draft-item-actions, .draft-item-title-input";
   draftListEl.addEventListener("contextmenu", (e) => {
     const item = e.target.closest(DRAFT_ROW_SELECTOR);
@@ -2429,6 +2582,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   }
 
   function stepDraftFolderFilter(offset) {
+    if (editingFolders) return;
     const filters = ["", ...folderState.folders.map((f) => f.id), UNFILED_FILTER];
     const index = Math.max(0, filters.indexOf(draftFolderFilter));
     setDraftFolderFilter(filters[(index + offset + filters.length) % filters.length]);
@@ -2440,6 +2594,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   const FOLDER_AIM_MIN_TRAVEL_PX = 4;
   const FOLDER_MENU_TRAIL_MS = 250;
   const FOLDER_MENU_FIT_MARGIN_PX = 8;
+  const FOLDER_HOVER_MARGIN_PX = { title: 4, menuTop: 4, menuLeft: 12, menuRight: 4, menuBottom: 16 };
   console.info("kindred: folder menu hover aim", {
     holdMs: FOLDER_AIM_HOLD_MS,
     stallMs: FOLDER_AIM_STALL_MS,
@@ -2448,6 +2603,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
 
   const draftFolderHost = draftFolderMenu.closest(".scroll-host") || draftFolderMenu;
   let folderMenuSuppressed = false;
+  let folderMenuHoverOpened = false;
   let folderMenuOpenedWith = "";
   let folderMenuTrail = [];
   let folderMenuTriangle = null;
@@ -2529,12 +2685,33 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     setDraftFolderFilter(filter, { rebuildMenu: false });
   }
 
+  /** The title and the menu, each grown by its hover margin, so a slightly stray pointer does not close the menu. */
+  function pointInFolderHoverArea(point) {
+    const m = FOLDER_HOVER_MARGIN_PX;
+    const title = draftFolderPicker.getBoundingClientRect();
+    const menu = draftFolderHost.getBoundingClientRect();
+    return (
+      pointInRect(point, {
+        left: title.left - m.title,
+        right: title.right + m.title,
+        top: title.top - m.title,
+        bottom: title.bottom + m.title,
+      }) ||
+      pointInRect(point, {
+        left: menu.left - m.menuLeft,
+        right: menu.right + m.menuRight,
+        top: menu.top - m.menuTop,
+        bottom: menu.bottom + m.menuBottom,
+      })
+    );
+  }
+
   function onFolderMenuPointerMove(e) {
     const point = { x: e.clientX, y: e.clientY, t: performance.now() };
     if (
-      folderMenuTriangle &&
-      !pointInRect(point, draftFolderHost.getBoundingClientRect()) &&
-      !pointInTriangle(point, ...folderMenuTriangle)
+      folderMenuHoverOpened &&
+      !pointInFolderHoverArea(point) &&
+      !(folderMenuTriangle && pointInTriangle(point, ...folderMenuTriangle))
     ) {
       closeFolderMenuOnLeave();
       return;
@@ -2561,6 +2738,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     } else {
       document.removeEventListener("mousemove", onFolderMenuPointerMove);
       folderMenuTriangle = null;
+      folderMenuHoverOpened = false;
       clearPendingFolderFilter();
     }
   }
@@ -2574,7 +2752,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   function startFolderMenuTriangle() {
     const last = folderMenuTrail[folderMenuTrail.length - 1];
     if (draftFolderMenu.dataset.side !== "left" || !last) {
-      closeFolderMenuOnLeave();
+      folderMenuTriangle = null;
       return;
     }
     const rect = draftFolderHost.getBoundingClientRect();
@@ -2586,26 +2764,29 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   }
 
   function openFolderMenuOnHover() {
-    if (!canHover || folderMenuSuppressed) return;
+    if (!canHover || folderMenuSuppressed || editingFolders) return;
     folderMenuTriangle = null;
     setFolderMenuOpen(true);
+    folderMenuHoverOpened = true;
   }
 
   draftFolderPicker.addEventListener("mouseenter", openFolderMenuOnHover);
   draftFolderHost.addEventListener("mouseenter", openFolderMenuOnHover);
   draftFolderPicker.addEventListener("mouseleave", (e) => {
     if (!canHover || draftFolderHost.contains(e.relatedTarget)) return;
-    startFolderMenuTriangle();
+    if (!draftFolderMenu.classList.contains("open")) folderMenuSuppressed = false;
+    else startFolderMenuTriangle();
   });
-  draftFolderHost.addEventListener("mouseleave", (e) => {
-    if (!canHover || draftFolderPicker.contains(e.relatedTarget)) return;
-    closeFolderMenuOnLeave();
+  document.documentElement.addEventListener("mouseleave", () => {
+    if (folderMenuHoverOpened) closeFolderMenuOnLeave();
   });
   draftFolderBtn.addEventListener("click", (e) => {
+    if (editingFolders) return setEditingFolders(false);
     if (canHover && e.detail > 0) return;
     setFolderMenuOpen(!draftFolderMenu.classList.contains("open"));
   });
   draftFolderMenu.addEventListener("click", (e) => {
+    if (e.target.closest("[data-action='edit-folders']")) return setEditingFolders(true);
     const item = e.target.closest("[data-filter]");
     if (!item) return;
     folderMenuSuppressed = true;

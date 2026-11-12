@@ -41,6 +41,6 @@ Exporting:
 
 Folders:
 - Hover the title at the top of the draft list (All drafts, a folder, or Unfiled) to preview each folder; click one to keep it.
-- Hover Move on a draft to file it into a folder.
+- Click Move on a draft to file it into a folder.
 - Folders are flat. Older nested folders show up as "Parent / Child".
 - On the initial commit of each document, the document will be automatically assigned to an existing folder if there is a relevant folder based on its content and the names of the folders

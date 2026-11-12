@@ -460,6 +460,111 @@ button.pane-title {
   text-align: center;
 }
 
+.folder-edit-done {
+  align-self: center;
+  margin-top: var(--space-2);
+}
+
+.draft-list .folder-add {
+  align-self: stretch;
+  justify-content: flex-start;
+  margin: var(--space-8) var(--space-3) var(--space-1);
+  padding-left: var(--space-5);
+}
+
+.folder-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  margin: 0 var(--space-3) var(--space-1);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.folder-item:hover,
+.folder-item:focus-within {
+  background: var(--color-bg-raised);
+}
+
+@media (hover: hover) {
+  .folder-item:hover > .folder-name {
+    color: var(--color-text-bright);
+  }
+}
+
+.folder-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2);
+  font-weight: var(--font-weight-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-name-input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--color-accent);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-2);
+  outline: none;
+}
+
+.folder-item.lifted {
+  background: var(--color-bg-raised);
+  outline: 2px solid hsl(207 90% 62%);
+  outline-offset: -2px;
+}
+
+.folder-slot {
+  position: relative;
+  display: block;
+  flex: none;
+  width: calc(100% - var(--space-3) * 2);
+  height: 14px;
+  margin: 0 var(--space-3);
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.folder-slot::before {
+  content: "";
+  position: absolute;
+  inset: 50% var(--space-5) auto;
+  height: var(--size-divider);
+  margin-top: calc(var(--size-divider) / -2);
+  background: var(--neutral-700);
+}
+
+.folder-slot:hover::before,
+.folder-slot:focus-visible::before {
+  background: var(--color-accent-soft);
+}
+
+.export-menu.folder-picker-menu .folder-edit-btn {
+  color: var(--btn-tertiary-fg);
+  font-size: var(--btn-tertiary-font-size);
+  font-weight: var(--btn-tertiary-font-weight);
+}
+
+.export-menu.folder-picker-menu .folder-edit-btn:hover,
+.export-menu.folder-picker-menu .folder-edit-btn:focus-visible {
+  background: transparent;
+  color: var(--btn-tertiary-fg-hover);
+}
+
 .chat-thread-empty {
   color: var(--color-text-muted);
   margin: 0 var(--space-3);
@@ -550,7 +655,9 @@ button.pane-title {
 }
 
 .draft-item:hover > .draft-item-actions,
-.draft-item:focus-within:not(:focus-visible) > .draft-item-actions {
+.draft-item:focus-within:not(:focus-visible) > .draft-item-actions,
+.folder-item:hover > .draft-item-actions,
+.folder-item:focus-within:not(:focus-visible) > .draft-item-actions {
   display: flex;
 }
 
@@ -685,6 +792,7 @@ button.pane-title {
 #chat-heading[hidden],
 #chat-back-btn[hidden],
 #new-chat-btn[hidden],
+#folder-edit-done-btn[hidden],
 #draft-list[hidden],
 #draft-view-controls[hidden],
 #chat-list[hidden],
@@ -2907,11 +3015,13 @@ button.pane-title {
 }
 
 .draft-item > *,
+.folder-item > *,
 .git-row > * {
   z-index: 1;
 }
 
 .draft-item > .draft-item-actions,
+.folder-item > .draft-item-actions,
 .git-row > .git-row-actions {
   align-self: stretch;
   margin: calc(var(--space-1) * -1 - var(--space-4)) calc(var(--space-5) * -1) calc(var(--space-1) * -1 - var(--space-4)) calc(var(--space-4) * -1);
@@ -2938,6 +3048,7 @@ button.pane-title {
 }
 
 .draft-item::before,
+.folder-item::before,
 .git-row::before {
   inset: calc(var(--space-1) * -1) 0;
 }
@@ -3151,11 +3262,13 @@ button.pane-title {
   }
 
   .draft-item:hover:not(:focus-within),
+  .folder-item:hover:not(:focus-within),
   .git-row:not(.active):hover:not(:focus-within) {
     background: transparent;
   }
 
   .draft-item:hover > .draft-item-actions:not(:focus-within),
+  .folder-item:hover > .draft-item-actions:not(:focus-within),
   .git-row:not(.active):hover .git-row-actions:not(:focus-within) {
     display: none;
   }

@@ -4,6 +4,7 @@ const WASM_CANDIDATES = [
 ];
 
 import { importDocxToHtml, htmlToDocxBlob as docshiftHtmlToDocxBlob } from './docshiftConvert.js';
+import { normalizeDocxPackage } from "./docxPackage.js";
 import { invertHtmlColors, normalizeHtmlColorsToHex, normalizeBackgroundForDocx, blendTransparentBackgroundsInHtml } from './colorInvert.js';
 import { CONFIG } from './config.js';
 import {
@@ -494,6 +495,7 @@ export async function htmlToExportBlob(
     if (styledDiff) {
       blob = await patchDocxTrackChanges(blob, nonce);
     }
+    blob = await normalizeDocxPackage(blob);
     return { blob, format };
   }
   if (format.id === "html" && !styledDiff) {
@@ -556,5 +558,5 @@ export async function htmlToDocxBlob(html, filename = "export.docx") {
   if (mathEntries.length) {
     blob = await patchDocxMath(blob, mathEntries);
   }
-  return blob;
+  return normalizeDocxPackage(blob);
 }
