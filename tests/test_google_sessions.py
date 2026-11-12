@@ -189,3 +189,47 @@ def test_google_api_requires_this_browsers_authorization(tmp_path, monkeypatch):
 
   assert response.status_code == 401
   assert "401" in response.json()["detail"]
+
+
+class FakeDocsClient:
+  def __init__(self):
+    self.created: list[dict] = []
+
+  async def post(self, url: str, *, json: dict, headers: dict) -> FakeGoogleResponse:
+    self.created.append({"url": url, "json": json, "headers": headers})
+    return FakeGoogleResponse({"documentId": "new-doc", "revisionId": "rev-1", "title": json["title"]})
+
+
+def test_google_docs_create_makes_titled_document_for_this_session(tmp_path, monkeypatch):
+  store = GoogleSessionStore(tmp_path / "sessions.sqlite3", Fernet.generate_key())
+  session_id = store.create_session()
+  store.save_refresh_token(session_id, "refresh-alice")
+  docs_client = FakeDocsClient()
+
+  async def fake_access_token(_session_id: str) -> str:
+    return "access-token"
+
+  monkeypatch.setattr(server, "_google_session_store", store)
+  monkeypatch.setattr(server, "get_http_client", lambda: docs_client)
+  monkeypatch.setattr(server, "get_access_token", fake_access_token)
+
+  client = TestClient(server.app)
+  client.cookies.set(server.GOOGLE_SESSION_COOKIE, session_id)
+  response = client.post("/api/google-docs/create", json={"title": "  My draft  "})
+
+  assert response.status_code == 200
+  assert response.json() == {"documentId": "new-doc", "revisionId": "rev-1", "title": "My draft"}
+  assert docs_client.created == [{
+    "url": "https://docs.googleapis.com/v1/documents",
+    "json": {"title": "My draft"},
+    "headers": {"Authorization": "Bearer access-token"},
+  }]
+
+
+def test_google_docs_create_requires_this_browsers_authorization(tmp_path, monkeypatch):
+  store = GoogleSessionStore(tmp_path / "sessions.sqlite3", Fernet.generate_key())
+  monkeypatch.setattr(server, "_google_session_store", store)
+
+  response = TestClient(server.app).post("/api/google-docs/create", json={"title": "x"})
+
+  assert response.status_code == 401

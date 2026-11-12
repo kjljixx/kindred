@@ -3,6 +3,7 @@ import { toHast } from "@googleworkspace/google-docs-hast";
 import { unified } from "unified";
 import rehypeStringify from "rehype-stringify";
 import { blockToHtml, htmlToDoc } from "./kindredSchema.js";
+import { EditorState } from "@tiptap/pm/state";
 import { debugEvent } from "./debug.js";
 import { invertColorValue, invertStyleDeclaration } from "./colorInvert.js";
 
@@ -150,6 +151,21 @@ export async function pullGoogleDocument(documentId) {
     html: googleDocumentToKindredHtml(payload.document),
     revisionId: payload.revisionId,
   };
+}
+
+export async function createGoogleDocument(title) {
+  const response = await fetch("/api/google-docs/create", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    const error = new Error(payload.detail || "Google Docs create failed");
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
 }
 
 export async function fetchGoogleDocumentRevision(documentId, { tabId, background, idleSeconds }) {
@@ -1187,10 +1203,15 @@ const GOOGLE_DOCS_STRUCTURE_INSERT_REQUESTS = new Set([
 ]);
 
 export function transactionsToGoogleDocsBatchUpdatePhases(transactions) {
+  return requestGroupsToGoogleDocsBatchUpdatePhases(transactions.map(
+    ({ transaction, before }) => transactionToGoogleDocsBatchUpdateRequests(transaction, before),
+  ));
+}
+
+function requestGroupsToGoogleDocsBatchUpdatePhases(requestGroups) {
   const phases = [];
   let currentPhase = [];
-  for (const { transaction, before } of transactions) {
-    const requests = transactionToGoogleDocsBatchUpdateRequests(transaction, before);
+  for (const requests of requestGroups) {
     let lastStructureInsert = requests.reduce((lastIndex, request, index) => (
       GOOGLE_DOCS_STRUCTURE_INSERT_REQUESTS.has(Object.keys(request)[0]) ? index : lastIndex
     ), -1);
@@ -1222,6 +1243,10 @@ export async function pushGoogleDocsTransactions(transactions, syncState) {
     })),
     phases,
   });
+  return pushGoogleDocsPhases(phases, syncState);
+}
+
+async function pushGoogleDocsPhases(phases, syncState) {
   let nextSyncState = syncState;
   for (const requests of phases) {
     window.dispatchEvent(new CustomEvent("kindred:google-docs-push", { detail: { requests } }));
@@ -1251,4 +1276,165 @@ export async function pushGoogleDocsTransactions(transactions, syncState) {
 
 export async function pushGoogleDocsTransaction(transaction, proseMirrorDoc, syncState) {
   return pushGoogleDocsTransactions([{ transaction, before: proseMirrorDoc }], syncState);
+}
+
+const INITIAL_PUSH_BLOCK_TYPES = new Set(["paragraph", "bulletList", "orderedList", "table"]);
+const INITIAL_PUSH_INLINE_TYPES = new Set(["text", "mathLive", "hardBreak"]);
+const GOOGLE_DOCS_LIST_PRESETS = {
+  bulletList: "BULLET_DISC_CIRCLE_SQUARE",
+  orderedList: "NUMBERED_DECIMAL_ALPHA_ROMAN",
+};
+
+function isGoogleDocsListNode(node) {
+  return nodeType(node) in GOOGLE_DOCS_LIST_PRESETS;
+}
+
+/** Returns reasons why a document cannot be copied into a blank Google Doc. */
+export function initialGoogleDocsPushProblems(doc) {
+  const problems = new Set();
+  doc.descendants((node) => {
+    const type = nodeType(node);
+    if (node.isInline && !INITIAL_PUSH_INLINE_TYPES.has(type)) problems.add(type);
+    if (node.isTextblock && type !== "paragraph") problems.add(type);
+  });
+  const blocks = nodeChildren(doc);
+  blocks.forEach((block, index) => {
+    const type = nodeType(block);
+    if (!INITIAL_PUSH_BLOCK_TYPES.has(type)) problems.add(type);
+    const isSeparated = nodeType(blocks[index - 1]) === "paragraph"
+      && nodeType(blocks[index + 1]) === "paragraph";
+    if (type === "table" && !isSeparated) problems.add("table without a paragraph before and after");
+  });
+  return [...problems];
+}
+
+function googleDocsListLines(list, depth = 0) {
+  const lines = [];
+  list.forEach((item) => {
+    item.forEach((child) => {
+      if (isGoogleDocsListNode(child)) lines.push(...googleDocsListLines(child, depth + 1));
+      else lines.push({ depth, paragraph: child });
+    });
+  });
+  return lines;
+}
+
+function googleDocsListInsertionRequests(list, startIndex, replacesTerminalParagraph) {
+  const lines = googleDocsListLines(list);
+  const lineTexts = lines.map(({ depth, paragraph }) =>
+    `${"\t".repeat(depth)}${googleDocsPlainText(paragraph.content)}`);
+  const text = lineTexts.join("\n") + (replacesTerminalParagraph ? "" : "\n");
+  const styleRequests = [];
+  let lineStart = startIndex;
+  lines.forEach(({ depth, paragraph }, lineIndex) => {
+    let inlineIndex = lineStart + depth;
+    paragraph.forEach((child) => {
+      const length = child.isText ? child.text.length : googleDocsLeafText(child).length;
+      if (child.isText) {
+        styleRequests.push(completeGoogleTextStyleRequest(
+          inlineIndex,
+          inlineIndex + length,
+          child.marks.map((mark) => mark.toJSON()),
+        ));
+      }
+      inlineIndex += length;
+    });
+    lineStart += lineTexts[lineIndex].length + 1;
+  });
+  return [
+    { insertText: { location: { index: startIndex }, text } },
+    ...styleRequests,
+    { createParagraphBullets: {
+      range: { startIndex, endIndex: startIndex + text.length + (replacesTerminalParagraph ? 1 : 0) },
+      bulletPreset: GOOGLE_DOCS_LIST_PRESETS[nodeType(list)],
+    } },
+  ];
+}
+
+/**
+ * Replays a document into a blank Google Doc one top-level block at a time, so each
+ * block goes through the same request builders as live editing. The blank document is
+ * one empty paragraph; each block replaces that trailing paragraph and re-adds it
+ * while more blocks follow.
+ */
+export function initialGoogleDocsPushPhases(finalDoc) {
+  const problems = initialGoogleDocsPushProblems(finalDoc);
+  if (problems.length) throw new Error(`Cannot copy ${problems.join(", ")} to a new Google Doc yet`);
+  const schema = finalDoc.type.schema;
+  const blocks = nodeChildren(finalDoc);
+  const emptyParagraph = () => schema.nodes.paragraph.create();
+  let state = EditorState.create({ doc: schema.topNodeType.create(null, [emptyParagraph()]) });
+  const requestGroups = [];
+
+  function replaceTerminalParagraph(nodes, buildRequests) {
+    const before = state.doc;
+    const transaction = state.tr;
+    transaction.replaceWith(before.content.size - before.lastChild.nodeSize, before.content.size, nodes);
+    const terminalStart = before.content.size - before.lastChild.nodeSize;
+    const startIndex = buildProseMirrorToGoogleDocsPositionMap(before).mapPosition(terminalStart);
+    requestGroups.push(buildRequests
+      ? buildRequests(startIndex)
+      : transactionToGoogleDocsBatchUpdateRequests(transaction, before));
+    state = state.apply(transaction);
+    return terminalStart;
+  }
+
+  function alignParagraphs(paragraphs, firstPosition) {
+    let position = firstPosition;
+    for (const paragraph of paragraphs) {
+      const plain = paragraph.type.create(null, paragraph.content, paragraph.marks);
+      if (paragraph.attrs.textAlign && paragraph.attrs.textAlign !== plain.attrs.textAlign) {
+        const before = state.doc;
+        const transaction = state.tr.setNodeMarkup(position, null, paragraph.attrs);
+        requestGroups.push(transactionToGoogleDocsBatchUpdateRequests(transaction, before));
+        state = state.apply(transaction);
+      }
+      position += paragraph.nodeSize;
+    }
+  }
+
+  let index = 0;
+  while (index < blocks.length) {
+    const hasMoreAfter = (lastIndex) => lastIndex < blocks.length - 1;
+    const type = nodeType(blocks[index]);
+    if (type === "paragraph") {
+      const run = [];
+      while (index < blocks.length && nodeType(blocks[index]) === "paragraph") run.push(blocks[index++]);
+      const plainRun = run.map((paragraph) => paragraph.type.create(null, paragraph.content, paragraph.marks));
+      const runStart = replaceTerminalParagraph(
+        hasMoreAfter(index - 1) ? [...plainRun, emptyParagraph()] : plainRun,
+      );
+      alignParagraphs(run, runStart);
+    } else if (type === "table") {
+      replaceTerminalParagraph(
+        hasMoreAfter(index) ? [blocks[index], emptyParagraph()] : [blocks[index]],
+      );
+      index += 1;
+    } else {
+      const list = blocks[index];
+      const isLast = !hasMoreAfter(index);
+      replaceTerminalParagraph(
+        isLast ? [list] : [list, emptyParagraph()],
+        (startIndex) => googleDocsListInsertionRequests(list, startIndex, isLast),
+      );
+      index += 1;
+    }
+  }
+
+  debugEvent("gdocsSync", "initial-push-built", {
+    topLevelTypes: blocks.map(nodeType),
+    requestGroups: requestGroups.length,
+    replayedDocumentMatches: state.doc.eq(finalDoc),
+  });
+  return requestGroupsToGoogleDocsBatchUpdatePhases(requestGroups);
+}
+
+export async function pushGoogleDocument(doc, syncState) {
+  const phases = initialGoogleDocsPushPhases(doc);
+  debugEvent("gdocsSync", "initial-push-start", {
+    documentId: syncState.documentId,
+    document: summarizeProseMirrorDocument(doc),
+    phases: phases.length,
+  });
+  return pushGoogleDocsPhases(phases, syncState);
 }

@@ -42,11 +42,14 @@ import { createChatMarkdownStream, refreshChatAnchors, renderChatAnchor, renderR
 import { suggestionDiffParts } from "./suggestionDiff.js";
 import {
   buildProseMirrorToGoogleDocsPositionMap,
+  createGoogleDocument,
   fetchGoogleDocumentRevision,
   googleDocumentIdFromUrl,
+  initialGoogleDocsPushProblems,
   needsGoogleDocsAuthentication,
   pullGoogleDocument as pullGoogleDocumentFromApi,
   pushGoogleDocsTransactions,
+  pushGoogleDocument,
   googleDocsTransactionsFromEditorEvent,
 } from "./gdocsSync.js";
 import { assertGoogleDocsCompatibilityConfig, CONFIG } from "./config.js";
@@ -4622,6 +4625,11 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     }
   }
 
+  function promptGoogleDocsSignIn() {
+    window.open("/api/google-docs/oauth/start", "google-docs-oauth", "popup,width=560,height=720");
+    setStatus("sign in to Google Docs, then sync again");
+  }
+
   async function pullGoogleDocument({
     clearPendingTransactions = true,
     syncState = googleDocsSync,
@@ -4686,8 +4694,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       if (!isCurrentGoogleDocsSync(syncState, generation)) return false;
       console.error(err);
       if (needsGoogleDocsAuthentication(err)) {
-        window.open("/api/google-docs/oauth/start", "google-docs-oauth", "popup,width=560,height=720");
-        setStatus("sign in to Google Docs, then sync again");
+        promptGoogleDocsSignIn();
         return false;
       }
       setGoogleDocsSyncError(err);
@@ -4739,17 +4746,66 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     setStatus(`syncing to ${title ? `"${title}"` : "Google Docs"}`);
   }
 
+  async function syncNewGoogleDocument(existingDocumentId) {
+    if (isViewingHistory()) {
+      setStatus("return to the working draft before creating a google doc", "warn");
+      return;
+    }
+    const doc = tipTap.state.doc;
+    const problems = initialGoogleDocsPushProblems(doc);
+    if (problems.length) {
+      console.warn("[gdocsSync] new doc blocked by unsupported content", problems);
+      setStatus(`can't copy ${problems.join(", ")} to a new google doc yet`, "warn");
+      return;
+    }
+    if (existingDocumentId && !window.confirm(
+      "This branch already syncs to a Google Doc. Create a new doc and sync to it instead? The old doc stays untouched.",
+    )) return;
+
+    const title = activeDraftDisplayTitle() || "Untitled";
+    console.info("[gdocsSync] creating google doc", { title, branch: currentBranchName, previousDocumentId: existingDocumentId ?? null });
+    setStatus("creating google doc...");
+    let created;
+    try {
+      created = await createGoogleDocument(title);
+    } catch (err) {
+      if (!needsGoogleDocsAuthentication(err)) throw err;
+      promptGoogleDocsSignIn();
+      return;
+    }
+    const documentUrl = `https://docs.google.com/document/d/${created.documentId}/edit`;
+    setStatus("copying draft to google doc...");
+    setEditorEditable(false);
+    let syncState;
+    try {
+      syncState = await pushGoogleDocument(doc, { documentId: created.documentId, revisionId: created.revisionId });
+    } catch (err) {
+      console.error("[gdocsSync] copy to new google doc failed; blank doc left at", documentUrl, err);
+      throw new Error(`could not copy draft to the new google doc: ${err.message || err}`);
+    } finally {
+      setEditorEditable(true);
+    }
+    await store.setBranchSync(activeDraftId, currentBranchName, created.documentId);
+    replaceGoogleDocsSync(syncState);
+    console.info("[gdocsSync] new google doc linked", { documentId: created.documentId, revisionId: syncState.revisionId, url: documentUrl });
+    setStatus(`syncing to "${created.title || title}"`);
+  }
+
   async function syncCurrentBranch() {
     const target = await store.getBranchSync(activeDraftId, currentBranchName);
     const currentLink = target?.documentId
       ? `https://docs.google.com/document/d/${target.documentId}/edit`
       : "";
-    const link = window.prompt("Paste Google Docs link for this branch:", currentLink);
+    const link = window.prompt('Paste Google Docs link for this branch, or type "new" to create one:', currentLink);
     if (link == null) return;
     if (!link.trim()) {
       await store.setBranchSync(activeDraftId, currentBranchName, null);
       replaceGoogleDocsSync(null);
       setStatus("google docs sync disabled for this branch");
+      return;
+    }
+    if (link.trim().toLowerCase() === "new") {
+      await syncNewGoogleDocument(target?.documentId);
       return;
     }
     await syncGoogleDocumentFromLink(link);

@@ -251,6 +251,10 @@ class GoogleDocsBatchUpdateRequest(BaseModel):
   model_config = {"populate_by_name": True}
 
 
+class GoogleDocsCreateRequest(BaseModel):
+  title: str = Field(default="Untitled", max_length=250)
+
+
 GOOGLE_DOCS_DOCUMENT_ID = "1sADU8OrbDmZW1VyuaARqjVNjmWLHl2wWl3R71WkCEDI"
 
 
@@ -544,6 +548,41 @@ async def fetch_google_document_title(
       detail = response.text
     raise HTTPException(status_code=response.status_code, detail=detail)
   return response.json().get("title", "")
+
+
+async def create_google_document(session_id: str, title: str) -> dict[str, Any]:
+  token = await get_access_token(session_id)
+  response = await get_http_client().post(
+    "https://docs.googleapis.com/v1/documents",
+    json={"title": title},
+    headers={"Authorization": f"Bearer {token}"},
+  )
+  if response.is_error:
+    try:
+      detail = response.json().get("error", {}).get("message", response.text)
+    except Exception:
+      detail = response.text
+    raise HTTPException(status_code=response.status_code, detail=detail)
+  return response.json()
+
+
+@app.post("/api/google-docs/create")
+async def api_google_docs_create(
+  request: Request, body: GoogleDocsCreateRequest
+) -> dict[str, str | None]:
+  title = body.title.strip() or "Untitled"
+  try:
+    document = await create_google_document(require_google_session(request), title)
+  except HTTPException:
+    raise
+  except Exception as exc:
+    raise HTTPException(status_code=500, detail=str(exc)) from exc
+  print(f"[GDocs Create BE] Created document {document['documentId']} titled {title!r}")
+  return {
+    "documentId": document["documentId"],
+    "revisionId": document.get("revisionId"),
+    "title": document.get("title", title),
+  }
 
 
 @app.get("/api/google-docs/document")
