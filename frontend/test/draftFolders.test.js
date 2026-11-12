@@ -1,145 +1,83 @@
 import { describe, expect, it } from "vitest";
 import {
+  UNFILED_FILTER,
   assignDraft,
-  buildFolderTree,
   createFolder,
   deleteFolder,
-  draftFolderPath,
+  draftFolderName,
   emptyFolderState,
-  flattenFolders,
+  filterDraftsByFolder,
   folderOptions,
-  indentFolder,
-  moveFolder,
   normalizeFolderState,
-  outdentFolder,
   removeDraft,
   renameFolder,
   reorderFolder,
-  setFolderCollapsed,
   shiftFolder,
   unfiledDrafts,
 } from "../src/draftFolders.js";
 
 function build(...specs) {
   let state = emptyFolderState();
-  for (const [id, name, parentId] of specs) {
-    state = createFolder(state, { id, name, parentId: parentId ?? null }).state;
+  for (const [id, name] of specs) {
+    state = createFolder(state, { id, name }).state;
   }
   return state;
 }
 
 const school = ["school", "School"];
-const math = ["math", "Math", "school"];
 const work = ["work", "Work"];
+const home = ["home", "Home"];
+
+const order = (state) => state.folders.map((f) => f.id);
 
 describe("createFolder / renameFolder", () => {
   it("trims names and rejects empty ones", () => {
     const { folder } = createFolder(emptyFolderState(), { id: "a", name: "  Notes  " });
-    expect(folder).toEqual({ id: "a", name: "Notes", parentId: null, collapsed: false });
+    expect(folder).toEqual({ id: "a", name: "Notes" });
     expect(() => createFolder(emptyFolderState(), { id: "b", name: "   " })).toThrow(/empty/);
     expect(() => renameFolder(build(school), "school", "")).toThrow(/empty/);
   });
 
-  it("rejects a missing parent", () => {
-    expect(() => createFolder(emptyFolderState(), { id: "a", name: "A", parentId: "nope" })).toThrow(/not found/);
-  });
-});
-
-describe("moveFolder", () => {
-  it("moves a folder under another and back to top level", () => {
-    let state = moveFolder(build(school, work), "work", "school");
-    expect(state.folders.find((f) => f.id === "work").parentId).toBe("school");
-    state = moveFolder(state, "work", null);
-    expect(state.folders.find((f) => f.id === "work").parentId).toBeNull();
-  });
-
-  it("blocks moving a folder into itself or a descendant", () => {
-    const state = build(school, math);
-    expect(() => moveFolder(state, "school", "school")).toThrow(/itself/);
-    expect(() => moveFolder(state, "school", "math")).toThrow(/itself/);
+  it("renames in place", () => {
+    expect(renameFolder(build(school), "school", " Uni ").folders).toEqual([{ id: "school", name: "Uni" }]);
   });
 });
 
 describe("manual folder order", () => {
-  const home = ["home", "Home"];
-  const top = (state) => state.folders.filter((f) => !f.parentId).map((f) => f.id);
-  const childrenOf = (state, parentId) => state.folders.filter((f) => f.parentId === parentId).map((f) => f.id);
-
   it("keeps creation order and appends moved folders last", () => {
     const state = build(work, school, home);
-    expect(top(state)).toEqual(["work", "school", "home"]);
-    expect(top(reorderFolder(state, "work", {}))).toEqual(["school", "home", "work"]);
+    expect(order(state)).toEqual(["work", "school", "home"]);
+    expect(order(reorderFolder(state, "work"))).toEqual(["school", "home", "work"]);
   });
 
-  it("places a folder before a sibling, including across parents", () => {
-    const state = build(school, math, work, home);
-    expect(top(reorderFolder(state, "home", { beforeId: "school" }))).toEqual(["home", "school", "work"]);
-    const nested = reorderFolder(state, "home", { parentId: "school", beforeId: "math" });
-    expect(childrenOf(nested, "school")).toEqual(["home", "math"]);
+  it("places a folder before another and rejects bad anchors", () => {
+    const state = build(school, work, home);
+    expect(order(reorderFolder(state, "home", { beforeId: "school" }))).toEqual(["home", "school", "work"]);
+    expect(() => reorderFolder(state, "work", { beforeId: "work" })).toThrow(/itself/);
+    expect(() => reorderFolder(state, "work", { beforeId: "nope" })).toThrow(/not found/);
   });
 
-  it("rejects cycles and non-sibling anchors", () => {
-    const state = build(school, math, work);
-    expect(() => reorderFolder(state, "school", { parentId: "math" })).toThrow(/itself/);
-    expect(() => reorderFolder(state, "work", { beforeId: "math" })).toThrow(/sibling/);
-    expect(() => reorderFolder(state, "work", { beforeId: "work" })).toThrow(/sibling/);
-  });
-
-  it("shifts among siblings only and stops at the edges", () => {
-    const state = build(school, math, work, home);
-    expect(top(shiftFolder(state, "work", -1))).toEqual(["work", "school", "home"]);
-    expect(top(shiftFolder(state, "school", 1))).toEqual(["work", "school", "home"]);
-    expect(top(shiftFolder(state, "work", 1))).toEqual(["school", "home", "work"]);
+  it("shifts by one and stops at the edges", () => {
+    const state = build(school, work, home);
+    expect(order(shiftFolder(state, "work", -1))).toEqual(["work", "school", "home"]);
+    expect(order(shiftFolder(state, "school", 1))).toEqual(["work", "school", "home"]);
+    expect(order(shiftFolder(state, "work", 1))).toEqual(["school", "home", "work"]);
     expect(shiftFolder(state, "school", -1)).toBe(state);
     expect(shiftFolder(state, "home", 1)).toBe(state);
-    expect(shiftFolder(state, "math", 1)).toBe(state);
-  });
-
-  it("indents into the previous sibling and expands it", () => {
-    const state = setFolderCollapsed(build(school, work, home), "school", true);
-    const indented = indentFolder(state, "work");
-    expect(childrenOf(indented, "school")).toEqual(["work"]);
-    expect(indented.folders.find((f) => f.id === "school").collapsed).toBe(false);
-    expect(indentFolder(state, "school")).toBe(state);
-  });
-
-  it("indents as the last child of the previous sibling", () => {
-    const state = build(school, math, work);
-    expect(childrenOf(indentFolder(state, "work"), "school")).toEqual(["math", "work"]);
-  });
-
-  it("outdents to directly after the former parent", () => {
-    const state = build(school, math, work);
-    const outdented = outdentFolder(state, "math");
-    expect(top(outdented)).toEqual(["school", "math", "work"]);
-    expect(outdentFolder(state, "school")).toBe(state);
   });
 });
 
 describe("deleteFolder", () => {
-  it("lifts subfolders into the deleted folder's slot", () => {
-    const state = build(school, ["a", "A", "school"], ["b", "B", "school"], work);
-    const next = deleteFolder(state, "school");
-    expect(next.folders.map((f) => [f.id, f.parentId])).toEqual([
-      ["a", null],
-      ["b", null],
-      ["work", null],
-    ]);
-  });
-
-  it("moves subfolders and drafts up one level", () => {
-    let state = build(school, math);
-    state = assignDraft(assignDraft(state, "d1", "math"), "d2", "school");
-    state = deleteFolder(state, "math");
-    expect(state.folders.map((f) => f.id)).toEqual(["school"]);
-    expect(state.assignments).toEqual({ d1: "school", d2: "school" });
-  });
-
-  it("un-files drafts and lifts subfolders when a top-level folder is deleted", () => {
-    let state = assignDraft(build(school, math), "d1", "school");
+  it("un-files the folder's drafts and keeps other assignments", () => {
+    let state = build(school, work);
+    state = assignDraft(assignDraft(state, "d1", "school"), "d2", "work");
     state = deleteFolder(state, "school");
-    expect(state.folders).toEqual([{ id: "math", name: "Math", parentId: null, collapsed: false }]);
-    expect(state.assignments).toEqual({});
+    expect(order(state)).toEqual(["work"]);
+    expect(state.assignments).toEqual({ d2: "work" });
+  });
+
+  it("rejects unknown folders", () => {
+    expect(() => deleteFolder(build(school), "nope")).toThrow(/not found/);
   });
 });
 
@@ -161,49 +99,29 @@ describe("assignDraft / removeDraft", () => {
 
 describe("views", () => {
   const drafts = [{ id: "d1" }, { id: "d2" }, { id: "d3" }, { id: "d4" }];
-
-  it("builds a tree with folders in manual order and drafts in the given order", () => {
-    let state = build(work, school, math);
-    state = assignDraft(assignDraft(assignDraft(state, "d1", "math"), "d3", "math"), "d2", "work");
-    const tree = buildFolderTree(state, drafts);
-    expect(tree.map((node) => node.folder.name)).toEqual(["Work", "School"]);
-    expect(tree[1].folders[0].folder.name).toBe("Math");
-    expect(tree[1].folders[0].drafts.map((d) => d.id)).toEqual(["d1", "d3"]);
-    expect(tree[0].drafts.map((d) => d.id)).toEqual(["d2"]);
-  });
+  const filed = assignDraft(assignDraft(build(school, work), "d1", "school"), "d3", "school");
 
   it("lists unfiled drafts", () => {
-    const state = assignDraft(build(school), "d2", "school");
-    expect(unfiledDrafts(state, drafts).map((d) => d.id)).toEqual(["d1", "d3", "d4"]);
+    expect(unfiledDrafts(filed, drafts).map((d) => d.id)).toEqual(["d2", "d4"]);
   });
 
-  it("formats a draft's folder path", () => {
-    const state = assignDraft(build(school, math), "d1", "math");
-    expect(draftFolderPath(state, "d1")).toBe("School / Math");
-    expect(draftFolderPath(state, "d2")).toBe("");
+  it("filters drafts by all, unfiled, or one folder, keeping the given order", () => {
+    expect(filterDraftsByFolder(filed, drafts, "")).toBe(drafts);
+    expect(filterDraftsByFolder(filed, drafts, UNFILED_FILTER).map((d) => d.id)).toEqual(["d2", "d4"]);
+    expect(filterDraftsByFolder(filed, drafts, "school").map((d) => d.id)).toEqual(["d1", "d3"]);
+    expect(filterDraftsByFolder(filed, drafts, "work")).toEqual([]);
   });
 
-  it("lists every folder with its full path", () => {
-    expect(folderOptions(build(work, school, math))).toEqual([
+  it("names a draft's folder", () => {
+    expect(draftFolderName(filed, "d1")).toBe("School");
+    expect(draftFolderName(filed, "d2")).toBe("");
+  });
+
+  it("lists every folder with its name as the path", () => {
+    expect(folderOptions(build(work, school))).toEqual([
       { id: "work", path: "Work" },
       { id: "school", path: "School" },
-      { id: "math", path: "School / Math" },
     ]);
-  });
-
-  it("flattens folders depth-first and can exclude a subtree", () => {
-    const state = build(work, school, math);
-    expect(flattenFolders(state).map((row) => [row.folder.id, row.depth])).toEqual([
-      ["work", 0],
-      ["school", 0],
-      ["math", 1],
-    ]);
-    expect(flattenFolders(state, { excludeId: "school" }).map((row) => row.folder.id)).toEqual(["work"]);
-  });
-
-  it("toggles collapsed state", () => {
-    const state = setFolderCollapsed(build(school), "school", true);
-    expect(state.folders[0].collapsed).toBe(true);
   });
 });
 
@@ -228,9 +146,9 @@ describe("normalizeFolderState", () => {
       },
       (message) => reports.push(message)
     );
-    expect(state.folders.map((f) => [f.id, f.name, f.parentId])).toEqual([
-      ["a", "A", null],
-      ["c", "C", null],
+    expect(state.folders).toEqual([
+      { id: "a", name: "A" },
+      { id: "c", name: "C" },
     ]);
     expect(state.assignments).toEqual({ d1: "a" });
     expect(reports).toHaveLength(7);
@@ -240,23 +158,100 @@ describe("normalizeFolderState", () => {
     const legacy = { folders: [{ id: "w", name: "Work" }, { id: "s", name: "School" }], assignments: {} };
     const reports = [];
     const migrated = normalizeFolderState(legacy, (message) => reports.push(message));
-    expect(migrated.folders.map((f) => f.id)).toEqual(["s", "w"]);
+    expect(order(migrated)).toEqual(["s", "w"]);
     expect(migrated.version).toBe(2);
     expect(reports).toEqual(["migrated 2 folders from A–Z to manual order"]);
 
     const reordered = { ...migrated, folders: [...migrated.folders].reverse() };
-    expect(normalizeFolderState(reordered).folders.map((f) => f.id)).toEqual(["w", "s"]);
+    expect(order(normalizeFolderState(reordered))).toEqual(["w", "s"]);
   });
 
-  it("breaks parent cycles", () => {
+  it("breaks parent cycles, then flattens what remains", () => {
     const state = normalizeFolderState({
+      version: 2,
       folders: [
         { id: "a", name: "A", parentId: "b" },
         { id: "b", name: "B", parentId: "a" },
         { id: "c", name: "C", parentId: "a" },
       ],
     });
-    const parents = Object.fromEntries(state.folders.map((f) => [f.id, f.parentId]));
-    expect(parents).toEqual({ a: null, b: "a", c: "a" });
+    expect(state.folders).toEqual([
+      { id: "a", name: "A" },
+      { id: "b", name: "A / B" },
+      { id: "c", name: "A / C" },
+    ]);
+  });
+});
+
+describe("nested folder migration", () => {
+  const nested = {
+    version: 2,
+    folders: [
+      { id: "physics", name: "Physics", parentId: null, collapsed: true },
+      { id: "essays", name: "Essays", parentId: null, collapsed: false },
+      { id: "problem", name: "Problem sets", parentId: "physics", collapsed: false },
+      { id: "week3", name: "Week 3", parentId: "problem", collapsed: false },
+      { id: "labs", name: "Lab reports", parentId: "physics", collapsed: false },
+    ],
+    assignments: { d1: "week3", d2: "physics", d3: "essays" },
+  };
+
+  it("names subfolders by path and keeps depth-first order", () => {
+    const state = normalizeFolderState(nested);
+    expect(state.folders).toEqual([
+      { id: "physics", name: "Physics" },
+      { id: "problem", name: "Physics / Problem sets" },
+      { id: "week3", name: "Physics / Problem sets / Week 3" },
+      { id: "labs", name: "Physics / Lab reports" },
+      { id: "essays", name: "Essays" },
+    ]);
+  });
+
+  it("keeps every draft in its folder", () => {
+    expect(normalizeFolderState(nested).assignments).toEqual(nested.assignments);
+  });
+
+  it("reports one message per flattened folder", () => {
+    const reports = [];
+    normalizeFolderState(nested, (message) => reports.push(message));
+    expect(reports).toEqual([
+      'flattened nested folder problem to "Physics / Problem sets"',
+      'flattened nested folder week3 to "Physics / Problem sets / Week 3"',
+      'flattened nested folder labs to "Physics / Lab reports"',
+    ]);
+  });
+
+  it("does nothing on a second pass", () => {
+    const once = normalizeFolderState(nested);
+    const reports = [];
+    expect(normalizeFolderState(once, (message) => reports.push(message))).toEqual(once);
+    expect(reports).toEqual([]);
+  });
+
+  it("flattens again when an older build writes nesting back", () => {
+    const once = normalizeFolderState(nested);
+    const rewritten = { ...once, folders: once.folders.map((f) => (f.id === "labs" ? { ...f, name: "Labs", parentId: "essays" } : f)) };
+    expect(normalizeFolderState(rewritten).folders.find((f) => f.id === "labs").name).toBe("Essays / Labs");
+  });
+
+  it("sorts legacy unversioned nesting A–Z before flattening", () => {
+    const state = normalizeFolderState({
+      folders: [
+        { id: "z", name: "Zed" },
+        { id: "a", name: "Alpha" },
+        { id: "k", name: "Kid", parentId: "z" },
+      ],
+    });
+    expect(state.folders).toEqual([
+      { id: "a", name: "Alpha" },
+      { id: "z", name: "Zed" },
+      { id: "k", name: "Zed / Kid" },
+    ]);
+  });
+
+  it("drops parentId and collapsed from the saved shape", () => {
+    for (const folder of normalizeFolderState(nested).folders) {
+      expect(Object.keys(folder).sort()).toEqual(["id", "name"]);
+    }
   });
 });

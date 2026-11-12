@@ -1,6 +1,7 @@
 const NAME_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 const FOLDER_STATE_VERSION = 2;
+export const UNFILED_FILTER = "unfiled";
 
 export function emptyFolderState() {
   return { version: FOLDER_STATE_VERSION, folders: [], assignments: {} };
@@ -33,6 +34,27 @@ function formsCycle(byId, start) {
   return false;
 }
 
+/** Turns legacy nesting into flat folders named "Parent / Child", keeping depth-first order. */
+function flattenNestedFolders(folders, report) {
+  const childrenByParent = new Map();
+  for (const folder of folders) {
+    const siblings = childrenByParent.get(folder.parentId) || [];
+    siblings.push(folder);
+    childrenByParent.set(folder.parentId, siblings);
+  }
+  const flat = [];
+  const walk = (parentId, parentName) => {
+    for (const folder of childrenByParent.get(parentId) || []) {
+      const name = parentName ? `${parentName} / ${folder.name}` : folder.name;
+      if (parentName) report(`flattened nested folder ${folder.id} to "${name}"`);
+      flat.push({ id: folder.id, name });
+      walk(folder.id, name);
+    }
+  };
+  walk(null, "");
+  return flat;
+}
+
 /** Repairs persisted state; `report` receives one message per repair. */
 export function normalizeFolderState(raw, report = () => {}) {
   const source = raw && typeof raw === "object" ? raw : {};
@@ -50,7 +72,6 @@ export function normalizeFolderState(raw, report = () => {}) {
       id,
       name,
       parentId: typeof item.parentId === "string" ? item.parentId : null,
-      collapsed: !!item.collapsed,
     });
   }
   const byId = new Map(folders.map((folder) => [folder.id, folder]));
@@ -77,26 +98,13 @@ export function normalizeFolderState(raw, report = () => {}) {
     report(`migrated ${folders.length} folders from A–Z to manual order`);
     folders.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   }
-  return { version: FOLDER_STATE_VERSION, folders, assignments };
+  return { version: FOLDER_STATE_VERSION, folders: flattenNestedFolders(folders, report), assignments };
 }
 
-/** True when `candidateId` is `folderId` or lies anywhere beneath it. */
-export function isSelfOrDescendant(state, folderId, candidateId) {
-  const visited = new Set();
-  let current = candidateId;
-  while (current && !visited.has(current)) {
-    if (current === folderId) return true;
-    visited.add(current);
-    current = folderById(state, current)?.parentId || null;
-  }
-  return false;
-}
-
-export function createFolder(state, { id, name, parentId = null }) {
+export function createFolder(state, { id, name }) {
   const cleaned = cleanFolderName(name);
   if (!id) throw new Error("Folder id is required");
-  if (parentId) requireFolder(state, parentId);
-  const folder = { id, name: cleaned, parentId, collapsed: false };
+  const folder = { id, name: cleaned };
   return { state: { ...state, folders: [...state.folders, folder] }, folder };
 }
 
@@ -109,88 +117,35 @@ export function renameFolder(state, id, name) {
   };
 }
 
-export function setFolderCollapsed(state, id, collapsed) {
-  requireFolder(state, id);
-  return {
-    ...state,
-    folders: state.folders.map((folder) => (folder.id === id ? { ...folder, collapsed: !!collapsed } : folder)),
-  };
-}
-
-/** Places the folder under `parentId`, before sibling `beforeId` (or last when `beforeId` is null). */
-export function reorderFolder(state, id, { parentId = null, beforeId = null } = {}) {
+/** Places the folder before `beforeId` (or last when `beforeId` is null). */
+export function reorderFolder(state, id, { beforeId = null } = {}) {
   const folder = requireFolder(state, id);
-  if (parentId) {
-    requireFolder(state, parentId);
-    if (isSelfOrDescendant(state, id, parentId)) {
-      throw new Error("A folder cannot be moved into itself or one of its subfolders");
-    }
-  }
   if (beforeId) {
-    const before = requireFolder(state, beforeId);
-    if (beforeId === id || (before.parentId || null) !== (parentId || null)) {
-      throw new Error("A folder can only be placed before a sibling at the target level");
-    }
+    requireFolder(state, beforeId);
+    if (beforeId === id) throw new Error("A folder cannot be placed before itself");
   }
   const rest = state.folders.filter((candidate) => candidate.id !== id);
-  const isSibling = (candidate) => (candidate.parentId || null) === (parentId || null);
-  const index = beforeId
-    ? rest.findIndex((candidate) => candidate.id === beforeId)
-    : rest.findLastIndex(isSibling) + 1 || rest.length;
-  rest.splice(index, 0, { ...folder, parentId: parentId || null });
+  const index = beforeId ? rest.findIndex((candidate) => candidate.id === beforeId) : rest.length;
+  rest.splice(index, 0, folder);
   return { ...state, folders: rest };
 }
 
-export function moveFolder(state, id, parentId) {
-  return reorderFolder(state, id, { parentId });
-}
-
-/** Swaps the folder with its previous (`-1`) or next (`1`) sibling; returns `state` when at the edge. */
+/** Swaps the folder with its previous (`-1`) or next (`1`) neighbour; returns `state` when at the edge. */
 export function shiftFolder(state, id, offset) {
-  const folder = requireFolder(state, id);
-  const siblings = childFolders(state, folder.parentId || null);
-  const target = siblings.findIndex((sibling) => sibling.id === id) + offset;
-  if (target < 0 || target >= siblings.length) return state;
-  const beforeId = (offset < 0 ? siblings[target] : siblings[target + 1])?.id ?? null;
-  return reorderFolder(state, id, { parentId: folder.parentId, beforeId });
+  requireFolder(state, id);
+  const target = state.folders.findIndex((folder) => folder.id === id) + offset;
+  if (target < 0 || target >= state.folders.length) return state;
+  const beforeId = (offset < 0 ? state.folders[target] : state.folders[target + 1])?.id ?? null;
+  return reorderFolder(state, id, { beforeId });
 }
 
-/** Nests the folder as the last child of its previous sibling and expands that sibling. */
-export function indentFolder(state, id) {
-  const folder = requireFolder(state, id);
-  const siblings = childFolders(state, folder.parentId || null);
-  const previous = siblings[siblings.findIndex((sibling) => sibling.id === id) - 1];
-  if (!previous) return state;
-  return setFolderCollapsed(reorderFolder(state, id, { parentId: previous.id }), previous.id, false);
-}
-
-/** Moves the folder out of its parent, directly after that parent. */
-export function outdentFolder(state, id) {
-  const folder = requireFolder(state, id);
-  if (!folder.parentId) return state;
-  const parent = requireFolder(state, folder.parentId);
-  const uncles = childFolders(state, parent.parentId || null);
-  const beforeId = uncles[uncles.findIndex((uncle) => uncle.id === parent.id) + 1]?.id ?? null;
-  return reorderFolder(state, id, { parentId: parent.parentId, beforeId });
-}
-
-/** Subfolders and drafts of the deleted folder move up one level, into the deleted folder's slot. */
+/** Drafts in the deleted folder become unfiled. */
 export function deleteFolder(state, id) {
-  const target = requireFolder(state, id);
-  const parentId = target.parentId;
-  const assignments = {};
-  for (const [draftId, folderId] of Object.entries(state.assignments)) {
-    if (folderId !== id) assignments[draftId] = folderId;
-    else if (parentId) assignments[draftId] = parentId;
-  }
-  const lifted = state.folders
-    .filter((folder) => folder.parentId === id)
-    .map((folder) => ({ ...folder, parentId }));
-  const folders = state.folders.flatMap((folder) => {
-    if (folder.id === id) return lifted;
-    return folder.parentId === id ? [] : [folder];
-  });
-  return { ...state, folders, assignments };
+  requireFolder(state, id);
+  const assignments = Object.fromEntries(
+    Object.entries(state.assignments).filter(([, folderId]) => folderId !== id)
+  );
+  return { ...state, folders: state.folders.filter((folder) => folder.id !== id), assignments };
 }
 
 export function assignDraft(state, draftId, folderId) {
@@ -209,73 +164,22 @@ export function removeDraft(state, draftId) {
   return assignDraft(state, draftId, null);
 }
 
-export function hasSubfolders(state, id) {
-  return state.folders.some((folder) => folder.parentId === id);
+export function draftFolderName(state, draftId) {
+  return folderById(state, state.assignments[draftId])?.name ?? "";
 }
 
-export function folderPath(state, folderId) {
-  const names = [];
-  const visited = new Set();
-  let current = folderId;
-  while (current && !visited.has(current)) {
-    visited.add(current);
-    const folder = folderById(state, current);
-    if (!folder) break;
-    names.unshift(folder.name);
-    current = folder.parentId;
-  }
-  return names;
-}
-
-export function draftFolderPath(state, draftId) {
-  return folderPath(state, state.assignments[draftId]).join(" / ");
-}
-
-/** `{ id, path }` for every folder, e.g. "College apps / Essays". */
+/** `{ id, path }` for every folder; `path` is the folder name, e.g. "College apps / Essays". */
 export function folderOptions(state) {
-  return state.folders.map((folder) => ({
-    id: folder.id,
-    path: folderPath(state, folder.id).join(" / "),
-  }));
-}
-
-function childFolders(state, parentId) {
-  return state.folders
-    .filter((folder) => (folder.parentId || null) === parentId);
-}
-
-/** Folders in manual order at each level; `drafts` keep the order given. */
-export function buildFolderTree(state, drafts) {
-  const draftsByFolder = new Map();
-  for (const draft of drafts) {
-    const folderId = state.assignments[draft.id];
-    if (!folderId) continue;
-    if (!draftsByFolder.has(folderId)) draftsByFolder.set(folderId, []);
-    draftsByFolder.get(folderId).push(draft);
-  }
-  const build = (parentId) =>
-    childFolders(state, parentId).map((folder) => ({
-      folder,
-      folders: build(folder.id),
-      drafts: draftsByFolder.get(folder.id) || [],
-    }));
-  return build(null);
+  return state.folders.map((folder) => ({ id: folder.id, path: folder.name }));
 }
 
 export function unfiledDrafts(state, drafts) {
   return drafts.filter((draft) => !state.assignments[draft.id]);
 }
 
-/** Depth-first folder list for menus; skips `excludeId` and everything beneath it. */
-export function flattenFolders(state, { excludeId = null } = {}) {
-  const rows = [];
-  const walk = (parentId, depth) => {
-    for (const folder of childFolders(state, parentId)) {
-      if (folder.id === excludeId) continue;
-      rows.push({ folder, depth });
-      walk(folder.id, depth + 1);
-    }
-  };
-  walk(null, 0);
-  return rows;
+/** `filter` is "" for every draft, `UNFILED_FILTER` for unfiled drafts, or a folder id. */
+export function filterDraftsByFolder(state, drafts, filter) {
+  if (!filter) return drafts;
+  if (filter === UNFILED_FILTER) return unfiledDrafts(state, drafts);
+  return drafts.filter((draft) => state.assignments[draft.id] === filter);
 }

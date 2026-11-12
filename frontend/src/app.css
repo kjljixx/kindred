@@ -550,9 +550,7 @@ button.pane-title {
 }
 
 .draft-item:hover > .draft-item-actions,
-.draft-item:focus-within:not(:focus-visible) > .draft-item-actions,
-.folder-item:hover > .draft-item-actions,
-.folder-item:focus-within:not(:focus-visible) > .draft-item-actions {
+.draft-item:focus-within:not(:focus-visible) > .draft-item-actions {
   display: flex;
 }
 
@@ -566,140 +564,97 @@ button.pane-title {
   white-space: nowrap;
 }
 
-.draft-list .folder-add {
+.draft-view-controls:has(> .folder-picker) {
   align-self: stretch;
-  justify-content: flex-start;
-  margin: var(--space-8) var(--space-3) var(--space-1);
-  padding-left: var(--space-5);
 }
 
-.folder-item[data-unfiled] {
-  --folder-title-offset: 0px;
-}
-
-.folder-item[data-unfiled] > .folder-name {
-  color: var(--neutral-500);
-}
-
-.folder-item[data-unfiled] > .folder-chevron {
-  color: var(--neutral-600);
-}
-
-.folder-item {
-  --folder-title-offset: calc(var(--space-4) + var(--folder-depth, 0) * var(--space-5));
-  position: relative;
+/* Spans the full header height so the pointer never leaves the hover area between the title and the menu. */
+.folder-picker {
   display: flex;
   align-items: center;
+  align-self: stretch;
+}
+
+.folder-picker-btn {
+  display: inline-flex;
+  align-items: center;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
-  margin: 0 var(--space-3) var(--space-1);
-  border-radius: var(--radius-2);
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.folder-item:hover,
-.folder-item:focus-within {
-  background: var(--color-bg-raised);
-}
-
-@media (hover: hover) {
-  .folder-item:hover > .folder-name,
-  .folder-item:hover > .folder-chevron {
-    color: var(--color-text-bright);
-  }
-}
-
-.folder-chevron {
-  flex-shrink: 0;
-  width: 10px;
-  height: 10px;
-  margin-left: var(--folder-title-offset);
-  color: var(--color-text-subtle);
-  transform: rotate(-90deg);
-}
-
-.folder-item.open > .folder-chevron {
-  transform: none;
-}
-
-.folder-name {
-  flex: 1;
-  min-width: 0;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-2);
-  font-weight: var(--font-weight-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.folder-name-input {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
+  padding: var(--space-3) var(--space-5);
   border: none;
-  border-bottom: 1px solid var(--color-accent);
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--color-text);
   font: inherit;
-  font-size: var(--font-size-2);
-  outline: none;
-}
-
-.folder-children {
-  display: flow-root;
-  --folder-name-baseline-rise: calc(var(--space-4) + var(--font-size-2) * (var(--line-height-3) / 2 + 0.36));
-  --folder-line-bottom-inset: calc(var(--space-1) + var(--space-4) + var(--font-size-1) * (var(--line-height-3) / 2 - 0.36));
-  margin-top: calc(-1 * (var(--space-1) + var(--folder-name-baseline-rise)));
-  padding-top: calc(var(--space-1) + var(--folder-name-baseline-rise));
-  margin-right: calc(var(--space-3) + var(--space-5) + 10px / 2 - 0.5px);
-  background: linear-gradient(var(--neutral-700), var(--neutral-700)) right top / 1px calc(100% - var(--folder-line-bottom-inset)) no-repeat;
-}
-
-.folder-children:has(> .folder-item:last-child) {
-  --folder-line-bottom-inset: calc(var(--space-1) + var(--folder-name-baseline-rise));
-}
-
-/* Same outline as a selected editor image (.ProseMirror-selectednode), inset like .has-caret */
-.folder-item.lifted {
-  background: var(--color-bg-raised);
-  outline: 2px solid hsl(207 90% 62%);
-  outline-offset: -2px;
-}
-
-.folder-slot {
-  position: relative;
-  display: block;
-  flex: none;
-  width: calc(100% - var(--space-3) * 2);
-  height: 14px;
-  margin: 0 var(--space-3);
-  padding: 0;
-  border: none;
-  background: transparent;
+  font-size: var(--font-size-3);
+  font-weight: var(--font-weight-3);
   cursor: pointer;
 }
 
-/* Mirrors #divider: guide-line grey at rest, accent-soft on hover or focus, same thickness */
-.folder-slot::before {
-  content: "";
-  position: absolute;
-  inset: 50% var(--space-5) auto;
-  height: var(--size-divider);
-  margin-top: calc(var(--size-divider) / -2);
-  background: var(--neutral-700);
+.folder-picker-btn svg {
+  opacity: 0.5;
 }
 
-.folder-slot:hover::before,
-.folder-slot:focus-visible::before {
-  background: var(--color-accent-soft);
+.folder-picker.open > .folder-picker-btn,
+.folder-picker-btn:focus-visible {
+  background: var(--color-bg-raised);
 }
 
-.move-menu .move-menu-reorder {
-  margin-bottom: var(--space-2);
-  border-bottom: 1px solid var(--neutral-700);
+.folder-picker[data-side="left"].open > .folder-picker-btn {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.folder-picker[data-side="left"].open > .folder-picker-btn svg {
+  transform: rotate(90deg);
+}
+
+/* Positioned by JS: left of the title button, top-aligned and touching it, or below it when there is no room. */
+.scroll-host:has(> .folder-picker-menu) {
+  position: fixed;
+  display: none;
+  z-index: 30;
+  width: max-content;
+  min-width: 9rem;
+  max-width: min(18rem, calc(100vw - 2 * var(--space-4)));
+  padding: var(--space-3);
+  border-radius: var(--radius-2) 0 var(--radius-2) var(--radius-2);
+  background: var(--color-bg-raised);
+  box-shadow: 0 var(--space-2) var(--space-7) hsl(240 10% 4% / 0.9);
+}
+
+.scroll-host:has(> .folder-picker-menu[data-side="below"]) {
+  border-radius: var(--radius-2);
+}
+
+.scroll-host:has(> .folder-picker-menu.open) {
+  display: flex;
+}
+
+.export-menu.folder-picker-menu {
+  position: static;
+  z-index: auto;
+  min-width: 0;
+  padding: 0;
+  max-height: min(60vh, 24rem);
+  background: transparent;
+  box-shadow: none;
+}
+
+.folder-picker-menu button {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-picker-menu button[aria-checked="true"] {
+  color: var(--color-accent-soft);
+}
+
+.folder-picker-menu hr,
+.move-menu hr {
+  border: 0;
+  border-top: 1px solid var(--neutral-700);
+  margin: var(--space-2) 0;
 }
 
 .export-menu.move-menu {
@@ -711,7 +666,6 @@ button.pane-title {
 }
 
 .move-menu .move-menu-item {
-  padding-left: calc(var(--space-5) + var(--depth, 0) * var(--space-5));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2941,7 +2895,6 @@ button.pane-title {
 }
 
 .draft-item::before,
-.folder-item::before,
 .git-row::before,
 .editor-toolbar button::before,
 .editor-toolbar .toolbar-color::before,
@@ -2954,24 +2907,14 @@ button.pane-title {
 }
 
 .draft-item > *,
-.folder-item > *,
 .git-row > * {
   z-index: 1;
 }
 
 .draft-item > .draft-item-actions,
-.folder-item > .draft-item-actions,
 .git-row > .git-row-actions {
   align-self: stretch;
   margin: calc(var(--space-1) * -1 - var(--space-4)) calc(var(--space-5) * -1) calc(var(--space-1) * -1 - var(--space-4)) calc(var(--space-4) * -1);
-}
-
-.folder-item > .draft-item-actions {
-  margin-right: 0;
-}
-
-.folder-item > .draft-item-actions > :last-child {
-  border-right: none;
 }
 
 .git-row > .git-row-actions {
@@ -2995,7 +2938,6 @@ button.pane-title {
 }
 
 .draft-item::before,
-.folder-item::before,
 .git-row::before {
   inset: calc(var(--space-1) * -1) 0;
 }
@@ -3209,13 +3151,11 @@ button.pane-title {
   }
 
   .draft-item:hover:not(:focus-within),
-  .folder-item:hover:not(:focus-within),
   .git-row:not(.active):hover:not(:focus-within) {
     background: transparent;
   }
 
   .draft-item:hover > .draft-item-actions:not(:focus-within),
-  .folder-item:hover > .draft-item-actions:not(:focus-within),
   .git-row:not(.active):hover .git-row-actions:not(:focus-within) {
     display: none;
   }

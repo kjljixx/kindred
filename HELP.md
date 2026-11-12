@@ -24,8 +24,8 @@ Editor Keyboard Shortcuts
 - Alt+[ and Alt+]: Shift the current selection left or right by one organizational unit. For example, if you have a sentence selected, Alt+[ will select the previous sentence, and Alt+] will select the next sentence. The original caret position moves with the selection.
 - Escape: Collapse the current selection to the position where the selection began. For selections expanded or moved with the shortcuts above, this returns to the tracked original caret position.
 - Ctrl+;: Focus the editor pane and the editor (on the home page, focus the empty editor to start a new draft)
-- Ctrl+[: Focus chat pane (on the home page, switch the draft list to Recents)
-- Ctrl+]: Focus editor pane (on the home page, switch the draft list to Folders)
+- Ctrl+[: Focus chat pane (on the home page, show the previous folder in the draft list)
+- Ctrl+]: Focus editor pane (on the home page, show the next folder in the draft list)
 - Ctrl+8: Switch to Text view mode
 - Ctrl+9: Switch to Diff view mode
 - Ctrl+0: Switch to Review view mode
@@ -40,7 +40,7 @@ Exporting:
 - All math will be correctly exported; in Diff mode, exports include green for additions and red strikethroughs for deletions
 
 Folders:
-- Move > Reorder on a folder: Click a line between its sibling folders to place it there. Esc or a click elsewhere cancels.
-- Alt+Up/Down on a focused folder: Move it up or down among its siblings
-- Alt+Right on a focused folder: Nest it inside the folder above it; Alt+Left moves it back out, directly after its parent
+- Hover the title at the top of the draft list (All drafts, a folder, or Unfiled) to preview each folder; click one to keep it.
+- Hover Move on a draft to file it into a folder.
+- Folders are flat. Older nested folders show up as "Parent / Child".
 - On the initial commit of each document, the document will be automatically assigned to an existing folder if there is a relevant folder based on its content and the names of the folders

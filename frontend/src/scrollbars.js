@@ -1,7 +1,7 @@
 import "overlayscrollbars/overlayscrollbars.css";
 import { OverlayScrollbars } from "overlayscrollbars";
 
-const SCROLL_SELECTORS = [".editor", ".feedback", ".draft-list", ".git-pane"];
+const SCROLL_SELECTORS = [".editor", ".feedback", ".draft-list", ".git-pane", ".folder-picker-menu"];
 
 const OPTIONS = { scrollbars: { theme: "os-theme-kindred", autoHide: "leave", autoHideDelay: 100 } };
 
