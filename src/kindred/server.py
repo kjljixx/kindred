@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 import logging
 import os
@@ -20,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 import httpx
 from pydantic import BaseModel, Field
 
-from kindred.chat import DEFAULT_MODEL, chat_draft_stream
+from kindred.chat import CODEX_MODEL, CODEX_MODEL_PREFIX, DEFAULT_MODEL, chat_draft_stream
 from kindred.google_sessions import GoogleSessionStore, SESSION_MAX_AGE_S
 from kindred.tracing import configure_tracing
 
@@ -44,6 +46,16 @@ GOOGLE_OAUTH_REDIRECT_URI = os.environ.get(
 REQUIRE_OPENROUTER_FREE_MODEL = os.environ.get(
   "KINDRED_REQUIRE_OPENROUTER_FREE_MODEL", ""
 ).lower() in ("1", "true", "yes", "on")
+CODEX_ALLOWED_EMAILS = frozenset(
+  email.strip().lower()
+  for email in os.environ.get("KINDRED_CODEX_ALLOWED_EMAILS", "").split(",")
+  if email.strip()
+)
+CODEX_LOGIN_COMMAND = (
+  'python -c "from litellm.llms.chatgpt.authenticator import Authenticator; '
+  'Authenticator().get_access_token()"'
+)
+print(f"[CODEX CONFIG] model={CODEX_MODEL} allowed_emails={len(CODEX_ALLOWED_EMAILS)}")
 
 
 def get_google_session_store() -> GoogleSessionStore:
@@ -51,6 +63,41 @@ def get_google_session_store() -> GoogleSessionStore:
   if _google_session_store is None:
     _google_session_store = GoogleSessionStore()
   return _google_session_store
+
+
+def verified_email_from_id_token(id_token: str | None) -> str | None:
+  """Read the email claim. The token comes straight from Google's token endpoint over TLS, so the signature is not checked."""
+  if not id_token:
+    return None
+  payload = id_token.split(".")[1]
+  claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+  if not claims.get("email_verified"):
+    return None
+  return str(claims["email"]).strip().lower()
+
+
+def resolve_chat_model(request: Request, requested: str) -> str:
+  session_id = request.cookies.get(GOOGLE_SESSION_COOKIE)
+  email = get_google_session_store().get_email(session_id) if session_id else None
+  allowed = email in CODEX_ALLOWED_EMAILS
+  if requested.startswith(CODEX_MODEL_PREFIX) and not allowed:
+    raise HTTPException(status_code=403, detail=f"{requested} is not available for this account")
+  model = CODEX_MODEL if allowed and requested == DEFAULT_MODEL else requested
+  email_hash = hashlib.sha256(email.encode("utf-8")).hexdigest()[:8] if email else "none"
+  print(f"[CODEX ROUTE] requested={requested} resolved={model} allowed={allowed} email_hash={email_hash}")
+  return model
+
+
+def require_codex_login(model: str) -> None:
+  if not model.startswith(CODEX_MODEL_PREFIX):
+    return
+  from litellm.llms.chatgpt.authenticator import Authenticator
+
+  if not os.path.exists(Authenticator().auth_file):
+    raise HTTPException(
+      status_code=503,
+      detail=f"ChatGPT login missing on the server. Run once: {CODEX_LOGIN_COMMAND}",
+    )
 
 
 def require_google_session(request: Request) -> str:
@@ -456,7 +503,7 @@ async def google_oauth_start(request: Request) -> RedirectResponse:
     "response_type": "code",
     "access_type": "offline",
     "prompt": "consent",
-    "scope": "https://www.googleapis.com/auth/documents",
+    "scope": "openid email https://www.googleapis.com/auth/documents",
     "state": state,
   })
   response = RedirectResponse(f"https://accounts.google.com/o/oauth2/v2/auth?{query}")
@@ -489,10 +536,15 @@ async def google_oauth_callback(request: Request, code: str, state: str) -> str:
   )
   if response.is_error:
     raise HTTPException(status_code=response.status_code, detail=response.text)
-  refresh_token = response.json().get("refresh_token")
+  tokens = response.json()
+  refresh_token = tokens.get("refresh_token")
   if not refresh_token:
     raise HTTPException(status_code=400, detail="Google did not return a refresh token")
   store.save_refresh_token(session_id, refresh_token)
+  email = verified_email_from_id_token(tokens.get("id_token"))
+  if email:
+    store.save_email(session_id, email)
+  print(f"[GOOGLE OAUTH] connected email_captured={email is not None}")
   clear_access_token(session_id)
   return "Google Docs connected. You can close this window."
 
@@ -630,13 +682,20 @@ async def api_google_docs_title(
     raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/api/chat/model")
+async def api_chat_model(request: Request) -> dict[str, str]:
+  return {"model": resolve_chat_model(request, DEFAULT_MODEL)}
+
+
 @app.post("/api/chat")
-async def api_chat(body: ChatRequest) -> StreamingResponse:
+async def api_chat(request: Request, body: ChatRequest) -> StreamingResponse:
   if REQUIRE_OPENROUTER_FREE_MODEL and body.model != DEFAULT_MODEL:
     raise HTTPException(
       status_code=403,
       detail=f"Only the {DEFAULT_MODEL} model is allowed",
     )
+  model = resolve_chat_model(request, body.model)
+  require_codex_login(model)
 
   message = body.message.strip()
   if not message:
@@ -672,7 +731,7 @@ async def api_chat(body: ChatRequest) -> StreamingResponse:
         messages=prior,
         selection=sel,
         conflict_context=body.conflict_context,
-        model=body.model,
+        model=model,
         _cost_out=cost_out,
         _summary_out=summary_out,
       ):
@@ -684,7 +743,13 @@ async def api_chat(body: ChatRequest) -> StreamingResponse:
 
       cost = float(cost_out.get("cost", 0.0))
       summary = summary_out.get("summary")
-      emit({"type": "done", "reply": reply, "cost": cost, "reasoning_summary": summary})
+      emit({
+        "type": "done",
+        "reply": reply,
+        "cost": cost,
+        "model": model,
+        "reasoning_summary": summary,
+      })
     except Exception as exc:  # noqa: BLE001 — surface LM/runtime errors to UI
       emit({"type": "error", "detail": str(exc)})
 

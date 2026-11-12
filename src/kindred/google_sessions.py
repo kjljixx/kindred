@@ -70,6 +70,7 @@ class GoogleSessionStore:
         CREATE TABLE IF NOT EXISTS browser_sessions (
           session_hash TEXT PRIMARY KEY,
           encrypted_refresh_token BLOB,
+          email TEXT,
           created_at REAL NOT NULL,
           expires_at REAL NOT NULL
         );
@@ -80,6 +81,9 @@ class GoogleSessionStore:
         );
         """
       )
+      columns = {row[1] for row in connection.execute("PRAGMA table_info(browser_sessions)")}
+      if "email" not in columns:
+        connection.execute("ALTER TABLE browser_sessions ADD COLUMN email TEXT")
 
   def create_session(self, now: float | None = None) -> str:
     created_at = now if now is not None else time.time()
@@ -150,6 +154,30 @@ class GoogleSessionStore:
       )
     if cursor.rowcount != 1:
       raise ValueError("Browser session is missing or expired")
+
+  def save_email(self, session_id: str, email: str) -> None:
+    with self._connect() as connection:
+      cursor = connection.execute(
+        """
+        UPDATE browser_sessions
+        SET email = ?
+        WHERE session_hash = ? AND expires_at > ?
+        """,
+        (email.strip().lower(), _hash_secret(session_id), time.time()),
+      )
+    if cursor.rowcount != 1:
+      raise ValueError("Browser session is missing or expired")
+
+  def get_email(self, session_id: str) -> str | None:
+    with self._connect() as connection:
+      row = connection.execute(
+        """
+        SELECT email FROM browser_sessions
+        WHERE session_hash = ? AND expires_at > ?
+        """,
+        (_hash_secret(session_id), time.time()),
+      ).fetchone()
+    return row[0] if row else None
 
   def get_refresh_token(self, session_id: str) -> str | None:
     with self._connect() as connection:

@@ -193,6 +193,22 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   const touchInput = window.matchMedia("(hover: none), (pointer: coarse)");
 
   const DEFAULT_MODEL = CONFIG.chat.model;
+  let activeModel = DEFAULT_MODEL;
+
+  async function refreshActiveModel() {
+    try {
+      const res = await fetch("/api/chat/model");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { model } = await res.json();
+      if (model && model !== activeModel) {
+        console.info(`kindred: chat model ${activeModel} -> ${model}`);
+        activeModel = model;
+        updateMeta();
+      }
+    } catch (err) {
+      console.warn("kindred: could not refresh chat model", err);
+    }
+  }
   const EPHEMERAL_STATUS_MESSAGES = new Set([
     "google docs sync disabled for this branch",
     "suggestion applied",
@@ -1383,7 +1399,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
           statusParts.push(`${currentBranchName} · +${additions} -${deletions}`);
         }
       }
-      metaEl.textContent = `${statusParts.join(" · ")}\u2003|\u2003${DEFAULT_MODEL} · ${formatCost(draftCost)}`;
+      metaEl.textContent = `${statusParts.join(" · ")}\u2003|\u2003${activeModel} · ${formatCost(draftCost)}`;
     }
     else {
       metaEl.textContent = "";
@@ -5656,6 +5672,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       );
       const reply = String(data.reply || "");
       const cost = Number(data.cost) || 0;
+      if (data.model) activeModel = data.model;
       pendingReply.content = reply || pendingReply.content;
       if (data.reasoning_summary) {
         pendingReply.thinking = data.reasoning_summary;
@@ -6230,6 +6247,8 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
         else void syncGoogleDocs();
       });
       updateMeta();
+      void refreshActiveModel();
+      window.addEventListener("focus", () => void refreshActiveModel());
       setStatus("");
       warmPopularFontsAfterIdle();
       warmPandocAfterStartup();

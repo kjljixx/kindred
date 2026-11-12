@@ -6,6 +6,8 @@ from kindred import prompts
 from kindred.lm import reflect_chat, reflect_chat_stream
 
 DEFAULT_MODEL = "openrouter/openai/gpt-6-luna"
+CODEX_MODEL_PREFIX = "chatgpt/"
+CODEX_MODEL = f"{CODEX_MODEL_PREFIX}gpt-6.1-sol"
 
 
 def _selection_offsets(selection: dict[str, Any] | None) -> tuple[int, int]:
