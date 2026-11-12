@@ -38,7 +38,7 @@ import { htmlToDoc, docToPlainText, htmlToPlainText, normalizeDoc, blockToHtml, 
 import { listDiffsFromAlignOps, resolveListConflictHtml, resolveAllListConflicts } from "./listAlign.js";
 import * as markdownWasm from "markdown-wasm";
 import DOMPurify from "dompurify";
-import { createChatMarkdownStream, refreshChatAnchors, renderChatAnchor, renderReplacedSuggestion } from "./chatStreamMarkdown.js";
+import { createAnchorPlaceholders, createChatMarkdownStream, refreshChatAnchors, renderChatAnchor, renderReplacedSuggestion } from "./chatStreamMarkdown.js";
 import { suggestionDiffParts } from "./suggestionDiff.js";
 import {
   buildProseMirrorToGoogleDocsPositionMap,
@@ -248,7 +248,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   let renamingChatId = null;
   let renderedChatId = null;
   let renderedDraftId = null;
-  let chatNeedsFullDraftRender = false;
   let markdownState = "loading";
   let editingChatMessage = null;
   let rendering = false;
@@ -813,8 +812,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
           renderedChatId === activeChatId &&
           paneMode === "chat" &&
           chatView === "thread" &&
-          !feedbackEl.hidden &&
-          !chatNeedsFullDraftRender
+          !feedbackEl.hidden
         ) {
           refreshChatAnchors(feedbackEl, resolveTextAnchor, chatSuggestionDiffParts);
           highlightCommentAnchors();
@@ -3856,9 +3854,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       return;
     }
     const messages = chat.messages || [];
-    chatNeedsFullDraftRender = messages.some((message) =>
-      /\[{1,2}(?:mention|suggest):\d+:\d+/.test(message.content || "")
-    );
     const scrollTop = feedbackEl.scrollTop;
     const wasAtBottom = scrollAreaAtBottom(feedbackEl);
     if (!messages.length) {
@@ -4351,9 +4346,12 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   function markSuggestionReplaced(msgIndex, start, end, current, replacement, token = "") {
     const message = activeChat()?.messages?.[msgIndex];
     if (!message || message.role !== "assistant") return;
-    const source = token || "[[suggest:" + start + ":" + end + "=>" + replacement + "]]";
+    if (!token) {
+      console.warn("kindred: cannot mark suggestion replaced without its source token", { msgIndex });
+      return;
+    }
     message.content = message.content.replace(
-      source,
+      token,
       "[[replaced:" + current + "=>" + replacement + "]]"
     );
     renderChatThread();
@@ -4388,50 +4386,30 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     };
   }
 
-  function renderVerifiedTextAnchor(anchor, action, msgIndex, token) {
-    return renderChatAnchor({
-      anchor,
-      kind: action === "suggest" ? "suggestion" : "mention",
-      token,
-    }, msgIndex, resolveTextAnchor, chatSuggestionDiffParts).outerHTML;
-  }
-
   function renderCoachReply(content, msgIndex) {
+    const placeholders = createAnchorPlaceholders();
+    const stashAnchor = (anchor, action, token) =>
+      placeholders.stash(renderChatAnchor({
+        anchor,
+        kind: action === "suggest" ? "suggestion" : "mention",
+        token,
+      }, msgIndex, resolveTextAnchor, chatSuggestionDiffParts), token);
     const anchored = String(content || "")
       .replace(/<mention\b[\s\S]*?<\/mention>/gi, (token) => {
         const anchor = parseXmlTextAnchor(token, "mention");
-        return anchor ? renderVerifiedTextAnchor(anchor, "mention", msgIndex, token) : token;
+        return anchor ? stashAnchor(anchor, "mention", token) : token;
       })
       .replace(/<suggestion\b[\s\S]*?<\/suggestion>/gi, (token) => {
         const anchor = parseXmlTextAnchor(token, "suggestion");
         return anchor && typeof anchor.replacement === "string"
-          ? renderVerifiedTextAnchor(anchor, "suggest", msgIndex, token)
+          ? stashAnchor(anchor, "suggest", token)
           : token;
       })
-      .replace(/\[{1,2}mention:(\{[\s\S]*?\})\]{1,2}/g, (token, payload) => {
-        const anchor = parseTextAnchor(payload);
-        return anchor ? renderVerifiedTextAnchor(anchor, "mention", msgIndex, token) : token;
-      })
-      .replace(/\[{1,2}suggest:(\{[\s\S]*?\})\]{1,2}/g, (token, payload) => {
-        const anchor = parseTextAnchor(payload);
-        return anchor && typeof anchor.replacement === "string"
-          ? renderVerifiedTextAnchor(anchor, "suggest", msgIndex, token)
-          : token;
-      });
-    return renderMarkdown(anchored).replace(/\[{1,2}mention:(\d+):(\d+)\]{1,2}/g, (_, start, end) =>
-      `<span class="chat-mention">` +
-      `<span role="button" class="btn btn-tertiary" data-chat-action="mention" data-preview="current" data-start="${start}" data-end="${end}">${escapeHtml(currentText.slice(Number(start), Number(end)))}</span>` +
-      `</span>`
-    ).replace(/\[{1,2}suggest:(\d+):(\d+)=(?:>|&gt;)([\s\S]*?)\]{1,2}/g, (_, start, end, replacement) =>
-      `<span class="chat-suggestion">` +
-      `<span role="button" class="btn btn-tertiary suggestion-current" data-chat-action="current" data-preview="current" data-start="${start}" data-end="${end}">${escapeHtml(currentText.slice(Number(start), Number(end)))}</span>` +
-      `<span role="button" class="btn btn-tertiary" data-chat-action="suggest" data-preview="replacement" data-msg-index="${msgIndex}" data-start="${start}" data-end="${end}" data-replacement="${escapeHtml(replacement)}">${escapeHtml(replacement)}</span>` +
-      `</span>`
-    ).replace(/\[{1,2}replaced:(?!\d+:\d+:)([^\]]*?)=(?:>|&gt;)([\s\S]*?)\]{1,2}/g, (_, current, replacement) =>
-      renderReplacedSuggestion(current, replacement, chatSuggestionDiffParts).outerHTML
-    ).replace(/\[{1,2}replaced:(\d+):(\d+):([\s\S]*?)=(?:>|&gt;)([\s\S]*?)\]{1,2}/g, (_, _start, _end, current, replacement) =>
-      renderReplacedSuggestion(current, replacement, chatSuggestionDiffParts).outerHTML
-    );
+      .replace(/\[{1,2}replaced:([^\]]*?)=>([\s\S]*?)\]{1,2}/g, (token, current, replacement) =>
+        placeholders.stash(renderReplacedSuggestion(current, replacement, chatSuggestionDiffParts), token)
+      );
+    const html = renderMarkdown(anchored);
+    return placeholders.restore(html);
   }
 
   function chatTitleFromMessage(text) {
@@ -5582,8 +5560,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       if (isViewingThisChat()) renderChatThread({ stickBottom: followChatStream });
     };
     const showTextDelta = (pendingReply, delta) => {
-      if (useStandardRenderer || /\[{1,2}(?:mention|suggest|replaced):/i.test(pendingReply.content.slice(-delta.length - 32))) {
-        useStandardRenderer = true;
+      if (useStandardRenderer) {
         streamingReply = null;
         renderStandardReply();
         return;
@@ -5599,11 +5576,6 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
       }
       try {
         if (!streamingReply || streamingReply.body !== body) {
-          if (/\[{1,2}(?:mention|suggest|replaced):/i.test(pendingReply.content)) {
-            useStandardRenderer = true;
-            renderStandardReply();
-            return;
-          }
           [...body.childNodes].forEach((node) => {
             if (!node.classList?.contains("chat-thinking")) node.remove();
           });

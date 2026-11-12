@@ -97,6 +97,55 @@ export function renderChatAnchor({ anchor, kind, token }, msgIndex, resolveAncho
   return wrapper;
 }
 
+const PLACEHOLDER_START = "kindredchip";
+const PLACEHOLDER_PATTERN = /kindredchip(\d+)/;
+
+export function createAnchorPlaceholders() {
+  const chips = [];
+  return {
+    stash(element, token) {
+      chips.push({ element, token });
+      return `${PLACEHOLDER_START}${chips.length - 1}${MARKER_END}`;
+    },
+    restore(html) {
+      const template = document.createElement("template");
+      template.innerHTML = html;
+      const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
+      const textNodes = [];
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node.data.includes(PLACEHOLDER_START)) textNodes.push(node);
+      }
+      let restored = 0;
+      let literal = 0;
+      for (const node of textNodes) {
+        const inLiteralContext = Boolean(node.parentElement?.closest("a, code, pre"));
+        const fragment = document.createDocumentFragment();
+        node.data.split(new RegExp(PLACEHOLDER_PATTERN, "g")).forEach((part, index) => {
+          if (index % 2 === 0) {
+            fragment.append(part);
+            return;
+          }
+          const chip = chips[Number(part)];
+          if (!chip) {
+            console.warn("kindred: unknown anchor placeholder", part);
+          } else if (inLiteralContext) {
+            literal++;
+            fragment.append(chip.token);
+          } else {
+            restored++;
+            fragment.append(chip.element);
+          }
+        });
+        node.replaceWith(fragment);
+      }
+      if (chips.length) {
+        console.debug(`kindred: anchor placeholders stashed=${chips.length} restored=${restored} literal=${literal}`);
+      }
+      return template.innerHTML;
+    },
+  };
+}
+
 export function refreshChatAnchors(container, resolveAnchor, diffParts) {
   const wrappers = container.querySelectorAll("[data-chat-anchor-info]");
   let changed = 0;

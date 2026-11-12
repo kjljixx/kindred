@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import DOMPurify from "dompurify";
-import { createChatMarkdownStream, refreshChatAnchors, renderChatAnchor, renderReplacedSuggestion, UnsupportedAnchorContext } from "../src/chatStreamMarkdown.js";
+import { createAnchorPlaceholders, createChatMarkdownStream, refreshChatAnchors, renderChatAnchor, renderReplacedSuggestion, UnsupportedAnchorContext } from "../src/chatStreamMarkdown.js";
 
 const suggestion = '<suggestion start="0" end="4"><original>text</original><prefix></prefix><suffix></suffix><replacement>**clear**</replacement></suggestion>';
 const mention = '<mention start="0" end="4"><original>text</original><prefix></prefix><suffix></suffix></mention>';
@@ -238,6 +238,46 @@ describe("streaming chat Markdown", () => {
       refreshChatAnchors(container, () => location, diffParts);
 
       expect(container.querySelector('[data-chat-action="suggest"] ins')?.textContent).toBe("new");
+    });
+  });
+
+  describe("anchor placeholders for saved messages", () => {
+    const multiParagraph = "First paragraph.\n\nSecond paragraph.";
+    const info = {
+      anchor: { original: "text", prefix: "", suffix: "", replacement: multiParagraph },
+      kind: "suggestion",
+      token: suggestion,
+    };
+
+    it("stashes a placeholder that contains no Markdown-significant characters", () => {
+      const placeholders = createAnchorPlaceholders();
+      const marker = placeholders.stash(renderChatAnchor(info, 0, () => ({ start: 0, end: 4, original: "text" })), suggestion);
+
+      expect(marker).not.toMatch(/[\s<>*_`\[\]]/);
+    });
+
+    it("restores a multi-paragraph suggestion as one chip inside its paragraph", () => {
+      const placeholders = createAnchorPlaceholders();
+      const marker = placeholders.stash(renderChatAnchor(info, 0, () => ({ start: 0, end: 4, original: "text" })), suggestion);
+      const container = document.createElement("div");
+      container.innerHTML = placeholders.restore(`<p>Try ${marker} now.</p>`);
+
+      expect(container.querySelectorAll("p")).toHaveLength(1);
+      expect(container.querySelectorAll(".chat-suggestion")).toHaveLength(1);
+      expect(container.querySelector('[data-chat-action="suggest"]')?.dataset.replacement).toBe(multiParagraph);
+      expect(container.querySelector("p")?.textContent).toContain(" now.");
+    });
+
+    it("leaves the original token as text inside code or links", () => {
+      for (const wrap of [(m) => `<pre><code>${m}</code></pre>`, (m) => `<p><a href="https://example.com">${m}</a></p>`]) {
+        const placeholders = createAnchorPlaceholders();
+        const marker = placeholders.stash(renderChatAnchor(info, 0, () => ({ start: 0, end: 4, original: "text" })), suggestion);
+        const container = document.createElement("div");
+        container.innerHTML = placeholders.restore(wrap(marker));
+
+        expect(container.querySelector(".chat-suggestion")).toBeNull();
+        expect(container.textContent).toBe(suggestion);
+      }
     });
   });
 
