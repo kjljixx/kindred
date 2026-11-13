@@ -166,6 +166,14 @@ export function createMathLiveNodeView({ node, view, getPos }) {
     exitToDocument("forward");
   };
 
+  const exitOnEnter = (event) => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    delete field.dataset.autocalcResultSelected;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    exitToDocument("forward");
+  };
+
   const clearDocumentSelection = () => {
     const pos = getPos();
     if (typeof pos !== "number") return;
@@ -207,6 +215,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
   field.addEventListener("copy", copySelectionAsAsciiMath);
   field.addEventListener("selection-change", clearAutocalcSelectionState);
   field.addEventListener("keydown", exitAfterSelectedAutocalcResult, true);
+  field.addEventListener("keydown", exitOnEnter, true);
 
   const stopEvent = (event) => {
     if (!event.target.closest?.(".kindred-math-node")) return false;
@@ -256,6 +265,7 @@ export function createMathLiveNodeView({ node, view, getPos }) {
       field.removeEventListener("copy", copySelectionAsAsciiMath);
       field.removeEventListener("selection-change", clearAutocalcSelectionState);
       field.removeEventListener("keydown", exitAfterSelectedAutocalcResult, true);
+      field.removeEventListener("keydown", exitOnEnter, true);
       if (getActiveMathField() === field) setActiveMathField(null);
     },
   };

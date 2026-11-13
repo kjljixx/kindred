@@ -220,6 +220,52 @@ describe("mathLive node editing", () => {
     nodeView.destroy();
   });
 
+  it("moves the document caret just after the math node when Enter is pressed", () => {
+    const schema = new Schema({
+      nodes: {
+        doc: { content: "paragraph+" },
+        paragraph: { content: "inline*", group: "block" },
+        text: { group: "inline" },
+        mathLive: {
+          group: "inline",
+          inline: true,
+          atom: true,
+          attrs: { asciiMath: { default: "" } },
+        },
+      },
+    });
+    let state = EditorState.create({
+      doc: schema.node("doc", null, [
+        schema.node("paragraph", null, [
+          schema.node("mathLive", { asciiMath: "abc" }),
+          schema.text("after"),
+        ]),
+      ]),
+    });
+    const nodeView = createMathLiveNodeView({
+      node: { attrs: { asciiMath: "abc" }, nodeSize: 1 },
+      view: {
+        get state() {
+          return state;
+        },
+        dispatch: (transaction) => {
+          state = state.apply(transaction);
+        },
+        focus: () => {},
+      },
+      getPos: () => 1,
+    });
+    const field = nodeView.dom.querySelector("math-field");
+    const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+
+    field.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(state.selection.empty).toBe(true);
+    expect(state.selection.from).toBe(2);
+    nodeView.destroy();
+  });
+
   it.each(["ArrowLeft", "ArrowRight"])("leaves Shift+%s selection to MathLive", (key) => {
     const nodeView = createMathLiveNodeView({
       node: {
