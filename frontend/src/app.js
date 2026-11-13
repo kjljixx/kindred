@@ -871,7 +871,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
     { capture: true },
   );
   editor?.addEventListener("scroll", () => persistUiStateSoon(), { passive: true });
-  const editorPaddingStorageKey = "kindred-editor-padding-left";
+  const editorPaddingStorageKey = "kindred-editor-padding-left-ratio";
   let paddingDrag = null;
   const minEditorPadding = Number.parseFloat(getComputedStyle(editor).paddingLeft) || 0;
   const editorPaddingHit = (clientX) => {
@@ -882,11 +882,14 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   const setEditorPadding = (paddingLeft) => {
     const maxEditorPadding = Math.max(minEditorPadding, editor.clientWidth / 2);
     const nextPadding = Math.min(maxEditorPadding, Math.max(minEditorPadding, paddingLeft));
-    draftPane.style.setProperty("--editor-padding-left", `${nextPadding}px`);
-    localStorage.setItem(editorPaddingStorageKey, String(nextPadding));
+    setEditorPaddingRatio(nextPadding / draftPane.clientWidth);
   };
-  const savedEditorPadding = Number.parseFloat(localStorage.getItem(editorPaddingStorageKey));
-  if (Number.isFinite(savedEditorPadding)) setEditorPadding(savedEditorPadding);
+  const setEditorPaddingRatio = (ratio) => {
+    draftPane.style.setProperty("--editor-padding-left", `${ratio * 100}%`);
+    localStorage.setItem(editorPaddingStorageKey, String(ratio));
+  };
+  const savedEditorPaddingRatio = Number.parseFloat(localStorage.getItem(editorPaddingStorageKey));
+  if (Number.isFinite(savedEditorPaddingRatio)) setEditorPaddingRatio(savedEditorPaddingRatio);
   editor.addEventListener("pointermove", (e) => {
     if (paddingDrag) {
       e.preventDefault();
