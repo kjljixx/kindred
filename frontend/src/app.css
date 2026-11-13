@@ -747,7 +747,8 @@ button.pane-title {
   box-shadow: none;
 }
 
-.folder-picker-menu button {
+.export-menu.folder-picker-menu button {
+  text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
