@@ -2176,6 +2176,17 @@ button.pane-title {
     max-height: 7.5rem;
     overflow: auto;
   }
+
+  .editor-toolbar .font-family-picker {
+    flex: 1 1 3.5rem;
+    min-width: 0;
+    max-width: max-content;
+  }
+
+  .editor-toolbar .font-family-trigger {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 }
 
 @media (max-width: 770px) and (hover: hover) and (pointer: fine) {
