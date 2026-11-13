@@ -1,5 +1,5 @@
 import { escapeHtml } from "./htmlEscape.js";
-const mathFunctions = new Set([
+export const mathFunctions = new Set([
   "sin", "cos", "tan", "sec", "csc", "cot", "log", "ln", "sqrt", "lim",
   "max", "min", "det", "gcd", "lcm", "sum", "int"
 ]);
@@ -10,7 +10,7 @@ const mathPunctuation = new Set([
 
 const apostrophes = new Set(["'", "’"]);
 
-const mathWords = new Set([
+export const mathWords = new Set([
   "pi", "sigma", "theta", "alpha", "beta", "gamma", "delta", "phi", "lambda", "oo" //oo = infinity
 ]);
 

@@ -4,6 +4,7 @@ import { Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import { TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { parenthesizeFractionNumerators } from "./asciiMathFractions.js";
 import { calculateTrailingEquals, isMathLiveEqualsInput } from "./mathCompute.js";
 
 function parenthesizedLatex(source, start) {
@@ -43,7 +44,7 @@ function restoreIndexedRoots(source) {
 
 /** MathLive-native ASCII→LaTeX so getValue("ascii-math") roundtrips (asciimath2tex uses \\lvert). */
 function asciiMathForMathLive(source) {
-  return restoreIndexedRoots(convertAsciiMathToLatex(String(source || "").trim()))
+  return restoreIndexedRoots(convertAsciiMathToLatex(parenthesizeFractionNumerators(String(source || "").trim())))
     .replace(/\*/g, "\\cdot ");
 }
 
