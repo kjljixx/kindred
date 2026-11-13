@@ -1152,6 +1152,7 @@ button.pane-title {
   box-shadow: none;
   color: inherit;
   font: inherit;
+  font-size: calc(1em + 2pt);
   line-height: inherit;
   vertical-align: baseline;
   --caret-color: currentColor;
