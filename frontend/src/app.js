@@ -2608,7 +2608,7 @@ import { suggestFolderWithJev } from "./jevFolderSuggester.js";
   const FOLDER_AIM_MIN_TRAVEL_PX = 4;
   const FOLDER_MENU_TRAIL_MS = 250;
   const FOLDER_MENU_FIT_MARGIN_PX = 8;
-  const FOLDER_HOVER_MARGIN_PX = { title: 4, menuTop: 4, menuLeft: 12, menuRight: 4, menuBottom: 16 };
+  const FOLDER_HOVER_MARGIN_PX = { title: 4, menuTop: 4, menuLeft: 24, menuRight: 12, menuBottom: 32 };
   console.info("kindred: folder menu hover aim", {
     holdMs: FOLDER_AIM_HOLD_MS,
     stallMs: FOLDER_AIM_STALL_MS,
