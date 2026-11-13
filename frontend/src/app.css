@@ -673,16 +673,26 @@ button.pane-title {
 
 .draft-view-controls:has(> .folder-picker) {
   align-self: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-/* Spans the full header height so the pointer never leaves the hover area between the title and the menu. */
+.draft-view-controls:not([hidden]) + .feedback-header-left {
+  flex-grow: 0;
+}
+
+/* Spans the full header height and width so the pointer never leaves the hover area between the title and the menu. */
 .folder-picker {
   display: flex;
   align-items: center;
   align-self: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .folder-picker-btn {
+  flex: 1 1 auto;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: var(--space-4);
