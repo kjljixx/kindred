@@ -427,6 +427,7 @@ export async function htmlToPdfBlob(html, options = {}) {
   const style = document.createElement("style");
   style.textContent = `
     mark { color: inherit; }
+    img { max-width: 100%; height: auto; }
     ${styledDiff ? DIFF_EXPORT_EMBEDDED_CSS + DIFF_PDF_WORD_CSS : ""}
     ${htmlHasRenderedMath(html) ? getMathExportEmbeddedCss() : ""}
   `;
